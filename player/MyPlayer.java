@@ -1,5 +1,12 @@
+import java.awt.GridLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.util.List;
+import java.util.Random;
 
+import javax.swing.JButton;
+
+import org.ggp.base.apps.player.config.ConfigPanel;
 import org.ggp.base.player.gamer.exception.GamePreviewException;
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
 import org.ggp.base.util.game.Game;
@@ -18,6 +25,12 @@ public class MyPlayer extends StateMachineGamer {
 
 	public final int MAX_SCORE = 100;
 	public final int MIN_SCORE = 0;
+	public final int LEGAL = 1;
+	public final int RANDOM = 2;
+	public final int ALPHABETA = 3;
+
+	private int method = RANDOM;
+	private final int N_OPTIONS = 8;
 
 	@Override
 	public StateMachine getInitialStateMachine() {
@@ -44,30 +57,39 @@ public class MyPlayer extends StateMachineGamer {
 		/** legal player **/
 		// legal player #1: 8432
 		// legal player #2: 1344
-		// return moves.get(0);
-
+		if (method == LEGAL) {
+			return moves.get(0);
+		}
 		/** random player **/
 		// random player #1: 6920
 		// random player #2: 1344
 		// Random random = new Random();
-		// return moves.get(random.nextInt(moves.size())); // random player
+		else if (method == RANDOM) {
+			Random random = new Random();
+			return moves.get(random.nextInt(moves.size())); // random player
+		}
 
 		/** alpha beta player **/
 		// alpha beta #1: 7234
 		// alpha beta #2: 4325
-		Move bestMove = moves.get(0);
-		int bestScore = MIN_SCORE;
-		for (Move move : moves) {
-			int score = minscore(machine, state, role, move,
-					MIN_SCORE, MAX_SCORE);
-			if (score == MAX_SCORE) return move;
-			if (score > bestScore) {
-				bestMove = move;
-				bestScore = score;
-			}
+		else if (method == ALPHABETA) {
+			Move bestMove = moves.get(0);
+			int bestScore = MIN_SCORE;
+			for (Move move : moves) {
+				int score = minscore(machine, state, role, move,
+						MIN_SCORE, MAX_SCORE);
+				if (score == MAX_SCORE) return move;
+				if (score > bestScore) {
+					bestMove = move;
+					bestScore = score;
+				}
 
+			}
+			return bestMove;
 		}
-		return bestMove;
+		else {
+			return moves.get(0);
+		}
 	}
 
 	// as seen in notes ch. 6
@@ -113,6 +135,41 @@ public class MyPlayer extends StateMachineGamer {
 	@Override
 	public void preview(Game g, long timeout) throws GamePreviewException {
 		return;
+	}
+
+	@Override
+	public ConfigPanel getConfigPanel() {
+		GridLayout buttons = new GridLayout(N_OPTIONS, 1);
+		Config c = new Config(buttons);
+
+		JButton legalButton = new JButton("Legal");
+		JButton randomButton = new JButton("Random");
+		JButton abButton = new JButton("Alpha-Beta");
+
+		legalButton.addActionListener(new ActionListener(){
+			@Override
+			public void actionPerformed(ActionEvent e){
+				method = LEGAL;
+			}
+		});
+		randomButton.addActionListener(new ActionListener(){
+			@Override
+			public void actionPerformed(ActionEvent e){
+				method = RANDOM;
+			}
+		});
+		abButton.addActionListener(new ActionListener(){
+			@Override
+			public void actionPerformed(ActionEvent e){
+				method = ALPHABETA;
+			}
+		});
+
+		c.add(legalButton);
+		c.add(randomButton);
+		c.add(abButton);
+
+		return c;
 	}
 
 	@Override
