@@ -1,10 +1,6 @@
 import java.awt.GridLayout;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.util.List;
 import java.util.Random;
-
-import javax.swing.JButton;
 
 import org.ggp.base.apps.player.config.ConfigPanel;
 import org.ggp.base.player.gamer.exception.GamePreviewException;
@@ -25,12 +21,12 @@ public class MyPlayer extends StateMachineGamer {
 
 	public final int MAX_SCORE = 100;
 	public final int MIN_SCORE = 0;
-	public final int LEGAL = 1;
-	public final int RANDOM = 2;
-	public final int ALPHABETA = 3;
+	public static final int LEGAL = 1;
+	public static final int RANDOM = 2;
+	public static final int ALPHABETA = 3;
 
-	private int method = RANDOM;
-	private final int N_OPTIONS = 8;
+	public int method = RANDOM;
+	public static final int N_OPTIONS = 10;
 
 	@Override
 	public StateMachine getInitialStateMachine() {
@@ -139,37 +135,7 @@ public class MyPlayer extends StateMachineGamer {
 
 	@Override
 	public ConfigPanel getConfigPanel() {
-		GridLayout buttons = new GridLayout(N_OPTIONS, 1);
-		Config c = new Config(buttons);
-
-		JButton legalButton = new JButton("Legal");
-		JButton randomButton = new JButton("Random");
-		JButton abButton = new JButton("Alpha-Beta");
-
-		legalButton.addActionListener(new ActionListener(){
-			@Override
-			public void actionPerformed(ActionEvent e){
-				method = LEGAL;
-			}
-		});
-		randomButton.addActionListener(new ActionListener(){
-			@Override
-			public void actionPerformed(ActionEvent e){
-				method = RANDOM;
-			}
-		});
-		abButton.addActionListener(new ActionListener(){
-			@Override
-			public void actionPerformed(ActionEvent e){
-				method = ALPHABETA;
-			}
-		});
-
-		c.add(legalButton);
-		c.add(randomButton);
-		c.add(abButton);
-
-		return c;
+		return new Config(new GridLayout(N_OPTIONS, 1), this);
 	}
 
 	@Override
