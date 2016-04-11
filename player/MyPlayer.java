@@ -1,6 +1,9 @@
 import java.awt.GridLayout;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import org.ggp.base.apps.player.config.ConfigPanel;
 import org.ggp.base.player.gamer.exception.GamePreviewException;
@@ -19,11 +22,14 @@ import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
 public class MyPlayer extends StateMachineGamer {
 
-	public final int MAX_SCORE = 100;
-	public final int MIN_SCORE = 0;
+	public final static int MAX_SCORE = 100;
+	public final static int MIN_SCORE = 0;
 	public static final int LEGAL = 1;
 	public static final int RANDOM = 2;
 	public static final int ALPHABETA = 3;
+
+	public static final int N_THREADS = 4;
+	private static final int N_EXPAND = 10;
 
 	public int method = RANDOM;
 	public static final int N_OPTIONS = 10;
@@ -69,53 +75,108 @@ public class MyPlayer extends StateMachineGamer {
 		// alpha beta #1: 7234
 		// alpha beta #2: 4325
 		else if (method == ALPHABETA) {
-			Move bestMove = moves.get(0);
-			int bestScore = MIN_SCORE;
-			for (Move move : moves) {
-				int score = minscore(machine, state, role, move,
-						MIN_SCORE, MAX_SCORE);
-				if (score == MAX_SCORE) return move;
-				if (score > bestScore) {
-					bestMove = move;
-					bestScore = score;
-				}
+			if (moves.size() == 1) return moves.get(0);
+			BestMove bestMove = new BestMove();
+			bestMove.m = null;
+			bestMove.score = MIN_SCORE;
 
+			LinkedBlockingQueue<Work> work = new LinkedBlockingQueue<Work>();
+			expandMoves(moves, work, machine, state, role);
+
+			Set<Thread> threads = new HashSet<Thread>();
+			for (int i = 0; i < N_THREADS; i ++) {
+				AlphaBetaThread t = new AlphaBetaThread(work, machine, role, bestMove);
+				t.start();
+				threads.add(t);
 			}
-			return bestMove;
+			joinAll(threads);
+			System.out.println(bestMove.score);
+			return bestMove.m;
 		}
 		else {
 			return moves.get(0);
 		}
 	}
 
-	// as seen in notes ch. 6
-	private int maxscore(StateMachine machine, MachineState state, Role role,
-			int alpha, int beta)
-					throws GoalDefinitionException,
-					MoveDefinitionException, TransitionDefinitionException {
-		if (machine.isTerminal(state)) return machine.findReward(role, state);
-		List<Move> actions = machine.findLegals(role, state);
-		for (Move move : actions) {
-			int score = minscore(machine, state, role, move, alpha, beta);
-			alpha = Math.max(alpha, score);
-			if (alpha >= beta) return beta;
+	private void expandMoves(List<Move> moves, LinkedBlockingQueue<Work> queue, StateMachine machine, MachineState state,
+			Role role) {
+
+		for (Move m : moves) {
+			Work w = new Work();
+			FirstMove f = new FirstMove();
+			f.m = m;
+			f.alpha = MIN_SCORE;
+			f.beta = MAX_SCORE;
+			w.original = f;
+			w.m = m;
+			w.max = false;
+			w.state = state;
+			queue.add(w);
 		}
-		return alpha;
+
+		int terminals = 0;
+		while (queue.size() < N_THREADS * N_EXPAND && queue.size() > terminals) {
+			Work w = queue.poll();
+			try {
+				if (w.max) {
+					Set<Work> expand = new HashSet<Work>();
+					terminals += maxscore(w, machine, role, expand);
+					queue.addAll(expand);
+				}
+				else {
+					Set<Work> expand = new HashSet<Work>();
+					minscore(w, machine, role, expand);
+					queue.addAll(expand);
+				}
+			} catch (GoalDefinitionException | MoveDefinitionException | TransitionDefinitionException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+
+	private int maxscore(Work work, StateMachine machine, Role role, Set<Work> expand)
+			throws GoalDefinitionException,
+			MoveDefinitionException, TransitionDefinitionException {
+		if (machine.isTerminal(work.state)) {
+			expand.add(work);
+			return 1;
+		}
+		List<Move> actions = machine.findLegals(role, work.state);
+		for (Move move : actions) {
+			Work w = new Work();
+			w.original = work.original;
+			w.m = move;
+			w.max = false;
+			w.state = work.state;
+			expand.add(w);
+		}
+		return 0;
 	}
 
 	// as seen in notes ch 6
-	private int minscore(StateMachine machine, MachineState state, Role role,
-			Move move, int alpha, int beta)
-					throws GoalDefinitionException,
-					MoveDefinitionException, TransitionDefinitionException {
+	private void minscore(Work work, StateMachine machine, Role role, Set<Work> expand)
+			throws GoalDefinitionException,
+			MoveDefinitionException, TransitionDefinitionException {
 		// use joint moves so that we can deal with n-player games; n != 2
-		for (List<Move> jmove : machine.getLegalJointMoves(state, role, move)) {
-			MachineState next = machine.getNextState(state, jmove);
-			int score = maxscore(machine, next, role, alpha, beta);
-			beta = Math.min(beta, score);
-			if (alpha >= beta) return alpha;
+		for (List<Move> jmove : machine.getLegalJointMoves(work.state, role, work.m)) {
+			MachineState next = machine.getNextState(work.state, jmove);
+			Work w = new Work();
+			w.original = work.original;
+			w.m = null;
+			w.max = true;
+			w.state = next;
+			expand.add(w);
 		}
-		return beta;
+	}
+
+	private void joinAll(Set<Thread> threads) {
+		for (Thread t : threads) {
+			try {
+				t.join();
+			} catch (InterruptedException e) {
+				return;
+			}
+		}
 	}
 
 	@Override
