@@ -28,7 +28,13 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int N_OPTIONS = 10;
 
 	public int method = ALPHABETA;
-	private Map<MachineState, Integer> cache = new HashMap<>();
+
+	private class Bound {
+		int lower = MIN_SCORE;
+		int upper = MAX_SCORE;
+	}
+
+	private Map<MachineState, Bound> cache = new HashMap<>();
 
 	private int stats_nnodes = 0;
 	private int stats_ncachehits = 0;
@@ -100,22 +106,30 @@ public class MyPlayer extends StateMachineGamer {
 			throws GoalDefinitionException, MoveDefinitionException, TransitionDefinitionException {
 		stats_nnodes++;
 		if (machine.isTerminal(state)) return machine.findReward(role, state);
-		Integer cachedValue = cache.get(state);
-		if (cachedValue != null) {
+		Bound bound = cache.get(state);
+		if (bound == null) {
+			bound = new Bound();
+			cache.put(state, bound);
+		} else { // retrieve cache value
 			stats_ncachehits++;
-			return cachedValue;
+			if (bound.lower >= beta) return beta;
+			if (bound.upper <= alpha) return alpha;
+			alpha = Math.max(alpha, bound.lower);
+			beta = Math.min(alpha, bound.upper);
+			if (alpha > beta) System.out.println("Bounding error: " + alpha + " : " + beta);
+			if (alpha >= beta) return alpha;
 		}
 		List<Move> actions = machine.findLegals(role, state);
+
+		int a = alpha; // store original alpha value
 		for (Move move : actions) {
-			int score = minscore(machine, state, role, move, alpha, beta);
-			alpha = Math.max(alpha, score);
-			if (alpha >= beta) {
-				alpha = beta;
-				break;
-			}
+			int score = minscore(machine, state, role, move, a, beta);
+			a = Math.max(score, a);
+			if (a >= beta) break;
 		}
-		cache.put(state, alpha);
-		return alpha;
+		if (a < beta) bound.upper = a;
+		if (a > alpha) bound.lower = a;
+		return a;
 	}
 
 	// as seen in notes ch 6
