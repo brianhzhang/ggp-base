@@ -1,4 +1,6 @@
 import java.awt.GridLayout;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,7 +59,8 @@ public class MyPlayer extends StateMachineGamer {
 		MachineState state = getCurrentState();
 		Role role = getRole();
 
-		List<Move> moves = machine.findLegals(role, state);
+		List<Move> moves = new ArrayList<Move>(machine.findLegals(role, state));
+		Collections.shuffle(moves);
 		if (moves.size() == 1) return moves.get(0);
 
 		/** legal player **/
@@ -114,17 +117,17 @@ public class MyPlayer extends StateMachineGamer {
 			stats_ncachehits++;
 			if (bound.lower >= beta) return beta;
 			if (bound.upper <= alpha) return alpha;
+			if (bound.lower == bound.upper) return bound.lower;
+			// stats_ncachehits--;
 			alpha = Math.max(alpha, bound.lower);
-			beta = Math.min(alpha, bound.upper);
-			if (alpha > beta) System.out.println("Bounding error: " + alpha + " : " + beta);
-			if (alpha >= beta) return alpha;
+			beta = Math.min(beta, bound.upper);
 		}
 		List<Move> actions = machine.findLegals(role, state);
 
 		int a = alpha; // store original alpha value
 		for (Move move : actions) {
 			int score = minscore(machine, state, role, move, a, beta);
-			a = Math.max(score, a);
+			a = Math.max(a, score);
 			if (a >= beta) break;
 		}
 		if (a < beta) bound.upper = a;
