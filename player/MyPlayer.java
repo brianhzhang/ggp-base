@@ -1,6 +1,4 @@
 import java.awt.GridLayout;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -59,8 +57,7 @@ public class MyPlayer extends StateMachineGamer {
 		MachineState state = getCurrentState();
 		Role role = getRole();
 
-		List<Move> moves = new ArrayList<Move>(machine.findLegals(role, state));
-		Collections.shuffle(moves);
+		List<Move> moves = machine.findLegals(role, state);
 		if (moves.size() == 1) return moves.get(0);
 
 		/** legal player **/
@@ -173,6 +170,6 @@ public class MyPlayer extends StateMachineGamer {
 
 	@Override
 	public String getName() {
-		return "JBPlayer"; // "Brian and Jeff'); DROP TABLE TEAMS; --";
+		return "Brian and Jeff'); DROP TABLE TEAMS; --";
 	}
 }
