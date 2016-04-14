@@ -1,4 +1,10 @@
 import java.awt.GridLayout;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -8,6 +14,7 @@ import org.ggp.base.apps.player.config.ConfigPanel;
 import org.ggp.base.player.gamer.exception.GamePreviewException;
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
 import org.ggp.base.util.game.Game;
+import org.ggp.base.util.match.Match;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
@@ -148,8 +155,62 @@ public class MyPlayer extends StateMachineGamer {
 
 	@Override
 	public void stateMachineStop() {
+		Match m = getMatch();
+		StateMachine machine = getStateMachine();
+		MachineState state = getCurrentState();
+		Role role = getRole();
+		List<Role> roles = machine.getRoles();
+		String save = "";
+		try {
+			save = m.getMatchId() + "\t" + method + "\t" + machine.getGoal(state, role);
+			for (Role r : roles) {
+				if (r.equals(role)) continue;
+				save += "\t" + machine.getGoal(state, r);
+			}
+		} catch (GoalDefinitionException e) {
+			save = m.getMatchId();
+		}
+		saveLine("Game-Logs.txt", save);
+		saveLine("Logs/" + m.getMatchId() + ".txt", m.toXML());
 		cache.clear();
 		return;
+	}
+	
+	public static void saveLine(String fileName, String add)
+	{
+		String lines = "";
+		BufferedReader inFile = null;
+		try
+		{
+			inFile = new BufferedReader(new FileReader(fileName));
+			String line;
+			line = inFile.readLine();
+			while (line != null)
+			{
+				lines = lines + line + "\n";
+				line = inFile.readLine();
+			}
+			inFile.close();
+		}
+		catch (IOException e)
+		{
+			System.out.println("The file " + fileName + " was not found.  It will be created.");
+		}
+		
+		PrintWriter outFile = null;
+		try
+		{
+			outFile = new PrintWriter(new BufferedWriter(new FileWriter(fileName)));
+			outFile.print(lines);
+			outFile.print(add);
+			
+			outFile.close();
+		}
+		catch (IOException e)
+		{
+			System.out.println("IOException creating file " + fileName);
+			return;
+		}
 	}
 
 	@Override
