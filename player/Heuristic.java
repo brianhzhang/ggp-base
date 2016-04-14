@@ -33,8 +33,7 @@ public class Heuristic extends Method {
 				}
 			}
 		}
-		System.out.printf("bestmove=%s score=%d\n",
-				timeout - System.currentTimeMillis(), bestMove, bestScore);
+		System.out.printf("bestmove=%s score=%d\n", bestMove, bestScore);
 		return bestMove;
 	}
 
