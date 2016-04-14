@@ -25,6 +25,8 @@ public class Config extends ConfigPanel {
 		randomButton.setFont(new Font("Verdana", Font.PLAIN, 25));
 		JButton abButton = new JButton("Alpha-Beta");
 		abButton.setFont(new Font("Verdana", Font.PLAIN, 25));
+		JButton hButton = new JButton("Heuristic");
+		hButton.setFont(new Font("Verdana", Font.PLAIN, 25));
 
 		legalButton.addActionListener(new ActionListener(){
 			@Override
@@ -47,11 +49,19 @@ public class Config extends ConfigPanel {
 				current.setText("Current Strategy: Alpha-Beta");
 			}
 		});
+		hButton.addActionListener(new ActionListener(){
+			@Override
+			public void actionPerformed(ActionEvent e){
+				m.method = MyPlayer.HEURISTIC;
+				current.setText("Current Strategy: Heuristic");
+			}
+		});
 
 		this.add(current);
 		this.add(legalButton);
 		this.add(randomButton);
 		this.add(abButton);
+		this.add(hButton);
 	}
 
 }
