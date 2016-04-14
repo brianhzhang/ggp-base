@@ -1,6 +1,8 @@
 /bin
 /logs/
 /ggp-base.jar
+/Logs/
+/Game-Logs.txt
 /.gradle/
 /build/
 /out/
