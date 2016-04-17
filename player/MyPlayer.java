@@ -6,7 +6,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.List;
-import java.util.Random;
 
 import org.ggp.base.apps.player.config.ConfigPanel;
 import org.ggp.base.player.gamer.exception.GamePreviewException;
@@ -32,11 +31,12 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int ALPHABETA = 3;
 	public static final int HEURISTIC = 4;
 	public static final int N_OPTIONS = 10;
-	public static final int TIMEOUT_BUFFER = 3000; //time for network communication in ms
+	public static final int TIMEOUT_BUFFER = 3000; // time for network
+													// communication in ms
 
 	public int method = HEURISTIC;
-	
-	Method player;
+
+	private Method player;
 
 	@Override
 	public StateMachine getInitialStateMachine() {
@@ -50,7 +50,7 @@ public class MyPlayer extends StateMachineGamer {
 		if (method == RANDOM) player = new RandomPlayer();
 		if (method == ALPHABETA) player = new AlphaBeta();
 		if (method == HEURISTIC) player = new Heuristic();
-		player.metaGame(timeout - TIMEOUT_BUFFER);
+		player.metaGame(this, timeout - TIMEOUT_BUFFER);
 		return;
 	}
 
@@ -61,19 +61,19 @@ public class MyPlayer extends StateMachineGamer {
 		MachineState state = getCurrentState();
 		Role role = getRole();
 		List<Move> moves = machine.findLegals(role, state);
-		
+
 		/** legal player **/
 		// legal player #1: 8432
 		// legal player #2: 1344
-		
+
 		/** random player **/
 		// random player #1: 6920
 		// random player #2: 1344
-		
+
 		/** alpha beta player **/
 		// alpha beta #1: 7234
 		// alpha beta #2: 4325
-		
+
 		return player.run(machine, state, role, moves, timeout - TIMEOUT_BUFFER);
 	}
 
@@ -99,39 +99,31 @@ public class MyPlayer extends StateMachineGamer {
 		player.cleanUp();
 		return;
 	}
-	
-	public static void saveLine(String fileName, String add)
-	{
+
+	public static void saveLine(String fileName, String add) {
 		String lines = "";
 		BufferedReader inFile = null;
-		try
-		{
+		try {
 			inFile = new BufferedReader(new FileReader(fileName));
 			String line;
 			line = inFile.readLine();
-			while (line != null)
-			{
+			while (line != null) {
 				lines = lines + line + "\n";
 				line = inFile.readLine();
 			}
 			inFile.close();
-		}
-		catch (IOException e)
-		{
+		} catch (IOException e) {
 			System.out.println("The file " + fileName + " was not found.  It will be created.");
 		}
-		
+
 		PrintWriter outFile = null;
-		try
-		{
+		try {
 			outFile = new PrintWriter(new BufferedWriter(new FileWriter(fileName)));
 			outFile.print(lines);
 			outFile.print(add);
-			
+
 			outFile.close();
-		}
-		catch (IOException e)
-		{
+		} catch (IOException e) {
 			System.out.println("IOException creating file " + fileName);
 			return;
 		}

@@ -2,6 +2,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
@@ -11,16 +12,19 @@ import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 
 public class AlphaBeta extends Method {
-	
+
 	public Map<MachineState, Bound> cache = new HashMap<MachineState, Bound>();
 
 	public int stats_nnodes = 0;
 	public int stats_ncachehits = 0;
 
-	public void metaGame(long timeout) {}
-	
-	public Move run(StateMachine machine, MachineState state, Role role, List<Move> moves, long timeout)
-			throws GoalDefinitionException, MoveDefinitionException, TransitionDefinitionException {
+	public void metaGame(StateMachineGamer gamer, long timeout) {
+	}
+
+	@Override
+	public Move run(StateMachine machine, MachineState state, Role role, List<Move> moves,
+			long timeout) throws GoalDefinitionException, MoveDefinitionException,
+					TransitionDefinitionException {
 		stats_nnodes = 0;
 		stats_ncachehits = 0;
 		Move bestMove = moves.get(0);
@@ -73,7 +77,7 @@ public class AlphaBeta extends Method {
 	// as seen in notes ch 6
 	private int minscore(StateMachine machine, MachineState state, Role role, Move move, int alpha,
 			int beta) throws GoalDefinitionException, MoveDefinitionException,
-	TransitionDefinitionException {
+					TransitionDefinitionException {
 		// use joint moves so that we can deal with n-player games; n != 2
 		for (List<Move> jmove : machine.getLegalJointMoves(state, role, move)) {
 			MachineState next = machine.getNextState(state, jmove);
@@ -83,7 +87,8 @@ public class AlphaBeta extends Method {
 		}
 		return beta;
 	}
-	
+
+	@Override
 	public void cleanUp() {
 		cache.clear();
 	}
