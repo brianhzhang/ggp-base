@@ -1,3 +1,5 @@
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
@@ -12,13 +14,91 @@ import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 public class Heuristic extends Method {
 
 	public static final int TIMEOUT_SCORE = MyPlayer.MIN_SCORE - 1;
+	public static final int MIN_HEURISTIC = MyPlayer.MIN_SCORE + 1;
+	public static final int MAX_HEURISTIC = MyPlayer.MAX_SCORE - 1;
 
-	private HeuristicFn[] heuristics = { this::mobility, this::focus, this::goal };
-	private double[] weights = { 50, 0, 50 };
-	private double[] exps = { 0.1, 1, 1 };
+	private interface HeuristicFn {
+		public double eval(Role role, MachineState state, StateMachine machine, List<Move> actions);
+	}
+
+	private static final int N_HEURISTIC = 3;
+	private HeuristicFn[] heuristics = { this::mobility, this::goal, this::oppGoal };
+	private double[] weights = new double[N_HEURISTIC];
+	private double adjustment = 0;
+	private boolean heuristicUsed = false;
+	private List<Role> roles;
+
+	private int period;
+
+	private class GameData {
+		public int nstep; // total number of steps
+		public int nmove; // total number of times we had >1 legal moves
+		public double[] heuristics = new double[N_HEURISTIC];
+		public int goal;
+	}
+
+	private GameData randomGame(StateMachine machine, MachineState state, Role role, long timeout)
+			throws MoveDefinitionException, GoalDefinitionException, TransitionDefinitionException {
+		GameData ret = new GameData();
+		while (!machine.isTerminal(state)) {
+			if (System.currentTimeMillis() > timeout) return null;
+			ret.nstep++;
+			List<Move> actions = machine.findLegals(role, state);
+			if (actions.size() > 1) ret.nmove++;
+			for (int i = 0; i < N_HEURISTIC; i++) {
+				ret.heuristics[i] += heuristics[i].eval(role, state, machine, actions);
+			}
+			state = machine.getRandomNextState(state);
+		}
+		ret.goal = machine.findReward(role, state);
+		return ret;
+	}
 
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
+		StateMachine machine = gamer.getStateMachine();
+		Role role = gamer.getRole();
+		roles = new ArrayList<>(machine.findRoles());
+		roles.remove(role);
+		List<GameData> data = new ArrayList<>();
+		MachineState initial = machine.getInitialState();
+		System.out.println("begin random exploration");
+		while (System.currentTimeMillis() < timeout) {
+			GameData game = null;
+			try {
+				game = randomGame(machine, initial, role, timeout);
+			} catch (Exception e) {
+				e.printStackTrace();
+				continue;
+			}
+			if (game == null) break;
+			data.add(game);
+		}
+		int ngame = data.size();
+		System.out.println("games analyzed: " + ngame);
+		double[] goals = new double[ngame];
+		double[][] totals = new double[N_HEURISTIC][ngame];
+		for (int i = 0; i < ngame; i++) {
+			GameData game = data.get(i);
+			goals[i] = game.goal;
+			for (int j = 0; j < N_HEURISTIC; j++) {
+				totals[j][i] = game.heuristics[j] / game.nstep;
+			}
+		}
+		double tot_rsq = 0;
+		adjustment = 0;
+		for (int i = 0; i < N_HEURISTIC; i++) {
+			Correlation c = Statistics.linreg(totals[i], goals);
+			System.out.printf("component %d: g = %fx + %f, r^2=%f\n", i, c.m, c.b, c.rsq);
+			weights[i] = c.m * c.rsq;
+			adjustment += c.b * c.rsq;
+			tot_rsq += c.rsq;
+		}
+		for (int i = 0; i < N_HEURISTIC; i++) {
+			weights[i] /= tot_rsq;
+		}
+		adjustment /= tot_rsq;
+		System.out.printf("heuristic = %f + %s\n", adjustment, Arrays.toString(weights));
 	}
 
 	@Override
@@ -31,6 +111,7 @@ public class Heuristic extends Method {
 		int level = 0;
 		while (System.currentTimeMillis() < timeout) {
 			level++;
+			heuristicUsed = false;
 			// alpha-beta heuristic: analyze previous best move first
 			int score = minscore(machine, state, role, bestMove, MyPlayer.MIN_SCORE,
 					MyPlayer.MAX_SCORE, level, timeout);
@@ -47,6 +128,7 @@ public class Heuristic extends Method {
 					if (score == MyPlayer.MAX_SCORE) break;
 				}
 			}
+			if (!heuristicUsed) break; // game fully analyzed
 		}
 		System.out.printf("bestmove=%s score=%d depth=%d\n", bestMove, bestScore, level);
 		return bestMove;
@@ -56,9 +138,9 @@ public class Heuristic extends Method {
 			int level, long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
 		if (machine.isTerminal(state)) return machine.findReward(role, state);
-		if (level <= 0) return heuristic(role, state, machine);
-		if (System.currentTimeMillis() > timeout) return TIMEOUT_SCORE;
 		List<Move> actions = machine.findLegals(role, state);
+		if (level <= 0) return heuristic(role, state, machine, actions);
+		if (System.currentTimeMillis() > timeout) return TIMEOUT_SCORE;
 		for (Move move : actions) {
 			int score = minscore(machine, state, role, move, alpha, beta, level, timeout);
 			if (score == TIMEOUT_SCORE) return score;
@@ -89,19 +171,22 @@ public class Heuristic extends Method {
 
 	}
 
-	private int heuristic(Role role, MachineState state, StateMachine machine)
+	private int heuristic(Role role, MachineState state, StateMachine machine, List<Move> actions)
 			throws MoveDefinitionException, GoalDefinitionException {
-		double heuristic = 0;
-		for (int i = 0; i < weights.length; i++) {
-			heuristic += weights[i] * Math.pow(heuristics[i].eval(role, state, machine), exps[i]);
+		heuristicUsed = true;
+		double heuristic = adjustment;
+		for (int i = 0; i < N_HEURISTIC; i++) {
+			heuristic += weights[i] * heuristics[i].eval(role, state, machine, actions);
 		}
+		if (heuristic < MIN_HEURISTIC) return MIN_HEURISTIC;
+		if (heuristic > MAX_HEURISTIC) return MAX_HEURISTIC;
 		return (int) heuristic;
 	}
 
-	private double mobility(Role role, MachineState state, StateMachine machine) {
+	private double mobility(Role role, MachineState state, StateMachine machine,
+			List<Move> actions) {
 		try {
 			List<Move> feasibles = machine.findActions(role);
-			List<Move> actions = machine.findLegals(role, state);
 			return 1.0 * actions.size() / feasibles.size();
 		} catch (MoveDefinitionException e) {
 			e.printStackTrace();
@@ -109,19 +194,24 @@ public class Heuristic extends Method {
 		}
 	}
 
-	private double focus(Role role, MachineState state, StateMachine machine) {
-		return 1 - mobility(role, state, machine);
-	}
-
-	private double goal(Role role, MachineState state, StateMachine machine) {
+	private double goal(Role role, MachineState state, StateMachine machine, List<Move> actions) {
 		try {
 			return machine.findReward(role, state) / 100.;
 		} catch (GoalDefinitionException e) {
 			return MyPlayer.MIN_SCORE;
 		}
 	}
-}
 
-interface HeuristicFn {
-	public double eval(Role role, MachineState state, StateMachine machine);
+	private double oppGoal(Role role, MachineState state, StateMachine machine,
+			List<Move> actions) {
+
+		int sum = 0;
+		for (Role opp : roles) {
+			try {
+				sum += machine.findReward(opp, state);
+			} catch (GoalDefinitionException e) {
+			}
+		}
+		return sum / (100. * roles.size());
+	}
 }
