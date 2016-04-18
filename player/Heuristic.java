@@ -185,18 +185,12 @@ public class Heuristic extends Method {
 
 	private double mobility(Role role, MachineState state, StateMachine machine,
 			List<Move> actions) {
-		try {
-			List<Move> feasibles = machine.findActions(role);
-			return 1.0 * actions.size() / feasibles.size();
-		} catch (MoveDefinitionException e) {
-			e.printStackTrace();
-			return MyPlayer.MIN_SCORE;
-		}
+		return actions.size();
 	}
 
 	private double goal(Role role, MachineState state, StateMachine machine, List<Move> actions) {
 		try {
-			return machine.findReward(role, state) / 100.;
+			return machine.findReward(role, state);
 		} catch (GoalDefinitionException e) {
 			return MyPlayer.MIN_SCORE;
 		}
@@ -212,6 +206,6 @@ public class Heuristic extends Method {
 			} catch (GoalDefinitionException e) {
 			}
 		}
-		return sum / (100. * roles.size());
+		return sum;
 	}
 }
