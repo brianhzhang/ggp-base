@@ -90,7 +90,7 @@ public class Heuristic extends Method {
 		for (int i = 0; i < N_HEURISTIC; i++) {
 			Correlation c = Statistics.linreg(totals[i], goals);
 			System.out.printf("component %d: g = %fx + %f, r^2=%f\n", i, c.m, c.b, c.rsq);
-			weights[i] = c.m * c.rsq;
+			weights[i] = c.m * c.rsq / 2; // dividing by 2 to counter the effect of averaging
 			adjustment += c.b * c.rsq;
 			tot_rsq += c.rsq;
 		}
@@ -204,7 +204,7 @@ public class Heuristic extends Method {
 
 	private double oppGoal(Role role, MachineState state, StateMachine machine,
 			List<Move> actions) {
-
+		if (roles.isEmpty()) return 0;
 		int sum = 0;
 		for (Role opp : roles) {
 			try {
