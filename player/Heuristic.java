@@ -1,6 +1,8 @@
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
 import org.ggp.base.util.statemachine.MachineState;
@@ -17,12 +19,8 @@ public class Heuristic extends Method {
 	public static final int MIN_HEURISTIC = MyPlayer.MIN_SCORE + 1;
 	public static final int MAX_HEURISTIC = MyPlayer.MAX_SCORE - 1;
 
-	private interface HeuristicFn {
-		public double eval(Role role, MachineState state, StateMachine machine, List<Move> actions);
-	}
-
-	private static final int N_HEURISTIC = 3;
-	private HeuristicFn[] heuristics = { this::mobility, this::goal, this::oppGoal };
+	public static final int N_HEURISTIC = 3;
+	public HeuristicFn[] heuristics = { this::mobility, this::goal, this::oppGoal };
 	private double[] weights = new double[N_HEURISTIC];
 	private double adjustment = 0;
 	private boolean heuristicUsed = false;
@@ -30,60 +28,39 @@ public class Heuristic extends Method {
 
 	private int period;
 
-	private class GameData {
-		public int nstep; // total number of steps
-		public int nmove; // total number of times we had >1 legal moves
-		public double[] heuristics = new double[N_HEURISTIC];
-		public int goal;
-	}
-
-	private GameData randomGame(StateMachine machine, MachineState state, Role role, long timeout)
-			throws MoveDefinitionException, GoalDefinitionException, TransitionDefinitionException {
-		GameData ret = new GameData();
-		while (!machine.isTerminal(state)) {
-			if (System.currentTimeMillis() > timeout) return null;
-			ret.nstep++;
-			List<Move> actions = machine.findLegals(role, state);
-			if (actions.size() > 1) ret.nmove++;
-			for (int i = 0; i < N_HEURISTIC; i++) {
-				ret.heuristics[i] += heuristics[i].eval(role, state, machine, actions);
-			}
-			state = machine.getRandomNextState(state);
-		}
-		ret.goal = machine.findReward(role, state);
-		return ret;
-	}
-
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
-		StateMachine machine = gamer.getStateMachine();
+		ConcurrentLinkedQueue<HGameData> data = new ConcurrentLinkedQueue<>();
+		List<HThread> threads = new ArrayList<HThread>();
 		Role role = gamer.getRole();
-		roles = new ArrayList<>(machine.findRoles());
+		roles = new ArrayList<>(gamer.getStateMachine().findRoles());
 		roles.remove(role);
-		List<GameData> data = new ArrayList<>();
-		MachineState initial = machine.getInitialState();
 		System.out.println("begin random exploration");
-		while (System.currentTimeMillis() < timeout) {
-			GameData game = null;
-			try {
-				game = randomGame(machine, initial, role, timeout);
-			} catch (Exception e) {
-				e.printStackTrace();
-				continue;
-			}
-			if (game == null) break;
-			data.add(game);
+		for (int i = 0; i < MyPlayer.N_THREADS; i ++) {
+			HThread t = new HThread(gamer, roles, timeout, this, data);
+			threads.add(t);
+			t.start();
 		}
+		for (int i = 0; i < MyPlayer.N_THREADS; i ++) {
+			try {
+				threads.get(i).join();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+		
 		int ngame = data.size();
 		System.out.println("games analyzed: " + ngame);
 		double[] goals = new double[ngame];
 		double[][] totals = new double[N_HEURISTIC][ngame];
-		for (int i = 0; i < ngame; i++) {
-			GameData game = data.get(i);
-			goals[i] = game.goal;
+		int count = 0;
+		while (!data.isEmpty()) {
+			HGameData game = data.poll();
+			goals[count] = game.goal;
 			for (int j = 0; j < N_HEURISTIC; j++) {
-				totals[j][i] = game.heuristics[j] / game.nstep;
+				totals[j][count] = game.heuristics[j] / game.nstep;
 			}
+			count ++;
 		}
 		double tot_rsq = 0;
 		adjustment = 0;
@@ -208,4 +185,68 @@ public class Heuristic extends Method {
 		}
 		return sum;
 	}
+}
+
+class HThread extends Thread {
+	
+	StateMachineGamer gamer;
+	List<Role> roles;
+	long timeout;
+	Heuristic h;
+	ConcurrentLinkedQueue<HGameData> data;
+	
+	public HThread(StateMachineGamer gamer, List<Role> roles, long timeout, Heuristic h,
+			ConcurrentLinkedQueue<HGameData> data2) {
+		this.gamer = gamer;
+		this.roles = roles;
+		this.timeout = timeout;
+		this.h = h;
+		this.data = data2;
+	}
+	
+	public void run() {
+		Role role = gamer.getRole();
+		StateMachine machine = gamer.getStateMachine();
+		MachineState initial = machine.getInitialState();
+		
+		while (System.currentTimeMillis() < timeout) {
+			HGameData game = null;
+			try {
+				game = randomGame(machine, initial, role, timeout);
+			} catch (Exception e) {
+				e.printStackTrace();
+				continue;
+			}
+			if (game == null) break;
+			data.add(game);
+		}
+	}
+	
+	private HGameData randomGame(StateMachine machine, MachineState state, Role role, long timeout)
+			throws MoveDefinitionException, GoalDefinitionException, TransitionDefinitionException {
+		HGameData ret = new HGameData();
+		while (!machine.isTerminal(state)) {
+			if (System.currentTimeMillis() > timeout) return null;
+			ret.nstep++;
+			List<Move> actions = machine.findLegals(role, state);
+			if (actions.size() > 1) ret.nmove++;
+			for (int i = 0; i < Heuristic.N_HEURISTIC; i++) {
+				ret.heuristics[i] += h.heuristics[i].eval(role, state, machine, actions);
+			}
+			state = machine.getRandomNextState(state);
+		}
+		ret.goal = machine.findReward(role, state);
+		return ret;
+	}
+}
+
+class HGameData {
+	public int nstep; // total number of steps
+	public int nmove; // total number of times we had >1 legal moves
+	public double[] heuristics = new double[Heuristic.N_HEURISTIC];
+	public int goal;
+}
+
+interface HeuristicFn {
+	public double eval(Role role, MachineState state, StateMachine machine, List<Move> actions);
 }

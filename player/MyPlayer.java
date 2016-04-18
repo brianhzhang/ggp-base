@@ -33,6 +33,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int N_OPTIONS = 10;
 	public static final int TIMEOUT_BUFFER = 3000; // time for network
 													// communication in ms
+	public static final int N_THREADS = 4;
 
 	public int method = HEURISTIC;
 
