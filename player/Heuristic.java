@@ -1,6 +1,8 @@
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
@@ -11,6 +13,7 @@ import org.ggp.base.util.statemachine.StateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
+import org.ggp.base.util.gdl.grammar.GdlSentence;
 
 public class Heuristic extends Method {
 
@@ -20,7 +23,7 @@ public class Heuristic extends Method {
 
 	public static final int N_HEURISTIC = 4;
 	public HeuristicFn[] heuristics = { this::mobility, this::oppMobility, this::goal,
-			this::oppGoal };
+			this::oppGoal, this::goalProximity};
 	private double[] weights = new double[N_HEURISTIC];
 	private double adjustment = 0;
 
@@ -28,6 +31,9 @@ public class Heuristic extends Method {
 
 	private boolean heuristicUsed = false;
 	private int nNodes;
+	
+	//For goal
+	private ConcurrentHashMap<GdlSentence, HGoalProp> goalProps = new ConcurrentHashMap<GdlSentence, HGoalProp>();
 
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
@@ -38,7 +44,7 @@ public class Heuristic extends Method {
 		roles.remove(role);
 		System.out.println("begin random exploration");
 		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-			HThread t = new HThread(gamer, roles, timeout, this, data);
+			HThread t = new HThread(gamer, roles, timeout, this, data, goalProps);
 			threads.add(t);
 			t.start();
 		}
@@ -204,6 +210,22 @@ public class Heuristic extends Method {
 		}
 		return sum;
 	}
+	
+	private double goalProximity(Role role, MachineState state, StateMachine machine,
+			List<Move> actions) {
+		Set<GdlSentence> props = state.getContents();
+		double score = 0;
+		int count = 0;
+		for (GdlSentence prop : props) {
+			HGoalProp p = goalProps.get(prop);
+			if (p == null) {} //do we want to do anything when the prop doesn't exist in terminal states?
+			else {
+				score += 1.0 * p.totalScore / p.count;
+				count ++;
+			}
+		}
+		return score / count;
+	}
 }
 
 class HThread extends Thread {
@@ -213,14 +235,16 @@ class HThread extends Thread {
 	long timeout;
 	Heuristic h;
 	ConcurrentLinkedQueue<HGameData> data;
+	private ConcurrentHashMap<GdlSentence, HGoalProp> goalProps;
 
 	public HThread(StateMachineGamer gamer, List<Role> roles, long timeout, Heuristic h,
-			ConcurrentLinkedQueue<HGameData> data2) {
+			ConcurrentLinkedQueue<HGameData> data2, ConcurrentHashMap<GdlSentence, HGoalProp> goalProps) {
 		this.gamer = gamer;
 		this.roles = roles;
 		this.timeout = timeout;
 		this.h = h;
 		this.data = data2;
+		this.goalProps = goalProps;
 	}
 
 	@Override
@@ -256,6 +280,17 @@ class HThread extends Thread {
 			state = machine.getRandomNextState(state);
 		}
 		ret.goal = machine.findReward(role, state);
+		for (GdlSentence s : state.getContents()) {
+			HGoalProp p = goalProps.get(s);
+			if (p == null) {
+				p = new HGoalProp(ret.goal, 1);
+				goalProps.put(s, p);
+			}
+			else {
+				p.count ++;
+				p.totalScore += ret.goal;
+			}
+		}
 		return ret;
 	}
 }
@@ -269,4 +304,13 @@ class HGameData {
 
 interface HeuristicFn {
 	public double eval(Role role, MachineState state, StateMachine machine, List<Move> actions);
+}
+
+class HGoalProp {
+	public int totalScore;
+	public int count;
+	public HGoalProp(int totalScore, int count) {
+		this.totalScore = totalScore;
+		this.count = count;
+	}
 }
