@@ -35,7 +35,8 @@ public class Statistics {
 		out.rsq = r * r;
 		out.m = r * stdev(y) / stdev(x);
 		out.b = mean(y) - out.m * mean(x);
-		if (!Double.isFinite(out.b)) out.rsq = out.m = out.b = 0;
+		out.t = r / Math.sqrt((1 - out.rsq) / (x.length - 2));
+		if (!Double.isFinite(out.b) || !Double.isFinite(out.t)) out.rsq = out.m = out.b = out.t = 0;
 		return out;
 	}
 }
@@ -44,4 +45,5 @@ class Correlation {
 	double m;
 	double b;
 	double rsq;
+	double t;
 }

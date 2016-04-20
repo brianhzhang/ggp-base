@@ -1,11 +1,14 @@
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
+import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
@@ -13,7 +16,6 @@ import org.ggp.base.util.statemachine.StateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
-import org.ggp.base.util.gdl.grammar.GdlSentence;
 
 public class Heuristic extends Method {
 
@@ -23,20 +25,24 @@ public class Heuristic extends Method {
 
 	public static final int N_HEURISTIC = 4;
 	public HeuristicFn[] heuristics = { this::mobility, this::oppMobility, this::goal,
-			this::oppGoal, this::goalProximity};
+			this::oppGoal, this::goalProximity };
 	private double[] weights = new double[N_HEURISTIC];
 	private double adjustment = 0;
 
 	private List<Role> roles;
+	private Map<MachineState, HCacheEnt> cache;
 
-	private boolean heuristicUsed = false;
+	private boolean notFullDepth = false;
+
 	private int nNodes;
-	
-	//For goal
+	private int nCacheHits;
+
+	// For goal
 	private ConcurrentHashMap<GdlSentence, HGoalProp> goalProps = new ConcurrentHashMap<GdlSentence, HGoalProp>();
 
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
+		cache = new HashMap<>();
 		ConcurrentLinkedQueue<HGameData> data = new ConcurrentLinkedQueue<>();
 		List<HThread> threads = new ArrayList<HThread>();
 		Role role = gamer.getRole();
@@ -74,7 +80,7 @@ public class Heuristic extends Method {
 		for (int i = 0; i < N_HEURISTIC; i++) {
 			Correlation c = Statistics.linreg(totals[i], goals);
 			System.out.printf("component %d: g = %fx + %f, r^2=%f\n", i, c.m, c.b, c.rsq);
-			if (c.rsq < 0.05) c.m = c.b = c.rsq = 0;
+			if (Math.abs(c.t) < 2) c.m = c.b = c.rsq = 0;
 			weights[i] = c.m * c.rsq / 2; // dividing by 2 to counter the effect of averaging
 			adjustment += c.b * c.rsq;
 			tot_rsq += c.rsq;
@@ -90,14 +96,19 @@ public class Heuristic extends Method {
 	public Move run(StateMachine machine, MachineState state, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
+		System.out.println("--------------------");
+
 		Move bestMove = moves.get(0);
 		int bestScore = MyPlayer.MIN_SCORE;
 
-		int level = 0;
-		nNodes = 0;
+		int level;
+		HCacheEnt baseEnt = cache.get(state);
+		if (baseEnt == null) level = 0;
+		else level = baseEnt.depth;
+		int startLevel = level;
+		nNodes = nCacheHits = 0;
 		while (System.currentTimeMillis() < timeout) {
-			level++;
-			heuristicUsed = false;
+			notFullDepth = false;
 			// alpha-beta heuristic: analyze previous best move first
 			int score = minscore(machine, state, role, bestMove, MyPlayer.MIN_SCORE,
 					MyPlayer.MAX_SCORE, level, timeout);
@@ -114,37 +125,59 @@ public class Heuristic extends Method {
 					if (score == MyPlayer.MAX_SCORE) break;
 				}
 			}
-			if (!heuristicUsed) break; // game fully analyzed
+			if (!notFullDepth && startLevel != level) break; // game fully analyzed
+			System.out.printf("bestmove=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
+					bestMove, bestScore, level, nNodes, nCacheHits, cache.size());
+			level++;
 		}
-		System.out.printf("bestmove=%s score=%d depth=%d nodes=%d\n", bestMove, bestScore, level,
-				nNodes);
+		System.out.printf("played=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
+				bestMove, bestScore, level, nNodes, nCacheHits, cache.size());
 		return bestMove;
 	}
 
 	private int maxscore(StateMachine machine, MachineState state, Role role, int alpha, int beta,
 			int level, long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
+		if (System.currentTimeMillis() > timeout) return TIMEOUT_SCORE;
 		nNodes++;
 		if (machine.isTerminal(state)) return machine.findReward(role, state);
+		HCacheEnt cacheEnt = cache.get(state);
+		if (cacheEnt == null) {
+			cacheEnt = new HCacheEnt();
+			cache.put(state, cacheEnt);
+		} else if (cacheEnt.depth >= level) {
+			nCacheHits++;
+			if (cacheEnt.lower >= beta) return beta;
+			if (cacheEnt.upper <= alpha) return alpha;
+			if (cacheEnt.lower == cacheEnt.upper) return cacheEnt.lower;
+			alpha = Math.max(alpha, cacheEnt.lower);
+			beta = Math.min(beta, cacheEnt.upper);
+		}
 		List<Move> actions = machine.findLegals(role, state);
 		if (level <= 0) return heuristic(role, state, machine, actions);
+
+		int a = alpha;
 		for (Move move : actions) {
-			if (System.currentTimeMillis() > timeout) return TIMEOUT_SCORE;
-			int score = minscore(machine, state, role, move, alpha, beta, level, timeout);
+			int score = minscore(machine, state, role, move, a, beta, level, timeout);
 			if (score == TIMEOUT_SCORE) return score;
-			alpha = Math.max(alpha, score);
-			if (alpha >= beta) break;
+			a = Math.max(a, score);
+			if (a >= beta) break;
 		}
-		return alpha;
+		if (level >= cacheEnt.depth) {
+			if (a < beta) cacheEnt.upper = a;
+			if (a > alpha) cacheEnt.lower = a;
+			cacheEnt.depth = level;
+		}
+		return a;
 	}
 
 	// as seen in notes ch 6
 	private int minscore(StateMachine machine, MachineState state, Role role, Move move, int alpha,
 			int beta, int level, long timeout) throws GoalDefinitionException,
 					MoveDefinitionException, TransitionDefinitionException {
+		if (System.currentTimeMillis() > timeout) return TIMEOUT_SCORE;
 		// use joint moves so that we can deal with n-player games; n != 2
 		for (List<Move> jmove : machine.getLegalJointMoves(state, role, move)) {
-			if (System.currentTimeMillis() > timeout) return TIMEOUT_SCORE;
 			MachineState next = machine.getNextState(state, jmove);
 			int score = maxscore(machine, next, role, alpha, beta, level - 1, timeout);
 			if (score == TIMEOUT_SCORE) return score;
@@ -161,7 +194,7 @@ public class Heuristic extends Method {
 
 	private int heuristic(Role role, MachineState state, StateMachine machine, List<Move> actions)
 			throws MoveDefinitionException, GoalDefinitionException {
-		heuristicUsed = true;
+		notFullDepth = true;
 		double heuristic = adjustment;
 		for (int i = 0; i < N_HEURISTIC; i++) {
 			if (weights[i] == 0) continue;
@@ -210,7 +243,7 @@ public class Heuristic extends Method {
 		}
 		return sum;
 	}
-	
+
 	private double goalProximity(Role role, MachineState state, StateMachine machine,
 			List<Move> actions) {
 		Set<GdlSentence> props = state.getContents();
@@ -218,13 +251,15 @@ public class Heuristic extends Method {
 		int count = 0;
 		for (GdlSentence prop : props) {
 			HGoalProp p = goalProps.get(prop);
-			if (p == null) {} //do we want to do anything when the prop doesn't exist in terminal states?
+			if (p == null) {
+			} // do we want to do anything when the prop doesn't exist in terminal states?
 			else {
 				score += 1.0 * p.totalScore / p.count;
-				count ++;
+				count++;
 			}
 		}
-		return score / count;
+		if (count == 0) return 0;
+		return 1.0 * score / count;
 	}
 }
 
@@ -238,7 +273,8 @@ class HThread extends Thread {
 	private ConcurrentHashMap<GdlSentence, HGoalProp> goalProps;
 
 	public HThread(StateMachineGamer gamer, List<Role> roles, long timeout, Heuristic h,
-			ConcurrentLinkedQueue<HGameData> data2, ConcurrentHashMap<GdlSentence, HGoalProp> goalProps) {
+			ConcurrentLinkedQueue<HGameData> data2,
+			ConcurrentHashMap<GdlSentence, HGoalProp> goalProps) {
 		this.gamer = gamer;
 		this.roles = roles;
 		this.timeout = timeout;
@@ -285,9 +321,8 @@ class HThread extends Thread {
 			if (p == null) {
 				p = new HGoalProp(ret.goal, 1);
 				goalProps.put(s, p);
-			}
-			else {
-				p.count ++;
+			} else {
+				p.count++;
 				p.totalScore += ret.goal;
 			}
 		}
@@ -309,8 +344,15 @@ interface HeuristicFn {
 class HGoalProp {
 	public int totalScore;
 	public int count;
+
 	public HGoalProp(int totalScore, int count) {
 		this.totalScore = totalScore;
 		this.count = count;
 	}
+}
+
+class HCacheEnt {
+	public int lower = MyPlayer.MIN_SCORE;
+	public int upper = MyPlayer.MAX_SCORE;
+	public int depth = Integer.MIN_VALUE;
 }
