@@ -24,18 +24,24 @@ public class Heuristic extends Method {
 	public static final int MAX_HEURISTIC = MyPlayer.MAX_SCORE - 1;
 
 	public static final int N_HEURISTIC = 4;
+
+	// metagaming results
 	public HeuristicFn[] heuristics = { this::mobility, this::oppMobility, this::goal,
 			this::oppGoal, this::goalProximity };
 	private double[] weights = new double[N_HEURISTIC];
 	private double adjustment = 0;
+	private int period; // one less than the period; i.e. if we make every move then period = 0
 
-	private List<Role> roles;
+	private List<Role> opps;
 	private Map<MachineState, HCacheEnt> cache;
 
-	private boolean notFullDepth = false;
+	private boolean heuristicUsed = false;
 
 	private int nNodes;
 	private int nCacheHits;
+
+	private List<Double> mobility;
+	private List<Double> oppMobility;
 
 	// For goal
 	private ConcurrentHashMap<GdlSentence, HGoalProp> goalProps = new ConcurrentHashMap<GdlSentence, HGoalProp>();
@@ -46,11 +52,11 @@ public class Heuristic extends Method {
 		ConcurrentLinkedQueue<HGameData> data = new ConcurrentLinkedQueue<>();
 		List<HThread> threads = new ArrayList<HThread>();
 		Role role = gamer.getRole();
-		roles = new ArrayList<>(gamer.getStateMachine().findRoles());
-		roles.remove(role);
+		opps = new ArrayList<>(gamer.getStateMachine().findRoles());
+		opps.remove(role);
 		System.out.println("begin random exploration");
 		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-			HThread t = new HThread(gamer, roles, timeout, this, data, goalProps);
+			HThread t = new HThread(gamer, opps, timeout, this, data, goalProps);
 			threads.add(t);
 			t.start();
 		}
@@ -67,6 +73,8 @@ public class Heuristic extends Method {
 		double[] goals = new double[ngame];
 		double[][] totals = new double[N_HEURISTIC][ngame];
 		int count = 0;
+		int movetot = 0;
+		int steptot = 0;
 		while (!data.isEmpty()) {
 			HGameData game = data.poll();
 			goals[count] = game.goal;
@@ -74,7 +82,11 @@ public class Heuristic extends Method {
 				totals[j][count] = game.heuristics[j] / game.nstep;
 			}
 			count++;
+			steptot += game.nstep;
+			movetot += game.nmove;
 		}
+		period = (int) Math.round(1.0 * steptot / movetot);
+		System.out.printf("total steps %d / our moves %d = period %d\n", steptot, movetot, period);
 		double tot_rsq = 0;
 		adjustment = 0;
 		Correlation[] c = new Correlation[N_HEURISTIC];
@@ -95,6 +107,8 @@ public class Heuristic extends Method {
 			weights[i] /= tot_rsq;
 		}
 		adjustment /= tot_rsq;
+		heuristics[0] = this::avgMobility;
+		heuristics[1] = this::avgOppMobility;
 		System.out.printf("heuristic = %f + %s\n", adjustment, Arrays.toString(weights));
 	}
 
@@ -113,8 +127,10 @@ public class Heuristic extends Method {
 		else level = baseEnt.depth;
 		int startLevel = level;
 		nNodes = nCacheHits = 0;
+		mobility = new ArrayList<>();
+		oppMobility = new ArrayList<>();
 		while (System.currentTimeMillis() < timeout) {
-			notFullDepth = false;
+			heuristicUsed = false;
 			// alpha-beta heuristic: analyze previous best move first
 			int score = minscore(machine, state, role, bestMove, MyPlayer.MIN_SCORE,
 					MyPlayer.MAX_SCORE, level, timeout);
@@ -131,9 +147,10 @@ public class Heuristic extends Method {
 					if (score == MyPlayer.MAX_SCORE) break;
 				}
 			}
-			if (!notFullDepth && startLevel != level) break; // game fully analyzed
+			if (!heuristicUsed && startLevel != level) break; // game fully analyzed
 			System.out.printf("bestmove=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
 					bestMove, bestScore, level, nNodes, nCacheHits, cache.size());
+			System.out.printf("size=%d %d\n", mobility.size(), oppMobility.size());
 			level++;
 		}
 		System.out.printf("played=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
@@ -160,7 +177,13 @@ public class Heuristic extends Method {
 			beta = Math.min(beta, cacheEnt.upper);
 		}
 		List<Move> actions = machine.findLegals(role, state);
-		if (level <= 0) return heuristic(role, state, machine, actions);
+		mobility.add(mobility(role, state, machine, actions));
+		oppMobility.add(oppMobility(role, state, machine, actions));
+		if (level <= 0) {
+			int heuristic = heuristic(role, state, machine, actions);
+			mobility.remove(mobility.size() - 1);
+			oppMobility.remove(oppMobility.size() - 1);
+		}
 
 		int a = alpha;
 		for (Move move : actions) {
@@ -174,6 +197,8 @@ public class Heuristic extends Method {
 			if (a > alpha) cacheEnt.lower = a;
 			cacheEnt.depth = level;
 		}
+		mobility.remove(mobility.size() - 1);
+		oppMobility.remove(oppMobility.size() - 1);
 		return a;
 	}
 
@@ -200,7 +225,7 @@ public class Heuristic extends Method {
 
 	private int heuristic(Role role, MachineState state, StateMachine machine, List<Move> actions)
 			throws MoveDefinitionException, GoalDefinitionException {
-		notFullDepth = true;
+		heuristicUsed = true;
 		double heuristic = adjustment;
 		for (int i = 0; i < N_HEURISTIC; i++) {
 			if (weights[i] == 0) continue;
@@ -211,6 +236,24 @@ public class Heuristic extends Method {
 		return (int) heuristic;
 	}
 
+	private double avgMobility(Role role, MachineState state, StateMachine machine,
+			List<Move> actions) {
+		double total = 0;
+		for (int i = Math.max(0, mobility.size() - period); i < mobility.size(); i++) {
+			total += mobility.get(i);
+		}
+		return total / period;
+	}
+
+	private double avgOppMobility(Role role, MachineState state, StateMachine machine,
+			List<Move> actions) {
+		double total = 0;
+		for (int i = Math.max(0, oppMobility.size() - period); i < oppMobility.size(); i++) {
+			total += oppMobility.get(i);
+		}
+		return total / period;
+	}
+
 	private double mobility(Role role, MachineState state, StateMachine machine,
 			List<Move> actions) {
 		return actions.size();
@@ -219,7 +262,7 @@ public class Heuristic extends Method {
 	private double oppMobility(Role role, MachineState state, StateMachine machine,
 			List<Move> actions) {
 		int tot_moves = 1;
-		for (Role opp : roles) {
+		for (Role opp : opps) {
 			try {
 				tot_moves *= machine.findLegals(opp, state).size();
 			} catch (MoveDefinitionException e) {
@@ -239,9 +282,9 @@ public class Heuristic extends Method {
 
 	private double oppGoal(Role role, MachineState state, StateMachine machine,
 			List<Move> actions) {
-		if (roles.isEmpty()) return 0;
+		if (opps.isEmpty()) return 0;
 		int sum = 0;
-		for (Role opp : roles) {
+		for (Role opp : opps) {
 			try {
 				sum += machine.findReward(opp, state);
 			} catch (GoalDefinitionException e) {
