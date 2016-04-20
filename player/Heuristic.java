@@ -116,7 +116,7 @@ public class Heuristic extends Method {
 	public Move run(StateMachine machine, MachineState state, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
-		if (moves.size() == 1) return moves.get(0);
+		// if (moves.size() == 1) return moves.get(0);
 		System.out.println("--------------------");
 
 		Move bestMove = moves.get(0);
@@ -165,10 +165,7 @@ public class Heuristic extends Method {
 		nNodes++;
 		if (machine.isTerminal(state)) return machine.findReward(role, state);
 		HCacheEnt cacheEnt = cache.get(state);
-		if (cacheEnt == null) {
-			cacheEnt = new HCacheEnt();
-			cache.put(state, cacheEnt);
-		} else if (cacheEnt.depth >= level) {
+		if (cacheEnt != null && cacheEnt.depth >= level) {
 			nCacheHits++;
 			if (cacheEnt.lower >= beta) return beta;
 			if (cacheEnt.upper <= alpha) return alpha;
@@ -184,6 +181,10 @@ public class Heuristic extends Method {
 			mobility.remove(mobility.size() - 1);
 			oppMobility.remove(oppMobility.size() - 1);
 			return heuristic;
+		}
+		if (cacheEnt == null) {
+			cacheEnt = new HCacheEnt();
+			cache.put(state, cacheEnt);
 		}
 
 		int a = alpha;
