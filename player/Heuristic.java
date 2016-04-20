@@ -116,6 +116,7 @@ public class Heuristic extends Method {
 	public Move run(StateMachine machine, MachineState state, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
+		if (moves.size() == 1) return moves.get(0);
 		System.out.println("--------------------");
 
 		Move bestMove = moves.get(0);
@@ -150,7 +151,6 @@ public class Heuristic extends Method {
 			if (!heuristicUsed && startLevel != level) break; // game fully analyzed
 			System.out.printf("bestmove=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
 					bestMove, bestScore, level, nNodes, nCacheHits, cache.size());
-			System.out.printf("size=%d %d\n", mobility.size(), oppMobility.size());
 			level++;
 		}
 		System.out.printf("played=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
@@ -183,6 +183,7 @@ public class Heuristic extends Method {
 			int heuristic = heuristic(role, state, machine, actions);
 			mobility.remove(mobility.size() - 1);
 			oppMobility.remove(oppMobility.size() - 1);
+			return heuristic;
 		}
 
 		int a = alpha;
