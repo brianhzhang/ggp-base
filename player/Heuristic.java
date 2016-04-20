@@ -77,13 +77,19 @@ public class Heuristic extends Method {
 		}
 		double tot_rsq = 0;
 		adjustment = 0;
+		Correlation[] c = new Correlation[N_HEURISTIC];
 		for (int i = 0; i < N_HEURISTIC; i++) {
-			Correlation c = Statistics.linreg(totals[i], goals);
-			System.out.printf("component %d: g = %fx + %f, r^2=%f\n", i, c.m, c.b, c.rsq);
-			if (Math.abs(c.t) < 2) c.m = c.b = c.rsq = 0;
-			weights[i] = c.m * c.rsq / 2; // dividing by 2 to counter the effect of averaging
-			adjustment += c.b * c.rsq;
-			tot_rsq += c.rsq;
+			c[i] = Statistics.linreg(totals[i], goals);
+			System.out.printf("component %d: g = %fx + %f, r^2=%f\n", i, c[i].m, c[i].b, c[i].rsq);
+			tot_rsq += c[i].rsq;
+		}
+		double old_tot = tot_rsq;
+		tot_rsq = 0;
+		for (int i = 0; i < N_HEURISTIC; i++) {
+			if (c[i].rsq / old_tot < 0.1) c[i].m = c[i].b = c[i].rsq = 0;
+			weights[i] = c[i].m * c[i].rsq / 2; // dividing by 2 to counter the effect of averaging
+			adjustment += c[i].b * c[i].rsq;
+			tot_rsq += c[i].rsq;
 		}
 		for (int i = 0; i < N_HEURISTIC; i++) {
 			weights[i] /= tot_rsq;
