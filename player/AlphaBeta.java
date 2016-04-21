@@ -18,6 +18,7 @@ public class AlphaBeta extends Method {
 	public int stats_nnodes = 0;
 	public int stats_ncachehits = 0;
 
+	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
 	}
 
@@ -37,7 +38,7 @@ public class AlphaBeta extends Method {
 				if (score == MyPlayer.MAX_SCORE) break;
 			}
 		}
-		System.out.printf("time=%d bestmove=%s score=%d nodes=%d cachehits=%d cachesize=%d\n",
+		Log.printf("time=%d bestmove=%s score=%d nodes=%d cachehits=%d cachesize=%d\n",
 				timeout - System.currentTimeMillis(), bestMove, bestScore, stats_nnodes,
 				stats_ncachehits, cache.size());
 		return bestMove;

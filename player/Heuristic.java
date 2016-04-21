@@ -54,7 +54,8 @@ public class Heuristic extends Method {
 		Role role = gamer.getRole();
 		opps = new ArrayList<>(gamer.getStateMachine().findRoles());
 		opps.remove(role);
-		System.out.println("begin random exploration");
+		Log.println("");
+		Log.println("begin random exploration");
 		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
 			HThread t = new HThread(gamer, opps, timeout, this, data, goalProps);
 			threads.add(t);
@@ -69,7 +70,7 @@ public class Heuristic extends Method {
 		}
 
 		int ngame = data.size();
-		System.out.println("games analyzed: " + ngame);
+		Log.println("games analyzed: " + ngame);
 		double[] goals = new double[ngame];
 		double[][] totals = new double[N_HEURISTIC][ngame];
 		int count = 0;
@@ -86,13 +87,13 @@ public class Heuristic extends Method {
 			movetot += game.nmove;
 		}
 		period = (int) Math.round(1.0 * steptot / movetot);
-		System.out.printf("total steps %d / our moves %d = period %d\n", steptot, movetot, period);
+		Log.printf("total steps %d / our moves %d = period %d\n", steptot, movetot, period);
 		double tot_rsq = 0;
 		adjustment = 0;
 		Correlation[] c = new Correlation[N_HEURISTIC];
 		for (int i = 0; i < N_HEURISTIC; i++) {
 			c[i] = Statistics.linreg(totals[i], goals);
-			System.out.printf("component %d: g = %fx + %f, r^2=%f\n", i, c[i].m, c[i].b, c[i].rsq);
+			Log.printf("component %d: g = %fx + %f, r^2=%f\n", i, c[i].m, c[i].b, c[i].rsq);
 			tot_rsq += c[i].rsq;
 		}
 		double old_tot = tot_rsq;
@@ -109,7 +110,7 @@ public class Heuristic extends Method {
 		adjustment /= tot_rsq;
 		heuristics[0] = this::avgMobility;
 		heuristics[1] = this::avgOppMobility;
-		System.out.printf("heuristic = %f + %s\n", adjustment, Arrays.toString(weights));
+		Log.printf("heuristic = %f + %s\n", adjustment, Arrays.toString(weights));
 	}
 
 	@Override
@@ -117,7 +118,7 @@ public class Heuristic extends Method {
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
 		// if (moves.size() == 1) return moves.get(0);
-		System.out.println("--------------------");
+		Log.println("--------------------");
 
 		Move bestMove = moves.get(0);
 		int bestScore = MyPlayer.MIN_SCORE;
@@ -149,12 +150,12 @@ public class Heuristic extends Method {
 				}
 			}
 			if (!heuristicUsed && startLevel != level) break; // game fully analyzed
-			System.out.printf("bestmove=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
+			Log.printf("bestmove=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
 					bestMove, bestScore, level, nNodes, nCacheHits, cache.size());
 			level++;
 		}
-		System.out.printf("played=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
-				bestMove, bestScore, level, nNodes, nCacheHits, cache.size());
+		Log.printf("played=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n", bestMove,
+				bestScore, level, nNodes, nCacheHits, cache.size());
 		return bestMove;
 	}
 
