@@ -13,7 +13,7 @@ public class MonteCarlo extends Method {
 
 	private static final int TIMEOUT_SCORE = MyPlayer.MIN_SCORE - 1;
 	private static final int FAIL = MyPlayer.MIN_SCORE - 2;
-	private static final int N_CHARGES = 30;
+	private static final int N_CHARGES = 10;
 	
 	private int charges = 0;
 	private boolean searchUsed;
@@ -119,6 +119,7 @@ public class MonteCarlo extends Method {
 			if (newScore == FAIL || newScore == TIMEOUT_SCORE) {
 				return TIMEOUT_SCORE;
 			}
+			score += newScore;
 		}
 		return score / N_CHARGES;
 	}
