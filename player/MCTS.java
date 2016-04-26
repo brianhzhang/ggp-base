@@ -38,10 +38,14 @@ public class MCTS extends Method {
 		}
 
 		int ngame = data.size();
-		double results[] = new double[ngame];
+		double results[] = new double[ngame + 2];
 		for (int i = 0; i < ngame; i++) {
 			results[i] = data.poll();
 		}
+		results[ngame] = MyPlayer.MIN_SCORE;
+		results[ngame + 1] = MyPlayer.MAX_SCORE;
+		// as a prior, so that variance is never 0
+
 		Log.println("games analyzed: " + ngame);
 		double variance = Statistics.stdev(results);
 		variance *= variance;
