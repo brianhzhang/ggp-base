@@ -14,19 +14,18 @@ public class MonteCarlo extends Method {
 	private static final int TIMEOUT_SCORE = MyPlayer.MIN_SCORE - 1;
 	private static final int FAIL = MyPlayer.MIN_SCORE - 2;
 	private static final int N_CHARGES = 10;
-	
+
 	private int charges = 0;
 	private boolean searchUsed;
-	
+
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
-	public Move run(StateMachine machine, MachineState state, Role role, List<Move> moves, long timeout)
-			throws GoalDefinitionException, MoveDefinitionException, TransitionDefinitionException {
+	public Move run(StateMachine machine, MachineState state, Role role, List<Move> moves,
+			long timeout) throws GoalDefinitionException, MoveDefinitionException,
+					TransitionDefinitionException {
 		Log.println("--------------------");
 
 		Move bestMove = moves.get(0);
@@ -54,21 +53,18 @@ public class MonteCarlo extends Method {
 				}
 			}
 			if (!searchUsed && startLevel != level) break; // game fully analyzed
-			Log.printf("bestmove=%s score=%d depth=%d charges=%d\n",
-					bestMove, bestScore, level, charges);
+			Log.printf("bestmove=%s score=%d depth=%d charges=%d\n", bestMove, bestScore, level,
+					charges);
 			level++;
 		}
-		Log.printf("played=%s score=%d depth=%d charges=%d\n", bestMove,
-				bestScore, level, charges);
+		Log.printf("played=%s score=%d depth=%d charges=%d\n", bestMove, bestScore, level, charges);
 		return bestMove;
 	}
 
 	@Override
 	public void cleanUp() {
-		// TODO Auto-generated method stub
-		
 	}
-	
+
 	private int maxscore(StateMachine machine, MachineState state, Role role, int alpha, int beta,
 			int level, long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
@@ -104,16 +100,17 @@ public class MonteCarlo extends Method {
 		}
 		return beta;
 	}
-	
+
 	private int monteCarlo(StateMachine machine, MachineState state, Role role, long timeout) {
 		searchUsed = true;
 		int score = 0;
-		for (int i = 0; i < N_CHARGES; i ++) {
-			charges ++;
+		for (int i = 0; i < N_CHARGES; i++) {
+			charges++;
 			int newScore = FAIL;
 			try {
 				newScore = randomGame(machine, state, role, timeout);
-			} catch (MoveDefinitionException | GoalDefinitionException | TransitionDefinitionException e) {
+			} catch (MoveDefinitionException | GoalDefinitionException
+					| TransitionDefinitionException e) {
 				e.printStackTrace();
 			}
 			if (newScore == FAIL || newScore == TIMEOUT_SCORE) {
@@ -123,7 +120,7 @@ public class MonteCarlo extends Method {
 		}
 		return score / N_CHARGES;
 	}
-	
+
 	private int randomGame(StateMachine machine, MachineState state, Role role, long timeout)
 			throws MoveDefinitionException, GoalDefinitionException, TransitionDefinitionException {
 		while (!machine.isTerminal(state)) {

@@ -13,65 +13,32 @@ public class Config extends ConfigPanel {
 
 	JLabel current;
 
+	private void addMethod(MyPlayer m, String name, int method) {
+		JButton button = new JButton(name);
+		button.setFont(new Font("Verdana", Font.PLAIN, 18));
+		button.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				m.method = method;
+				current.setText("Current Strategy: " + name);
+			}
+		});
+		add(button);
+	}
+
 	public Config(LayoutManager layout, final MyPlayer m) {
 		super(layout);
 
 		current = new JLabel("Current Strategy: ", (int) CENTER_ALIGNMENT);
-		current.setFont(new Font("Verdana", Font.BOLD, 25));
+		current.setFont(new Font("Verdana", Font.BOLD, 24));
 
-		JButton legalButton = new JButton("Legal");
-		legalButton.setFont(new Font("Verdana", Font.PLAIN, 25));
-		JButton randomButton = new JButton("Random");
-		randomButton.setFont(new Font("Verdana", Font.PLAIN, 25));
-		JButton abButton = new JButton("Alpha-Beta");
-		abButton.setFont(new Font("Verdana", Font.PLAIN, 25));
-		JButton hButton = new JButton("Heuristic");
-		hButton.setFont(new Font("Verdana", Font.PLAIN, 25));
-		JButton mcButton = new JButton("Monte Carlo");
-		mcButton.setFont(new Font("Verdana", Font.PLAIN, 25));
-
-		legalButton.addActionListener(new ActionListener(){
-			@Override
-			public void actionPerformed(ActionEvent e){
-				m.method = MyPlayer.LEGAL;
-				current.setText("Current Strategy: Legal");
-			}
-		});
-		randomButton.addActionListener(new ActionListener(){
-			@Override
-			public void actionPerformed(ActionEvent e){
-				m.method = MyPlayer.RANDOM;
-				current.setText("Current Strategy: Random");
-			}
-		});
-		abButton.addActionListener(new ActionListener(){
-			@Override
-			public void actionPerformed(ActionEvent e){
-				m.method = MyPlayer.ALPHABETA;
-				current.setText("Current Strategy: Alpha-Beta");
-			}
-		});
-		hButton.addActionListener(new ActionListener(){
-			@Override
-			public void actionPerformed(ActionEvent e){
-				m.method = MyPlayer.HEURISTIC;
-				current.setText("Current Strategy: Heuristic");
-			}
-		});
-		mcButton.addActionListener(new ActionListener(){
-			@Override
-			public void actionPerformed(ActionEvent e){
-				m.method = MyPlayer.MONTECARLO;
-				current.setText("Current Strategy: Monte Carlo");
-			}
-		});
-
-		this.add(current);
-		this.add(legalButton);
-		this.add(randomButton);
-		this.add(abButton);
-		this.add(hButton);
-		this.add(mcButton);
+		add(current);
+		addMethod(m, "Legal", MyPlayer.LEGAL);
+		addMethod(m, "Random", MyPlayer.RANDOM);
+		addMethod(m, "Alpha-Beta", MyPlayer.ALPHABETA);
+		addMethod(m, "Heuristic", MyPlayer.HEURISTIC);
+		addMethod(m, "Monte Carlo", MyPlayer.MONTECARLO);
+		addMethod(m, "MCTS", MyPlayer.MCTS);
 	}
 
 }

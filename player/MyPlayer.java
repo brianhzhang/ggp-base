@@ -23,15 +23,22 @@ public class MyPlayer extends StateMachineGamer {
 
 	public static final int MAX_SCORE = 100;
 	public static final int MIN_SCORE = 0;
+
 	public static final int LEGAL = 1;
 	public static final int RANDOM = 2;
 	public static final int ALPHABETA = 3;
 	public static final int HEURISTIC = 4;
 	public static final int MONTECARLO = 5;
+	public static final int MCTS = 6;
+
 	public static final int N_OPTIONS = 10;
 	public static final int TIMEOUT_BUFFER = 3000; // time for network
 													// communication in ms
 	public static final int N_THREADS = 4;
+
+	public static final PrintWriter gamelog = getGameLog();
+	public int method = MCTS;
+	private Method player;
 
 	private static PrintWriter getGameLog() {
 		try {
@@ -42,12 +49,6 @@ public class MyPlayer extends StateMachineGamer {
 		return null;
 	}
 
-	public static final PrintWriter gamelog = getGameLog();
-
-	public int method = MONTECARLO;
-
-	private Method player;
-
 	@Override
 	public StateMachine getInitialStateMachine() {
 		return new CachedStateMachine(new ProverStateMachine());
@@ -56,12 +57,13 @@ public class MyPlayer extends StateMachineGamer {
 	@Override
 	public void stateMachineMetaGame(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
-		Log.setFile(getMatch().getMatchId());
+		Log.setFile(getMatch().getMatchId() + "_" + getRole());
 		if (method == LEGAL) player = new Legal();
 		if (method == RANDOM) player = new RandomPlayer();
 		if (method == ALPHABETA) player = new AlphaBeta();
 		if (method == HEURISTIC) player = new Heuristic();
 		if (method == MONTECARLO) player = new MonteCarlo();
+		if (method == MCTS) player = new MCTS();
 		player.metaGame(this, timeout - TIMEOUT_BUFFER);
 		return;
 	}
@@ -92,14 +94,15 @@ public class MyPlayer extends StateMachineGamer {
 	@Override
 	public void stateMachineStop() {
 		Match m = getMatch();
-		Log.println(m);
+		// Log.println(m);
 		StateMachine machine = getStateMachine();
 		MachineState state = getCurrentState();
 		Role role = getRole();
 		List<Role> roles = machine.getRoles();
 		String save = "";
 		try {
-			save = m.getMatchId() + "," + method + "," + machine.getGoal(state, role);
+			save = String.format("%s,%s,%s,%s", m.getMatchId(), role, method,
+					machine.getGoal(state, role));
 			for (Role r : roles) {
 				if (r.equals(role)) continue;
 				save += "," + machine.getGoal(state, r);
