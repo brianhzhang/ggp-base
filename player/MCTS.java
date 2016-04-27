@@ -1,4 +1,5 @@
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -14,7 +15,8 @@ import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 public class MCTS extends Method {
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 
-	public double breadth_inclination = 20000;
+	private double breadth_inclination = 20000;
+	private List<MTreeNode> cache = new ArrayList<>();
 
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
@@ -61,7 +63,20 @@ public class MCTS extends Method {
 					TransitionDefinitionException {
 		Log.println("--------------------");
 		// set up tree
-		MTreeNode root = new MTreeNode(machine, state, null, null);
+		MTreeNode root = null;
+		for (MTreeNode node : cache) {
+			if (node.state.equals(state)) {
+				System.out.printf("cache retrieval: nodes=%d depth=%d\n", node.visits, node.depth);
+				root = node;
+				break;
+			}
+		}
+		cache.clear();
+		if (root == null) {
+			root = new MTreeNode(state, null, null);
+			expand(machine, role, root);
+		}
+		Collections.shuffle(root.children);
 		while (System.currentTimeMillis() < timeout) {
 			MTreeNode node = select(root);
 			expand(machine, role, node);
@@ -78,32 +93,32 @@ public class MCTS extends Method {
 				}
 				int eval = threads[i].result;
 				if (eval == FAIL) continue;
-				backpropogate(node, eval);
+				backpropogate(node, eval, 0);
 			}
 		}
-		double score = FAIL;
-		MTreeNode best = null;
+		MTreeNode bestChild = null;
 		for (MTreeNode child : root.children) {
-			double newscore = child.utility();
-			Log.printf("move=%s score=%f visits=%d\n", child.move, newscore, child.visits);
-			if (newscore > score) {
-				score = newscore;
-				best = child;
-			}
+			if (bestChild == null || child.utility() > bestChild.utility()) bestChild = child;
+			System.out.printf("move=%s score=%f nodes=%d depth=%d\n", child.move, child.utility(),
+					child.visits, child.depth);
 		}
-		Log.printf("bestmove=%s score=%f visits=%d\n", best.move, score, root.visits);
-		return best.move;
+		for (MTreeNode child : bestChild.children) {
+			cache.add(child);
+		}
+		System.out.printf("played=%s score=%f nodes=%d depth=%d\n", bestChild.move,
+				bestChild.utility(), root.visits, root.depth);
+		return bestChild.move;
 	}
 
 	private MTreeNode select(MTreeNode node) {
-		if (node.visits == 0 || node.isTerminal) return node;
 		while (true) {
+			if (node.children.isEmpty()) return node;
 			for (MTreeNode child : node.children) {
-				if (child.visits == 0 || child.isTerminal) return child;
+				if (child.visits == 0) return child;
 			}
 			MTreeNode best = null;
 			if (node.move == null) { // max node
-				double score = Integer.MIN_VALUE;
+				double score = Double.NEGATIVE_INFINITY;
 				for (MTreeNode child : node.children) {
 					double newscore = child.score(breadth_inclination);
 					if (newscore > score) {
@@ -112,7 +127,7 @@ public class MCTS extends Method {
 					}
 				}
 			} else { // min node
-				double score = Integer.MAX_VALUE;
+				double score = Double.POSITIVE_INFINITY;
 				for (MTreeNode child : node.children) {
 					double newscore = child.score(-breadth_inclination);
 					if (newscore < score) {
@@ -128,27 +143,29 @@ public class MCTS extends Method {
 	private void expand(StateMachine machine, Role role, MTreeNode node)
 			throws MoveDefinitionException, TransitionDefinitionException {
 		if (node.move == null) { // max-node
-			if (node.isTerminal) return;
+			if (machine.isTerminal(node.state)) return;
 			List<Move> actions = machine.findLegals(role, node.state);
 			for (Move move : actions) {
-				MTreeNode newnode = new MTreeNode(machine, node.state, move, node);
+				MTreeNode newnode = new MTreeNode(node.state, move, node);
 				node.children.add(newnode);
 			}
 		} else {
 			List<List<Move>> actions = machine.getLegalJointMoves(node.state, role, node.move);
 			for (List<Move> jmove : actions) {
 				MachineState newstate = machine.findNext(jmove, node.state);
-				MTreeNode newnode = new MTreeNode(machine, newstate, null, node);
+				MTreeNode newnode = new MTreeNode(newstate, null, node);
 				node.children.add(newnode);
 			}
 		}
 	}
 
-	private void backpropogate(MTreeNode node, int eval) {
+	private void backpropogate(MTreeNode node, int eval, int depth) {
 		while (node != null) {
 			node.visits++;
 			node.sum_utility += eval;
+			node.depth = Math.max(node.depth, depth);
 			node = node.parent;
+			depth++;
 		}
 	}
 
@@ -163,16 +180,15 @@ class MTreeNode {
 	public int sum_utility = 0;
 	public List<MTreeNode> children = new ArrayList<>();
 	public MTreeNode parent;
-	public boolean isTerminal;
 
 	public MachineState state;
 	public Move move; // null if max-node; non-null if min-node
+	public int depth = 0;
 
-	public MTreeNode(StateMachine machine, MachineState state, Move move, MTreeNode parent) {
+	public MTreeNode(MachineState state, Move move, MTreeNode parent) {
 		this.parent = parent;
 		this.move = move;
 		this.state = state;
-		this.isTerminal = move == null && machine.isTerminal(state);
 	}
 
 	public double utility() {
@@ -205,6 +221,7 @@ class MSimThread extends Thread {
 		try {
 			MachineState state = node.state;
 			if (node.move != null) state = machine.getRandomNextState(state, role, node.move);
+			else state = state.clone();
 			while (!machine.isTerminal(state)) {
 				if (System.currentTimeMillis() > timeout) return; // FAIL
 				state = machine.getRandomNextState(state);
