@@ -38,7 +38,7 @@ public class MCTS extends Method {
 		}
 
 		int ngame = data.size();
-		double results[] = new double[ngame + 2];
+		double[] results = new double[ngame + 2];
 		for (int i = 0; i < ngame; i++) {
 			results[i] = data.poll();
 		}
@@ -65,9 +65,21 @@ public class MCTS extends Method {
 		while (System.currentTimeMillis() < timeout) {
 			MTreeNode node = select(root);
 			expand(machine, role, node);
-			int eval = simulate(machine, node, role, timeout);
-			if (eval == FAIL) break;
-			backpropogate(node, eval);
+			MSimThread[] threads = new MSimThread[MyPlayer.N_THREADS];
+			for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+				threads[i] = new MSimThread(machine, node, role, timeout);
+				threads[i].start();
+			}
+			for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+				try {
+					threads[i].join();
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+				int eval = threads[i].result;
+				if (eval == FAIL) continue;
+				backpropogate(node, eval);
+			}
 		}
 		double score = FAIL;
 		MTreeNode best = null;
@@ -132,17 +144,6 @@ public class MCTS extends Method {
 		}
 	}
 
-	private int simulate(StateMachine machine, MTreeNode node, Role role, long timeout)
-			throws MoveDefinitionException, GoalDefinitionException, TransitionDefinitionException {
-		MachineState state = node.state;
-		if (node.move != null) state = machine.getRandomNextState(state, role, node.move);
-		while (!machine.isTerminal(state)) {
-			if (System.currentTimeMillis() > timeout) return FAIL;
-			state = machine.getRandomNextState(state);
-		}
-		return machine.findReward(role, state);
-	}
-
 	private void backpropogate(MTreeNode node, int eval) {
 		while (node != null) {
 			node.visits++;
@@ -180,6 +181,38 @@ class MTreeNode {
 
 	public double score(double c) {
 		return utility() + c * Math.sqrt(Math.log(parent.visits) / visits);
+	}
+}
+
+class MSimThread extends Thread {
+
+	public StateMachine machine;
+	public MTreeNode node;
+	public Role role;
+	public long timeout;
+	public int result;
+
+	public MSimThread(StateMachine machine, MTreeNode node, Role role, long timeout) {
+		this.machine = machine;
+		this.node = node;
+		this.role = role;
+		this.timeout = timeout;
+		this.result = MCTS.FAIL;
+	}
+
+	@Override
+	public void run() {
+		try {
+			MachineState state = node.state;
+			if (node.move != null) state = machine.getRandomNextState(state, role, node.move);
+			while (!machine.isTerminal(state)) {
+				if (System.currentTimeMillis() > timeout) return; // FAIL
+				state = machine.getRandomNextState(state);
+			}
+			result = machine.findReward(role, state);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
 	}
 }
 
