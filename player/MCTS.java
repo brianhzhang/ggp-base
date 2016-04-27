@@ -47,11 +47,12 @@ public class MCTS extends Method {
 		// as a prior, so that variance is never 0
 
 		Log.println("games analyzed: " + ngame);
-		double variance = Statistics.stdev(results);
-		variance *= variance;
+		double std = Statistics.stdev(results);
 		Log.println("goal mean: " + Statistics.mean(results));
-		Log.println("goal variance: " + variance);
-		Log.println("breadth inclination: " + (breadth_inclination = 10 * variance));
+		Log.println("goal std: " + std);
+		// the std of a game that randomly ends with either 0 or 100 is 50.
+		// if this game should use a constant of 100 sqrt(2), then we must multiply std by sqrt 8
+		Log.println("breadth inclination: " + (breadth_inclination = Math.sqrt(8) * std));
 	}
 
 	@Override
@@ -88,13 +89,24 @@ public class MCTS extends Method {
 			for (MTreeNode child : node.children) {
 				if (child.visits == 0 || child.isTerminal) return child;
 			}
-			double score = node.move == null ? Integer.MIN_VALUE : Integer.MAX_VALUE;
 			MTreeNode best = null;
-			for (MTreeNode child : node.children) {
-				double newscore = child.score(breadth_inclination);
-				if ((newscore > score) == (node.move == null)) {
-					score = newscore;
-					best = child;
+			if (node.move == null) { // max node
+				double score = Integer.MIN_VALUE;
+				for (MTreeNode child : node.children) {
+					double newscore = child.score(breadth_inclination);
+					if (newscore > score) {
+						score = newscore;
+						best = child;
+					}
+				}
+			} else { // min node
+				double score = Integer.MAX_VALUE;
+				for (MTreeNode child : node.children) {
+					double newscore = child.score(-breadth_inclination);
+					if (newscore < score) {
+						score = newscore;
+						best = child;
+					}
 				}
 			}
 			node = best;
@@ -167,7 +179,7 @@ class MTreeNode {
 	}
 
 	public double score(double c) {
-		return utility() + Math.sqrt(c * Math.log(parent.visits) / visits);
+		return utility() + c * Math.sqrt(Math.log(parent.visits) / visits);
 	}
 }
 
