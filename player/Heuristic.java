@@ -19,21 +19,21 @@ import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 
 public class Heuristic extends Method {
 
-	public static final int TIMEOUT_SCORE = MyPlayer.MIN_SCORE - 1;
+	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	public static final int MIN_HEURISTIC = MyPlayer.MIN_SCORE + 1;
 	public static final int MAX_HEURISTIC = MyPlayer.MAX_SCORE - 1;
 
 	public static final int N_HEURISTIC = 4;
 
 	// metagaming results
-	public HeuristicFn[] heuristics = { this::mobility, this::oppMobility, this::goal,
+	protected HeuristicFn[] heuristics = { this::mobility, this::oppMobility, this::goal,
 			this::oppGoal, this::goalProximity };
-	private double[] weights = new double[N_HEURISTIC];
-	private double adjustment = 0;
-	private int period; // one less than the period; i.e. if we make every move then period = 0
+	protected double[] weights = new double[N_HEURISTIC];
+	protected double adjustment = 0;
+	protected int period; // one less than the period; i.e. if we make every move then period = 0
 
-	private List<Role> opps;
-	private Map<MachineState, HCacheEnt> cache;
+	protected List<Role> opps;
+	protected Map<MachineState, HCacheEnt> cache;
 
 	private boolean heuristicUsed = false;
 
@@ -44,7 +44,7 @@ public class Heuristic extends Method {
 	private List<Double> oppMobility;
 
 	// For goal
-	private ConcurrentHashMap<GdlSentence, HGoalProp> goalProps = new ConcurrentHashMap<GdlSentence, HGoalProp>();
+	protected ConcurrentHashMap<GdlSentence, HGoalProp> goalProps = new ConcurrentHashMap<GdlSentence, HGoalProp>();
 
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
@@ -54,6 +54,9 @@ public class Heuristic extends Method {
 		Role role = gamer.getRole();
 		opps = new ArrayList<>(gamer.getStateMachine().findRoles());
 		opps.remove(role);
+		heuristics[0] = this::mobility;
+		heuristics[1] = this::oppMobility;
+
 		Log.println("");
 		Log.println("begin random exploration");
 		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
@@ -136,13 +139,13 @@ public class Heuristic extends Method {
 			// alpha-beta heuristic: analyze previous best move first
 			int score = minscore(machine, state, role, bestMove, MyPlayer.MIN_SCORE,
 					MyPlayer.MAX_SCORE, level, timeout);
-			if (score == TIMEOUT_SCORE) break;
+			if (score == FAIL) break;
 			bestScore = score;
 			for (Move move : moves) {
 				if (move == bestMove) continue;
 				score = minscore(machine, state, role, move, bestScore, MyPlayer.MAX_SCORE, level,
 						timeout);
-				if (score == TIMEOUT_SCORE) break;
+				if (score == FAIL) break;
 				if (score > bestScore) {
 					bestMove = move;
 					bestScore = score;
@@ -162,7 +165,7 @@ public class Heuristic extends Method {
 	private int maxscore(StateMachine machine, MachineState state, Role role, int alpha, int beta,
 			int level, long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
-		if (System.currentTimeMillis() > timeout) return TIMEOUT_SCORE;
+		if (System.currentTimeMillis() > timeout) return FAIL;
 		nNodes++;
 		if (machine.isTerminal(state)) return machine.findReward(role, state);
 		HCacheEnt cacheEnt = cache.get(state);
@@ -191,7 +194,7 @@ public class Heuristic extends Method {
 		int a = alpha;
 		for (Move move : actions) {
 			int score = minscore(machine, state, role, move, a, beta, level, timeout);
-			if (score == TIMEOUT_SCORE) return score;
+			if (score == FAIL) return score;
 			a = Math.max(a, score);
 			if (a >= beta) break;
 		}
@@ -209,12 +212,12 @@ public class Heuristic extends Method {
 	private int minscore(StateMachine machine, MachineState state, Role role, Move move, int alpha,
 			int beta, int level, long timeout) throws GoalDefinitionException,
 					MoveDefinitionException, TransitionDefinitionException {
-		if (System.currentTimeMillis() > timeout) return TIMEOUT_SCORE;
+		if (System.currentTimeMillis() > timeout) return FAIL;
 		// use joint moves so that we can deal with n-player games; n != 2
 		for (List<Move> jmove : machine.getLegalJointMoves(state, role, move)) {
 			MachineState next = machine.getNextState(state, jmove);
 			int score = maxscore(machine, next, role, alpha, beta, level - 1, timeout);
-			if (score == TIMEOUT_SCORE) return score;
+			if (score == FAIL) return score;
 			beta = Math.min(beta, score);
 			if (alpha >= beta) return alpha;
 		}
@@ -226,7 +229,7 @@ public class Heuristic extends Method {
 
 	}
 
-	private int heuristic(Role role, MachineState state, StateMachine machine, List<Move> actions)
+	protected int heuristic(Role role, MachineState state, StateMachine machine, List<Move> actions)
 			throws MoveDefinitionException, GoalDefinitionException {
 		heuristicUsed = true;
 		double heuristic = adjustment;
@@ -257,12 +260,12 @@ public class Heuristic extends Method {
 		return total / period;
 	}
 
-	private double mobility(Role role, MachineState state, StateMachine machine,
+	protected double mobility(Role role, MachineState state, StateMachine machine,
 			List<Move> actions) {
 		return actions.size();
 	}
 
-	private double oppMobility(Role role, MachineState state, StateMachine machine,
+	protected double oppMobility(Role role, MachineState state, StateMachine machine,
 			List<Move> actions) {
 		int tot_moves = 1;
 		for (Role opp : opps) {
@@ -275,7 +278,7 @@ public class Heuristic extends Method {
 		return tot_moves;
 	}
 
-	private double goal(Role role, MachineState state, StateMachine machine, List<Move> actions) {
+	protected double goal(Role role, MachineState state, StateMachine machine, List<Move> actions) {
 		try {
 			return machine.findReward(role, state);
 		} catch (GoalDefinitionException e) {
@@ -283,7 +286,7 @@ public class Heuristic extends Method {
 		}
 	}
 
-	private double oppGoal(Role role, MachineState state, StateMachine machine,
+	protected double oppGoal(Role role, MachineState state, StateMachine machine,
 			List<Move> actions) {
 		if (opps.isEmpty()) return 0;
 		int sum = 0;
@@ -296,7 +299,7 @@ public class Heuristic extends Method {
 		return sum;
 	}
 
-	private double goalProximity(Role role, MachineState state, StateMachine machine,
+	protected double goalProximity(Role role, MachineState state, StateMachine machine,
 			List<Move> actions) {
 		Set<GdlSentence> props = state.getContents();
 		double score = 0;

@@ -30,6 +30,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int HEURISTIC = 4;
 	public static final int MONTECARLO = 5;
 	public static final int MCTS = 6;
+	public static final int HMHYBRID = 7;
 
 	public static final int N_OPTIONS = 10;
 	public static final int TIMEOUT_BUFFER = 3000; // time for network
@@ -37,7 +38,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int N_THREADS = 4;
 
 	public static final PrintWriter gamelog = getGameLog();
-	public int method = MCTS;
+	public int method = HMHYBRID;
 	private Method player;
 
 	private static PrintWriter getGameLog() {
@@ -64,6 +65,7 @@ public class MyPlayer extends StateMachineGamer {
 		if (method == HEURISTIC) player = new Heuristic();
 		if (method == MONTECARLO) player = new MonteCarlo();
 		if (method == MCTS) player = new MCTS();
+		if (method == HMHYBRID) player = new HMHybrid();
 		player.metaGame(this, timeout - TIMEOUT_BUFFER);
 		return;
 	}
