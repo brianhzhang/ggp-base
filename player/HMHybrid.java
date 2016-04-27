@@ -71,11 +71,13 @@ public class HMHybrid extends Heuristic {
 		}
 		double old_tot = tot_rsq;
 		tot_rsq = 0;
+		double max_rsq = 0;
 		for (int i = 0; i < N_HEURISTIC; i++) {
 			if (c[i].rsq / old_tot < 0.1) c[i].m = c[i].b = c[i].rsq = 0;
 			weights[i] = c[i].m * c[i].rsq / 2; // dividing by 2 to counter the effect of averaging
 			adjustment += c[i].b * c[i].rsq;
 			tot_rsq += c[i].rsq;
+			max_rsq = Math.max(max_rsq, c[i].rsq);
 		}
 		for (int i = 0; i < N_HEURISTIC; i++) {
 			weights[i] /= tot_rsq;
@@ -90,9 +92,9 @@ public class HMHybrid extends Heuristic {
 				avgheuristic[i] += weights[j] * games[i].heuristics[j] / games[i].nstep;
 			}
 		}
-		double rsq = Statistics.linreg(goals, avgheuristic).rsq;
-		Log.printf("tot r^2 = %f\n", rsq);
-		useMC = rsq < 0.5;
+
+		Log.printf("tot r^2 = %f\n", max_rsq);
+		useMC = max_rsq < 0.5;
 
 		double[] results = useMC ? goals : avgheuristic;
 		double std = Statistics.stdev(results);
