@@ -85,13 +85,15 @@ public class HMHybrid extends Heuristic {
 		adjustment /= tot_rsq;
 		Log.printf("heuristic = %f + %s\n", adjustment, Arrays.toString(weights));
 
-		double[] avgheuristic = new double[ngame];
+		double[] avgheuristic = new double[ngame + 2];
 		for (int i = 0; i < ngame; i++) {
 			avgheuristic[i] = adjustment;
 			for (int j = 0; j < N_HEURISTIC; j++) {
 				avgheuristic[i] += weights[j] * games[i].heuristics[j] / games[i].nstep;
 			}
 		}
+		avgheuristic[ngame] = MyPlayer.MIN_SCORE;
+		avgheuristic[ngame + 1] = MyPlayer.MAX_SCORE;
 
 		Log.printf("tot r^2 = %f\n", max_rsq);
 		useMC = max_rsq < 0.5;
@@ -103,7 +105,7 @@ public class HMHybrid extends Heuristic {
 		Log.println("goal std: " + std);
 		// the std of a game that randomly ends with either 0 or 100 is 50.
 		// if this game should use a constant of 100 sqrt(2), then multiply std by sqrt 8
-		Log.println("breadth inclination: " + (breadth_inclination = Math.sqrt(8) * std));
+		Log.println("breadth inclination: " + (breadth_inclination = Math.sqrt(1) * std));
 
 		Log.println("eval method: " + (useMC ? "monte carlo" : "heuristic"));
 	}
