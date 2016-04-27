@@ -85,20 +85,22 @@ public class HMHybrid extends Heuristic {
 		adjustment /= tot_rsq;
 		Log.printf("heuristic = %f + %s\n", adjustment, Arrays.toString(weights));
 
-		double[] avgheuristic = new double[ngame + 2];
+		double[] avgheuristic = new double[ngame];
 		for (int i = 0; i < ngame; i++) {
 			avgheuristic[i] = adjustment;
 			for (int j = 0; j < N_HEURISTIC; j++) {
 				avgheuristic[i] += weights[j] * games[i].heuristics[j] / games[i].nstep;
 			}
 		}
-		avgheuristic[ngame] = MyPlayer.MIN_SCORE;
-		avgheuristic[ngame + 1] = MyPlayer.MAX_SCORE;
 
 		Log.printf("tot r^2 = %f\n", max_rsq);
 		useMC = max_rsq < 0.5;
 
-		double[] results = useMC ? goals : avgheuristic;
+		double[] results = new double[ngame + 2];
+		System.arraycopy(useMC ? goals : avgheuristic, 0, results, 0, ngame);
+		results[ngame] = MyPlayer.MIN_SCORE;
+		results[ngame + 1] = MyPlayer.MAX_SCORE;
+
 		double std = Statistics.stdev(results);
 
 		Log.println("goal mean: " + Statistics.mean(results));
