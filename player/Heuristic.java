@@ -368,6 +368,7 @@ class HThread extends Thread {
 			for (int i = 0; i < Heuristic.N_HEURISTIC; i++) {
 				ret.heuristics[i] += h.heuristics[i].eval(role, state, machine, actions);
 			}
+
 			state = machine.getRandomNextState(state);
 		}
 		ret.goal = machine.findReward(role, state);

@@ -13,11 +13,9 @@ import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
 import org.ggp.base.util.statemachine.StateMachine;
-import org.ggp.base.util.statemachine.cache.CachedStateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
-import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
 public class MyPlayer extends StateMachineGamer {
 
@@ -35,7 +33,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int N_OPTIONS = 10;
 	public static final int TIMEOUT_BUFFER = 3000; // time for network
 													// communication in ms
-	public static final int N_THREADS = 4;
+	public static final int N_THREADS = 1;
 
 	public static final PrintWriter gamelog = getGameLog();
 	public int method = HMHYBRID;
@@ -52,8 +50,8 @@ public class MyPlayer extends StateMachineGamer {
 
 	@Override
 	public StateMachine getInitialStateMachine() {
-//		return new CachedStateMachine(new ProverStateMachine());
-		return new PropNetStateMachine();
+		// return new CachedStateMachine(new ProverStateMachine());
+		return new PropNetStateMachine2();
 	}
 
 	@Override
