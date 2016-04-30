@@ -14,6 +14,7 @@ public final class Proposition extends Component {
 	private GdlSentence name;
 	/** The value of the Proposition. */
 	private boolean value;
+	private boolean set = false;
 
 	/**
 	 * Creates a new Proposition with name <tt>name</tt>.
@@ -52,14 +53,15 @@ public final class Proposition extends Component {
 	 */
 	@Override
 	public boolean getValue() {
+		return value;
+	}
+	
+	public boolean eval() {
 		Set<Component> components = getInputs();
 		if (components.size() == 0) {
 			return value;
 		}
 		Component c = getSingleInput();
-		if (c instanceof Transition) {
-			return value;
-		}
 		boolean val = c.getValue();
 		return val;
 	}
