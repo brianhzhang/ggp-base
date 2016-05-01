@@ -14,6 +14,7 @@ import org.ggp.base.util.gdl.grammar.GdlRelation;
 import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.PropNet;
+import org.ggp.base.util.propnet.architecture.components.Not;
 import org.ggp.base.util.propnet.architecture.components.Proposition;
 import org.ggp.base.util.propnet.factory.OptimizingPropNetFactory;
 import org.ggp.base.util.statemachine.MachineState;
@@ -239,8 +240,13 @@ public class BetterPropNetStateMachine extends StateMachine {
 	}
 
 	private void clearpropnet() {
+		Set<Component> nots = new HashSet<Component>();
 		for (Component s : propNet.getComponents()) {
 			s.reset();
+			if (s instanceof Not) nots.add(s);
+		}
+		for (Component s : nots) {
+			s.propogate();
 		}
 	}
 }
