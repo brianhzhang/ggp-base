@@ -60,7 +60,7 @@ public class Heuristic extends Method {
 		Log.println("");
 		Log.println("begin random exploration");
 		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-			HThread t = new HThread(gamer, opps, timeout, this, data, goalProps);
+			HThread t = new HThread(gamer, opps, timeout, this, gamer.getStateMachine(), data, goalProps);
 			threads.add(t);
 			t.start();
 		}
@@ -326,22 +326,23 @@ class HThread extends Thread {
 	Heuristic h;
 	ConcurrentLinkedQueue<HGameData> data;
 	private ConcurrentHashMap<GdlSentence, HGoalProp> goalProps;
+	StateMachine machine;
 
 	public HThread(StateMachineGamer gamer, List<Role> roles, long timeout, Heuristic h,
-			ConcurrentLinkedQueue<HGameData> data2,
+			StateMachine machine, ConcurrentLinkedQueue<HGameData> data2,
 			ConcurrentHashMap<GdlSentence, HGoalProp> goalProps) {
 		this.gamer = gamer;
 		this.roles = roles;
 		this.timeout = timeout;
 		this.h = h;
 		this.data = data2;
+		this.machine = machine;
 		this.goalProps = goalProps;
 	}
 
 	@Override
 	public void run() {
 		Role role = gamer.getRole();
-		StateMachine machine = gamer.getStateMachine();
 		MachineState initial = machine.getInitialState();
 
 		while (System.currentTimeMillis() < timeout) {

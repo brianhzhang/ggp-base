@@ -18,6 +18,11 @@ public class HMHybrid extends Heuristic {
 
 	private double breadth_inclination = 20000;
 	private List<MTreeNode> cache = new ArrayList<>();
+	private StateMachine[] machines;
+
+	public HMHybrid(StateMachine[] machines) {
+		this.machines = machines;
+	}
 
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
@@ -29,7 +34,7 @@ public class HMHybrid extends Heuristic {
 		Log.println("");
 		Log.println("begin random exploration");
 		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-			HThread t = new HThread(gamer, opps, timeout, this, data, goalProps);
+			HThread t = new HThread(gamer, opps, timeout, this, machines[i], data, goalProps);
 			threads.add(t);
 			t.start();
 		}
@@ -146,7 +151,7 @@ public class HMHybrid extends Heuristic {
 				MSimThread[] threads = new MSimThread[MyPlayer.N_THREADS];
 				if (useMC) {
 					for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-						threads[i] = new MSimThread(machine, node, role, timeout);
+						threads[i] = new MSimThread(machines[i], node, role, timeout);
 						threads[i].start();
 					}
 					long start = System.currentTimeMillis();

@@ -38,6 +38,11 @@ public class BetterPropNetStateMachine extends StateMachine {
 	private Set<GdlSentence> lastBases;
 	private Set<GdlSentence> lastInputs;
 	public List<Gdl> description;
+	private StateMachine[] machines;
+
+	public BetterPropNetStateMachine(StateMachine[] stateMachines) {
+		this.machines = stateMachines;
+	}
 
 	/**
 	 * Initializes the PropNetStateMachine. You should compute the topological ordering here.
@@ -45,6 +50,25 @@ public class BetterPropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public void initialize(List<Gdl> description) {
+		List<Thread> threads = new ArrayList<Thread>();
+		MTI mti = new MTI(this, description);
+		mti.start();
+		threads.add(mti);
+		for (StateMachine m : machines) {
+			mti = new MTI((BetterPropNetStateMachine) m, description);
+			mti.start();
+			threads.add(mti);
+		}
+		for (int i = 0; i < threads.size(); i ++) {
+			try {
+				threads.get(i).join();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+	
+	public void threadInitialize(List<Gdl> description) {
 		try {
 			this.description = description;
 			propNet = OptimizingPropNetFactory.create(description);
@@ -95,7 +119,6 @@ public class BetterPropNetStateMachine extends StateMachine {
 	@Override
 	public MachineState getInitialState() {
 		clearpropnet();
-		System.out.println(propNet.getNumNots());
 		propNet.getInitProposition().setValue(true);
 		propNet.getInitProposition().propogate();
 		Map<GdlSentence, Proposition> bases = propNet.getBasePropositions();
@@ -249,5 +272,18 @@ public class BetterPropNetStateMachine extends StateMachine {
 		for (Component s : nots) {
 			s.propogate();
 		}
+	}
+}
+//MTI = Multi Thread Initializer
+class MTI extends Thread {
+	BetterPropNetStateMachine p;
+	List<Gdl> description;
+	public MTI(BetterPropNetStateMachine p, List<Gdl> description) {
+		this.p = p;
+		this.description = description;
+	}
+	
+	public void run() {
+		p.threadInitialize(description);
 	}
 }

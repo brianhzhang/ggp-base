@@ -34,6 +34,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int TIMEOUT_BUFFER = 3000; // time for network
 													// communication in ms
 	public static final int N_THREADS = 4;
+	private StateMachine[] machines = new StateMachine[N_THREADS];
 
 	public static final PrintWriter gamelog = getGameLog();
 	public int method = HMHYBRID;
@@ -50,10 +51,13 @@ public class MyPlayer extends StateMachineGamer {
 
 	@Override
 	public StateMachine getInitialStateMachine() {
-		// return new CachedStateMachine(new ProverStateMachine());
-		// return new PropNetStateMachine();
-		// return new PropNetStateMachine2();
-		return new BetterPropNetStateMachine();
+//		return new CachedStateMachine(new ProverStateMachine());
+//		return new PropNetStateMachine();
+//		return new PropNetStateMachine2();
+		for (int i = 0; i < N_THREADS; i ++) {
+			machines[i] = new BetterPropNetStateMachine(new StateMachine[0]);
+		}
+		return new BetterPropNetStateMachine(machines);
 	}
 
 	@Override
@@ -66,7 +70,7 @@ public class MyPlayer extends StateMachineGamer {
 		if (method == HEURISTIC) player = new Heuristic();
 		if (method == MONTECARLO) player = new MonteCarlo();
 		if (method == MCTS) player = new MCTS();
-		if (method == HMHYBRID) player = new HMHybrid();
+		if (method == HMHYBRID) player = new HMHybrid(machines);
 		player.metaGame(this, timeout - TIMEOUT_BUFFER);
 		return;
 	}
