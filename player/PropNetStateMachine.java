@@ -61,6 +61,8 @@ public class PropNetStateMachine extends StateMachine {
 	private List<Proposition> ordering;
 	/** The player roles */
 	private List<Role> roles;
+	
+	public List<Gdl> description;
 
 	/**
 	 * Initializes the PropNetStateMachine. You should compute the topological ordering here.
@@ -72,6 +74,7 @@ public class PropNetStateMachine extends StateMachine {
 			propNet = OptimizingPropNetFactory.create(description);
 			roles = propNet.getRoles();
 			ordering = getOrdering();
+			this.description = description;
 		} catch (InterruptedException e) {
 			throw new RuntimeException(e);
 		}
@@ -306,6 +309,7 @@ public class PropNetStateMachine extends StateMachine {
 		Map<GdlSentence, Proposition> props = propNet.getBasePropositions();
 		for (GdlSentence s : props.keySet()) {
 			props.get(s).setValue(markings.contains(s));
+			props.get(s).setSet(true);
 		}
 	}
 
@@ -313,18 +317,21 @@ public class PropNetStateMachine extends StateMachine {
 		Map<GdlSentence, Proposition> props = propNet.getInputPropositions();
 		for (GdlSentence s : props.keySet()) {
 			props.get(s).setValue(list.contains(s));
+			props.get(s).setSet(true);
 		}
 	}
 
 	private void clearpropnet() {
 		for (Proposition s : propNet.getPropositions()) {
 			s.setValue(false);
+			s.setSet(false);
 		}
 	}
 
 	private void markviews() {
 		for (Proposition p : ordering) {
-			p.setValue(p.eval());
+			p.setValue(p.getValue());
+			p.setSet(true);
 		}
 	}
 }

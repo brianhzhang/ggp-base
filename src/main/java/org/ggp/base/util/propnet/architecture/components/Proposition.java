@@ -53,17 +53,21 @@ public final class Proposition extends Component {
 	 */
 	@Override
 	public boolean getValue() {
-		return value;
-	}
-	
-	public boolean eval() {
+		if (set) return value;
 		Set<Component> components = getInputs();
 		if (components.size() == 0) {
 			return value;
 		}
 		Component c = getSingleInput();
+		if (c instanceof Transition) {
+			return value;
+		}
 		boolean val = c.getValue();
 		return val;
+	}
+	
+	public void setSet(boolean set) {
+		this.set = set;
 	}
 
 	/**
