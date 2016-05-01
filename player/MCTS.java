@@ -178,6 +178,10 @@ public class MCTS extends Method {
 class MTreeNode {
 	public int visits = 0;
 	public int sum_utility = 0;
+	// bounds
+	public int lower = MyPlayer.MIN_SCORE;
+	public int upper = MyPlayer.MAX_SCORE;
+
 	public List<MTreeNode> children = new ArrayList<>();
 	public MTreeNode parent;
 
@@ -191,8 +195,46 @@ class MTreeNode {
 		this.state = state;
 	}
 
+	public String info() {
+		return String.format("%s score=%f bound=(%d, %d)", move, utility(), lower, upper);
+	}
+
+	public boolean setBounds() {
+		int oldupp = upper, oldlow = lower;
+		if (isMaxNode()) {
+			upper = MyPlayer.MIN_SCORE;
+			lower = MyPlayer.MIN_SCORE;
+			for (MTreeNode c : children) {
+				upper = Math.max(upper, c.upper);
+				lower = Math.max(lower, c.lower);
+			}
+		} else {
+			upper = MyPlayer.MAX_SCORE;
+			lower = MyPlayer.MAX_SCORE;
+			for (MTreeNode c : children) {
+				upper = Math.min(upper, c.upper);
+				lower = Math.min(lower, c.lower);
+			}
+		}
+		return upper != oldupp || lower != oldlow;
+	}
+
+	public double putInBounds(double eval) {
+		if (eval < lower) eval = lower;
+		if (eval > upper) eval = upper;
+		return eval;
+	}
+
+	public boolean isProven() {
+		return lower == upper;
+	}
+
+	public boolean isMaxNode() {
+		return move == null;
+	}
+
 	public double utility() {
-		return (double) sum_utility / visits;
+		return putInBounds((double) sum_utility / visits);
 	}
 
 	public double score(double c) {

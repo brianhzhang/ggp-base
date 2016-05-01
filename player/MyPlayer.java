@@ -13,11 +13,9 @@ import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
 import org.ggp.base.util.statemachine.StateMachine;
-import org.ggp.base.util.statemachine.cache.CachedStateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
-import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
 public class MyPlayer extends StateMachineGamer {
 
@@ -49,12 +47,12 @@ public class MyPlayer extends StateMachineGamer {
 		}
 		return null;
 	}
-	
+
 	@Override
 	public StateMachine getInitialStateMachine() {
-//		return new CachedStateMachine(new ProverStateMachine());
-//		return new PropNetStateMachine();
-//		return new PropNetStateMachine2();
+		// return new CachedStateMachine(new ProverStateMachine());
+		// return new PropNetStateMachine();
+		// return new PropNetStateMachine2();
 		return new BetterPropNetStateMachine();
 	}
 

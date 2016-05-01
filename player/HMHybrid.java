@@ -107,7 +107,7 @@ public class HMHybrid extends Heuristic {
 		Log.println("goal std: " + std);
 		// the std of a game that randomly ends with either 0 or 100 is 50.
 		// if this game should use a constant of 100 sqrt(2), then multiply std by sqrt 8
-		Log.println("breadth inclination: " + (breadth_inclination = Math.sqrt(1) * std));
+		Log.println("breadth inclination: " + (breadth_inclination = Math.sqrt(8) * std));
 
 		Log.println("eval method: " + (useMC ? "monte carlo" : "heuristic"));
 	}
@@ -116,6 +116,9 @@ public class HMHybrid extends Heuristic {
 	public Move run(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
+		long timestart = System.currentTimeMillis();
+		long simtime = 0;
+
 		Log.println("--------------------");
 		// set up tree
 		MTreeNode root = null;
@@ -132,48 +135,56 @@ public class HMHybrid extends Heuristic {
 			expand(machine, role, root);
 		}
 		Collections.shuffle(root.children);
+		root.parent = null;
 		while (System.currentTimeMillis() < timeout) {
+			if (root.isProven()) break;
 			MTreeNode node = select(root);
-			expand(machine, role, node);
-			MSimThread[] threads = new MSimThread[MyPlayer.N_THREADS];
-			if (useMC) {
-				for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-					threads[i] = new MSimThread(machine, node, role, timeout);
-					threads[i].start();
-				}
-				for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-					try {
-						threads[i].join();
-					} catch (InterruptedException e) {
-						e.printStackTrace();
-					}
-					int eval = threads[i].result;
-					if (eval == FAIL) continue;
-					backpropogate(node, eval, 0);
-				}
+			if (machine.isTerminal(node.state)) {
+				backpropogate(node, machine.findReward(role, node.state), 0, true);
 			} else {
-				int eval;
-				if (machine.isTerminal(node.state)) {
-					eval = machine.findReward(role, node.state);
+				expand(machine, role, node);
+				MSimThread[] threads = new MSimThread[MyPlayer.N_THREADS];
+				if (useMC) {
+					for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+						threads[i] = new MSimThread(machine, node, role, timeout);
+						threads[i].start();
+					}
+					long start = System.currentTimeMillis();
+					for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+						try {
+							threads[i].join();
+						} catch (InterruptedException e) {
+							e.printStackTrace();
+						}
+						int eval = threads[i].result;
+						if (eval == FAIL) continue;
+						backpropogate(node, eval, 0, false);
+					}
+					simtime += System.currentTimeMillis() - start;
 				} else {
 					List<Move> legals = machine.findLegals(role, node.state);
-					eval = heuristic(role, node.state, machine, legals);
+					backpropogate(node, heuristic(role, node.state, machine, legals), 0, false);
 				}
-				backpropogate(node, eval, 0);
 			}
 		}
 		MTreeNode bestChild = null;
 		for (MTreeNode child : root.children) {
 			if (bestChild == null || child.utility() > bestChild.utility()) bestChild = child;
-			System.out.printf("move=%s score=%f nodes=%d depth=%d\n", child.move, child.utility(),
-					child.visits, child.depth);
+			System.out.println("move=" + info(child, child));
 		}
 		for (MTreeNode child : bestChild.children) {
 			cache.add(child);
 		}
-		System.out.printf("played=%s score=%f nodes=%d depth=%d\n", bestChild.move,
-				bestChild.utility(), root.visits, root.depth);
+		System.out.println("played=" + info(bestChild, root));
+		System.out.println("total time = " + (System.currentTimeMillis() - timestart));
+		System.out.println("time spent on sims = " + simtime);
 		return bestChild.move;
+	}
+
+	private String info(MTreeNode scoreNode, MTreeNode rootNode) {
+		return String.format("%s score=%f bound=(%d, %d) nodes=%d depth=%d", scoreNode.move,
+				scoreNode.utility(), scoreNode.lower, scoreNode.upper, rootNode.visits,
+				rootNode.depth);
 	}
 
 	private MTreeNode select(MTreeNode node) {
@@ -183,9 +194,10 @@ public class HMHybrid extends Heuristic {
 				if (child.visits == 0) return child;
 			}
 			MTreeNode best = null;
-			if (node.move == null) { // max node
+			if (node.isMaxNode()) { // max node
 				double score = Double.NEGATIVE_INFINITY;
 				for (MTreeNode child : node.children) {
+					if (child.isProven()) continue;
 					double newscore = child.score(breadth_inclination);
 					if (newscore > score) {
 						score = newscore;
@@ -195,6 +207,7 @@ public class HMHybrid extends Heuristic {
 			} else { // min node
 				double score = Double.POSITIVE_INFINITY;
 				for (MTreeNode child : node.children) {
+					if (child.isProven()) continue;
 					double newscore = child.score(-breadth_inclination);
 					if (newscore < score) {
 						score = newscore;
@@ -208,8 +221,11 @@ public class HMHybrid extends Heuristic {
 
 	private void expand(StateMachine machine, Role role, MTreeNode node)
 			throws MoveDefinitionException, TransitionDefinitionException {
-		if (node.move == null) { // max-node
-			if (machine.isTerminal(node.state)) return;
+		if (node.isMaxNode()) { // max-node
+			if (machine.isTerminal(node.state)) {
+				System.err.println("Asked to expand terminal state...");
+				return;
+			}
 			List<Move> actions = machine.findLegals(role, node.state);
 			for (Move move : actions) {
 				MTreeNode newnode = new MTreeNode(node.state, move, node);
@@ -225,13 +241,18 @@ public class HMHybrid extends Heuristic {
 		}
 	}
 
-	private void backpropogate(MTreeNode node, int eval, int depth) {
-		while (node != null) {
+	private void backpropogate(MTreeNode node, int eval, int depth, boolean proven) {
+		if (proven) {
+			node.lower = node.upper = eval;
+		}
+		while (true) {
 			node.visits++;
 			node.sum_utility += eval;
 			node.depth = Math.max(node.depth, depth);
-			if (node.move == null) depth++;
+			if (node.isMaxNode()) depth++;
 			node = node.parent;
+			if (node == null) return;
+			if (proven) proven = node.setBounds();
 		}
 	}
 
