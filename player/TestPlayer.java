@@ -24,7 +24,7 @@ public class TestPlayer extends StateMachineGamer {
 	@Override
 	public StateMachine getInitialStateMachine() {
 		prover = new ProverStateMachine();
-		prop = new BetterPropNetStateMachine();
+		prop = new BetterPropNetStateMachine(new StateMachine[0]);
 		return prop;
 	}
 
