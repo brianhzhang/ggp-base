@@ -12,9 +12,7 @@ import org.ggp.base.util.propnet.architecture.Component;
 public final class Proposition extends Component {
 	/** The name of the Proposition. */
 	private GdlSentence name;
-	/** The value of the Proposition. */
-	private boolean value;
-	private boolean set = false;
+	public boolean base;
 
 	/**
 	 * Creates a new Proposition with name <tt>name</tt>.
@@ -52,22 +50,37 @@ public final class Proposition extends Component {
 	 * @see org.ggp.base.util.propnet.architecture.Component#getValue()
 	 */
 	@Override
-	public boolean getValue() {
-		if (set) return value;
+	public void propogate() {
 		Set<Component> components = getInputs();
 		if (components.size() == 0) {
-			return value;
+		} else {
+			Component c = getSingleInput();
+			if (c instanceof Transition) {
+			} else {
+				value = c.getValue();
+				set = true;
+			}
 		}
-		Component c = getSingleInput();
-		if (c instanceof Transition) {
-			return value;
+		if (!set || value != lastPropogation) {
+			set = true;
+			lastPropogation = value;
+			for (Component c : getOutputs()){
+				c.propogate();
+			}
 		}
-		boolean val = c.getValue();
-		return val;
 	}
 	
-	public void setSet(boolean set) {
-		this.set = set;
+	public void startPropogate() {
+		set = true;
+		lastPropogation = value;
+		for (Component c : getOutputs()){
+			c.propogate();
+		}
+	}
+
+	public void reset() {
+		set = false;
+		value = false;
 	}
 
 	/**

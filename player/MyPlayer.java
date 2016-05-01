@@ -52,9 +52,10 @@ public class MyPlayer extends StateMachineGamer {
 	
 	@Override
 	public StateMachine getInitialStateMachine() {
-//		 return new CachedStateMachine(new ProverStateMachine());
-		return new PropNetStateMachine();
-		 //return new PropNetStateMachine2();
+//		return new CachedStateMachine(new ProverStateMachine());
+//		return new PropNetStateMachine();
+//		return new PropNetStateMachine2();
+		return new BetterPropNetStateMachine();
 	}
 
 	@Override

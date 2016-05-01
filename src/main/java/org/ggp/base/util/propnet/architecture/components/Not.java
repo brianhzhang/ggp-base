@@ -8,17 +8,12 @@ import org.ggp.base.util.propnet.architecture.Component;
 @SuppressWarnings("serial")
 public final class Not extends Component
 {
-    /**
-     * Returns the inverse of the input to the not.
-     *
-     * @see org.ggp.base.util.propnet.architecture.Component#getValue()
-     */
-    @Override
-    public boolean getValue()
-    {
-        return !getSingleInput().getValue();
-    }
 
+	public Not() {
+		value = false;
+		set = false;
+	}
+	
     /**
      * @see org.ggp.base.util.propnet.architecture.Component#toString()
      */
@@ -27,4 +22,22 @@ public final class Not extends Component
     {
         return toDot("invtriangle", "grey", "NOT");
     }
+
+	@Override
+	public void propogate() {
+		value = !getSingleInput().getValue();
+		if (!set || value != lastPropogation) {
+			set = true;
+			lastPropogation = value;
+			for (Component c : getOutputs()){
+				c.propogate();
+			}
+		}
+	}
+
+	@Override
+	public void reset() {
+		set = false;
+		value = false;
+	}
 }

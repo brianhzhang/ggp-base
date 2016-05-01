@@ -41,4 +41,14 @@ public final class Constant extends Component
     {
         return toDot("doublecircle", "grey", Boolean.toString(value).toUpperCase());
     }
+
+	@Override
+	public void reset() {}
+
+	@Override
+	public void propogate() {
+		for (Component c : getOutputs()) {
+			c.propogate();
+		}
+	}
 }

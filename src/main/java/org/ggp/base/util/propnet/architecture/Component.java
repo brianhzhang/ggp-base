@@ -13,11 +13,15 @@ import java.util.Set;
 public abstract class Component implements Serializable
 {
 
+	protected boolean value = false;
     private static final long serialVersionUID = 352524175700224447L;
     /** The inputs to the component. */
     private final Set<Component> inputs;
     /** The outputs of the component. */
     private final Set<Component> outputs;
+    
+    protected boolean lastPropogation = false;
+    protected boolean set = false;
 
     /**
      * Creates a new Component with no inputs or outputs.
@@ -119,7 +123,11 @@ public abstract class Component implements Serializable
      *
      * @return The value of the Component.
      */
-    public abstract boolean getValue();
+    public boolean getValue() {
+    	return value;
+    }
+    
+    public abstract void propogate();
 
     /**
      * Returns a representation of the Component in .dot format.
@@ -128,6 +136,8 @@ public abstract class Component implements Serializable
      */
     @Override
     public abstract String toString();
+    
+    public abstract void reset();
 
     /**
      * Returns a configurable representation of the Component in .dot format.
@@ -144,7 +154,7 @@ public abstract class Component implements Serializable
     {
         StringBuilder sb = new StringBuilder();
 
-        sb.append("\"@" + Integer.toHexString(hashCode()) + "\"[shape=" + shape + ", style= filled, fillcolor=" + fillcolor + ", label=\"" + label + "\"]; ");
+        sb.append("\"@" + Integer.toHexString(hashCode()) + "\"[shape=" + shape + ", value="+ value+", fillcolor=" + fillcolor + ", label=\"" + label + "\"]; ");
         for ( Component component : getOutputs() )
         {
             sb.append("\"@" + Integer.toHexString(hashCode()) + "\"->" + "\"@" + Integer.toHexString(component.hashCode()) + "\"; ");

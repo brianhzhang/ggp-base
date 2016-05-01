@@ -14,18 +14,29 @@ public final class Or extends Component
      * @see org.ggp.base.util.propnet.architecture.Component#getValue()
      */
     @Override
-    public boolean getValue()
+    public void propogate()
     {
+    	value = false;
         for ( Component component : getInputs() )
         {
             if ( component.getValue() )
             {
-                return true;
+                value = true;
+                break;
             }
         }
-        return false;
+        if (!set || value != lastPropogation) {
+			set = true;
+			lastPropogation = value;
+			for (Component c : getOutputs()){
+				c.propogate();
+			}
+		}
     }
-
+    
+    public void reset() {
+		set = false;
+	}
     /**
      * @see org.ggp.base.util.propnet.architecture.Component#toString()
      */
