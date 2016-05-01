@@ -83,7 +83,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 		markbases(state.getContents());
 		Set<Proposition> bases = propNet.getGoalPropositions().get(role);
 		for (Proposition p : bases) {
-			if (p.getSingleInput().getValue()) return Integer.parseInt(p.getName().get(1).toString());
+			if (p.getValue()) return Integer.parseInt(p.getName().get(1).toString());
 		}
 		throw new GoalDefinitionException(state, role);
 	}
@@ -95,6 +95,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 	@Override
 	public MachineState getInitialState() {
 		clearpropnet();
+		System.out.println(propNet.getNumNots());
 		propNet.getInitProposition().setValue(true);
 		propNet.getInitProposition().propogate();
 		Map<GdlSentence, Proposition> bases = propNet.getBasePropositions();

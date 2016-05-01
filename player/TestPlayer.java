@@ -42,6 +42,21 @@ public class TestPlayer extends StateMachineGamer {
 		}
 		while (!prover.isTerminal(state)) {
 			List<Move> moves = prover.getRandomJointMove(state);
+			List<Move> legals = prover.getLegalMoves(state, getRole());
+			List<Move> props = prop.getLegalMoves(state, getRole());
+			if (!props.equals(legals)) {
+				Set<Move> contents = new HashSet<Move>(props);
+				Set<Move> newcontents = new HashSet<Move>(legals);
+				System.out.print("Prop (Moves): [");
+				for (Move m : contents) {
+					System.out.print(m + ", ");
+				}
+				System.out.print("]\nProver (Moves): [");
+				for (Move m : newcontents) {
+					System.out.print(m + ", ");
+				}
+				System.out.println("]");
+			}
 			MachineState temp = state;
 			state = prover.getNextState(state, moves);
 			if (!prop.getNextState(temp, moves).equals(state)) {
