@@ -1,9 +1,6 @@
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,8 +32,8 @@ public class BetterPropNetStateMachine extends StateMachine {
 	/** The player roles */
 	private List<Role> roles;
 
-	private Set<GdlSentence> lastBases;
-	private Set<GdlSentence> lastInputs;
+	private Set<Proposition> lastBases;
+	private Set<Proposition> lastInputs;
 	public List<Gdl> description;
 	private StateMachine[] machines;
 
@@ -73,8 +70,8 @@ public class BetterPropNetStateMachine extends StateMachine {
 			this.description = description;
 			propNet = OptimizingPropNetFactory.create(description);
 			roles = propNet.getRoles();
-			lastBases = new HashSet<GdlSentence>();
-			lastInputs = new HashSet<GdlSentence>();
+			lastBases = new HashSet<Proposition>();
+			lastInputs = new HashSet<Proposition>();
 			Collection<Proposition> bases = propNet.getBasePropositions().values();
 			Collection<Proposition> inputs = propNet.getInputPropositions().values();
 			for (Proposition p : propNet.getPropositions()) {
@@ -93,7 +90,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public boolean isTerminal(MachineState state) {
-		markbases(state.getContents());
+		markbases(((PropNetMachineState) state).getPropContents());
 		return propNet.getTerminalProposition().getValue();
 	}
 
@@ -104,7 +101,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public int getGoal(MachineState state, Role role) throws GoalDefinitionException {
-		markbases(state.getContents());
+		markbases(((PropNetMachineState) state).getPropContents());
 		Set<Proposition> bases = propNet.getGoalPropositions().get(role);
 		for (Proposition p : bases) {
 			if (p.getValue()) return Integer.parseInt(p.getName().get(1).toString());
@@ -122,11 +119,15 @@ public class BetterPropNetStateMachine extends StateMachine {
 		propNet.getInitProposition().setValue(true);
 		propNet.getInitProposition().propogate(false);
 		Map<GdlSentence, Proposition> bases = propNet.getBasePropositions();
-		Set<GdlSentence> nexts = new HashSet<GdlSentence>();
-		for (GdlSentence s : bases.keySet()) {
-			if (bases.get(s).getSingleInput().getValue()) nexts.add(s);
+		Set<Proposition> nexts = new HashSet<Proposition>();
+		Set<GdlSentence> nextGdl = new HashSet<GdlSentence>();
+		for (Proposition p : bases.values()) {
+			if (p.getSingleInput().getValue()) {
+				nexts.add(p);
+				nextGdl.add(p.getName());
+			}
 		}
-		MachineState initial = new MachineState(nexts);
+		PropNetMachineState initial = new PropNetMachineState(nextGdl, nexts);
 		propNet.getInitProposition().setValue(false);
 		propNet.getInitProposition().propogate(false);
 		return initial;
@@ -157,7 +158,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public List<Move> getLegalMoves(MachineState state, Role role) throws MoveDefinitionException {
-		markbases(state.getContents());
+		markbases(((PropNetMachineState) state).getPropContents());
 		return propToMoves(propNet.getLegalPropositions().get(role), false);
 	}
 
@@ -167,14 +168,18 @@ public class BetterPropNetStateMachine extends StateMachine {
 	@Override
 	public MachineState getNextState(MachineState state, List<Move> moves)
 			throws TransitionDefinitionException {
-		markbases(state.getContents());
+		markbases(((PropNetMachineState) state).getPropContents());
 		markactions(toDoes(moves));
 		Map<GdlSentence, Proposition> bases = propNet.getBasePropositions();
-		Set<GdlSentence> nexts = new HashSet<GdlSentence>();
-		for (GdlSentence s : bases.keySet()) {
-			if (bases.get(s).getSingleInput().getValue()) nexts.add(s);
+		Set<Proposition> nexts = new HashSet<Proposition>();
+		Set<GdlSentence> nextGdl = new HashSet<GdlSentence>();
+		for (Proposition p : bases.values()) {
+			if (p.getSingleInput().getValue()) {
+				nexts.add(p);
+				nextGdl.add(p.getName());
+			}
 		}
-		return new MachineState(nexts);
+		return new PropNetMachineState(nextGdl, nexts);
 	}
 
 	/* Already implemented for you */
@@ -196,13 +201,15 @@ public class BetterPropNetStateMachine extends StateMachine {
 	 * @param moves
 	 * @return
 	 */
-	private Set<GdlSentence> toDoes(List<Move> moves) {
-		Set<GdlSentence> doeses = new HashSet<GdlSentence>(moves.size());
+	private Set<Proposition> toDoes(List<Move> moves) {
+		Set<Proposition> doeses = new HashSet<Proposition>(moves.size());
 		Map<Role, Integer> roleIndices = getRoleIndices();
 
+		Map<GdlSentence, Proposition> bases = propNet.getInputPropositions();
 		for (int i = 0; i < roles.size(); i++) {
 			int index = roleIndices.get(roles.get(i));
-			doeses.add(ProverQueryBuilder.toDoes(roles.get(i), moves.get(index)));
+			GdlSentence s = ProverQueryBuilder.toDoes(roles.get(i), moves.get(index));
+			doeses.add(bases.get(s));
 		}
 		return doeses;
 	}
@@ -229,38 +236,37 @@ public class BetterPropNetStateMachine extends StateMachine {
 		return Integer.parseInt(constant.toString());
 	}
 
-	private void markbases(Set<GdlSentence> contents) {
-		Set<GdlSentence> nowFalse = new HashSet<GdlSentence>(lastBases);
-		Set<GdlSentence> nowTrue = new HashSet<GdlSentence>(contents);
+	private void markbases(Set<Proposition> contents) {
+		Set<Proposition> nowFalse = new HashSet<Proposition>(lastBases);
+		Set<Proposition> nowTrue = new HashSet<Proposition>(contents);
 		nowFalse.removeAll(contents);
 		nowTrue.removeAll(lastBases);
 		Map<GdlSentence, Proposition> bases = propNet.getBasePropositions();
-		for (GdlSentence s : nowFalse) {
-			bases.get(s).setValue(false);
-			bases.get(s).startPropogate();
+		for (Proposition p : nowFalse) {
+			p.setValue(false);
+			p.startPropogate();
 		}
-		for (GdlSentence s : nowTrue) {
-			bases.get(s).setValue(true);
-			bases.get(s).startPropogate();
+		for (Proposition p : nowTrue) {
+			p.setValue(true);
+			p.startPropogate();
 		}
 		lastBases = contents;
 	}
 
-	private void markactions(Set<GdlSentence> does) {
-		Set<GdlSentence> nowFalse = new HashSet<GdlSentence>(lastInputs);
-		Set<GdlSentence> nowTrue = new HashSet<GdlSentence>(does);
-		nowFalse.removeAll(does);
+	private void markactions(Set<Proposition> set) {
+		Set<Proposition> nowFalse = new HashSet<Proposition>(lastInputs);
+		Set<Proposition> nowTrue = new HashSet<Proposition>(set);
+		nowFalse.removeAll(set);
 		nowTrue.removeAll(lastInputs);
-		Map<GdlSentence, Proposition> bases = propNet.getInputPropositions();
-		for (GdlSentence s : nowFalse) {
-			bases.get(s).setValue(false);
-			bases.get(s).startPropogate();
+		for (Proposition p : nowFalse) {
+			p.setValue(false);
+			p.startPropogate();
 		}
-		for (GdlSentence s : nowTrue) {
-			bases.get(s).setValue(true);
-			bases.get(s).startPropogate();
+		for (Proposition p : nowTrue) {
+			p.setValue(true);
+			p.startPropogate();
 		}
-		lastInputs = does;
+		lastInputs = set;
 	}
 
 	private void clearpropnet() {

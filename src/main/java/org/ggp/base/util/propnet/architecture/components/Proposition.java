@@ -51,6 +51,7 @@ public final class Proposition extends Component {
 	 */
 	@Override
 	public void propogate(boolean newValue) {
+		if (base) return;
 		Set<Component> components = getInputs();
 		if (components.size() == 0) {
 		} else {

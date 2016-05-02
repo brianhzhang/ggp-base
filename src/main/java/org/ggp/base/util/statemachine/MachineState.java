@@ -15,7 +15,7 @@ public class MachineState {
      * want to do more advanced things can subclass this implementation, but for
      * many cases this will do exactly what we want.
      */
-    private final Set<GdlSentence> contents;
+	protected Set<GdlSentence> contents;
     public MachineState(Set<GdlSentence> contents)
     {
         this.contents = contents;
@@ -26,12 +26,12 @@ public class MachineState {
      * of the game being played. Two given states with identical GDL sentences
      * should be identical states of the game.
      */
-    public Set<GdlSentence> getContents()
+	public Set<GdlSentence> getContents()
     {
         return contents;
     }
 
-    @Override
+	@Override
     public MachineState clone() {
         return new MachineState(new HashSet<GdlSentence>(contents));
     }
@@ -43,7 +43,7 @@ public class MachineState {
         return getContents().hashCode();
     }
 
-    @Override
+	@Override
     public String toString()
     {
         Set<GdlSentence> contents = getContents();
