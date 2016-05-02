@@ -34,11 +34,12 @@ public class BetterPropNetStateMachine extends StateMachine {
 	private List<Proposition> ordering;
 	/** The player roles */
 	private List<Role> roles;
-	
+
 	Proposition[] allbases;
 	Proposition[] allinputs;
 	Map<GdlSentence, Integer> inputmap;
-
+	Map<Proposition, Integer> basesmap;
+	
 	private BitSet lastBases;
 	private BitSet lastInputs;
 	public List<Gdl> description;
@@ -71,7 +72,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 			}
 		}
 	}
-	
+
 	public void threadInitialize(List<Gdl> description) {
 		try {
 			this.description = description;
@@ -80,6 +81,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 			Collection<Proposition> bases = propNet.getBasePropositions().values();
 			lastBases = new BitSet(bases.size());
 			allbases = new Proposition[bases.size()];
+			basesmap = new HashMap<Proposition, Integer>();
 			Collection<Proposition> inputs = propNet.getInputPropositions().values();
 			lastInputs = new BitSet(inputs.size());
 			allinputs = new Proposition[inputs.size()];
@@ -89,6 +91,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 			for (Proposition p : propNet.getPropositions()) {
 				if (bases.contains(p)) {
 					allbases[i] = p;
+					basesmap.put(p, i);
 					i ++;
 					p.base = true;
 				}
@@ -247,8 +250,8 @@ public class BetterPropNetStateMachine extends StateMachine {
 		BitSet bs = (BitSet) lastBases.clone();
 		bs.xor(contents);
 		for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i+1)) {
-		     allbases[i].setValue(contents.get(i));
-		     allbases[i].startPropogate();
+			allbases[i].setValue(contents.get(i));
+			allbases[i].startPropogate();
 		}
 		lastBases = (BitSet) contents.clone();
 	}
@@ -257,8 +260,8 @@ public class BetterPropNetStateMachine extends StateMachine {
 		BitSet bs = (BitSet) lastInputs.clone();
 		bs.xor(does);
 		for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i+1)) {
-		     allinputs[i].setValue(does.get(i));
-		     allinputs[i].startPropogate();
+			allinputs[i].setValue(does.get(i));
+			allinputs[i].startPropogate();
 		}
 		lastInputs = (BitSet) does.clone();
 	}
@@ -282,7 +285,7 @@ class MTI extends Thread {
 		this.p = p;
 		this.description = description;
 	}
-	
+
 	public void run() {
 		p.threadInitialize(description);
 	}
