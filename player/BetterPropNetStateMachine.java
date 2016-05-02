@@ -16,7 +16,6 @@ import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.PropNet;
 import org.ggp.base.util.propnet.architecture.components.Not;
 import org.ggp.base.util.propnet.architecture.components.Proposition;
-import org.ggp.base.util.propnet.architecture.components.PropCallback;
 import org.ggp.base.util.propnet.factory.OptimizingPropNetFactory;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
@@ -35,15 +34,11 @@ public class BetterPropNetStateMachine extends StateMachine {
 	private List<Proposition> ordering;
 	/** The player roles */
 	private List<Role> roles;
-
+	
 	Proposition[] allbases;
 	Proposition[] allinputs;
 	Map<GdlSentence, Integer> inputmap;
-	Map<Proposition, Integer> basesmap;
 
-	private BitSet lastStateBases;
-	private BitSet lastStateInputs;
-	
 	private BitSet lastBases;
 	private BitSet lastInputs;
 	public List<Gdl> description;
@@ -76,7 +71,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 			}
 		}
 	}
-
+	
 	public void threadInitialize(List<Gdl> description) {
 		try {
 			this.description = description;
@@ -85,20 +80,15 @@ public class BetterPropNetStateMachine extends StateMachine {
 			Collection<Proposition> bases = propNet.getBasePropositions().values();
 			lastBases = new BitSet(bases.size());
 			allbases = new Proposition[bases.size()];
-			basesmap = new HashMap<Proposition, Integer>();
 			Collection<Proposition> inputs = propNet.getInputPropositions().values();
 			lastInputs = new BitSet(inputs.size());
 			allinputs = new Proposition[inputs.size()];
 			inputmap = new HashMap<GdlSentence, Integer>();
-			lastStateBases = new BitSet(allbases.length);
-			lastStateInputs = new BitSet(allinputs.length);
 			int i = 0;
 			int j = 0;
 			for (Proposition p : propNet.getPropositions()) {
 				if (bases.contains(p)) {
 					allbases[i] = p;
-					basesmap.put(p, i);
-					p.setCallbacks(this::setBase, this::setInput);
 					i ++;
 					p.base = true;
 				}
@@ -106,20 +96,12 @@ public class BetterPropNetStateMachine extends StateMachine {
 					allinputs[j] = p;
 					inputmap.put(p.getName(), j);
 					j ++;
-					p.input = true;
+					p.base = true;
 				}
 			}
 		} catch (InterruptedException e) {
 			throw new RuntimeException(e);
 		}
-	}
-
-	public void setBase(Proposition p, boolean value) {
-		lastStateBases.set(basesmap.get(p), value);
-	}
-
-	public void setInput(Proposition p, boolean value) {
-		lastStateInputs.set(inputmap.get(p.getName()), value);
 	}
 
 	/**
@@ -265,8 +247,8 @@ public class BetterPropNetStateMachine extends StateMachine {
 		BitSet bs = (BitSet) lastBases.clone();
 		bs.xor(contents);
 		for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i+1)) {
-			allbases[i].setValue(contents.get(i));
-			allbases[i].startPropogate();
+		     allbases[i].setValue(contents.get(i));
+		     allbases[i].startPropogate();
 		}
 		lastBases = (BitSet) contents.clone();
 	}
@@ -275,8 +257,8 @@ public class BetterPropNetStateMachine extends StateMachine {
 		BitSet bs = (BitSet) lastInputs.clone();
 		bs.xor(does);
 		for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i+1)) {
-			allinputs[i].setValue(does.get(i));
-			allinputs[i].startPropogate();
+		     allinputs[i].setValue(does.get(i));
+		     allinputs[i].startPropogate();
 		}
 		lastInputs = (BitSet) does.clone();
 	}
@@ -290,8 +272,6 @@ public class BetterPropNetStateMachine extends StateMachine {
 		for (Component s : nots) {
 			s.propogate(true);
 		}
-		lastStateBases = new BitSet(allbases.length);
-		lastStateInputs = new BitSet(allinputs.length);
 	}
 }
 //MTI = Multi Thread Initializer
@@ -302,7 +282,7 @@ class MTI extends Thread {
 		this.p = p;
 		this.description = description;
 	}
-
+	
 	public void run() {
 		p.threadInitialize(description);
 	}

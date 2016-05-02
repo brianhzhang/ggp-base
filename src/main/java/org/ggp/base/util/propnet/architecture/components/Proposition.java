@@ -13,9 +13,6 @@ public final class Proposition extends Component {
 	/** The name of the Proposition. */
 	private GdlSentence name;
 	public boolean base;
-	public boolean input;
-	private PropCallback setBases;
-	private PropCallback setInput;
 
 	/**
 	 * Creates a new Proposition with name <tt>name</tt>.
@@ -47,11 +44,6 @@ public final class Proposition extends Component {
 		name = newName;
 	}
 
-	public void setCallbacks(PropCallback bases, PropCallback inputs) {
-		this.setBases = bases;
-		this.setInput = inputs;
-	}
-
 	/**
 	 * Returns the current value of the Proposition.
 	 *
@@ -59,14 +51,7 @@ public final class Proposition extends Component {
 	 */
 	@Override
 	public void propogate(boolean newValue) {
-		if (base) {
-			if (newValue != value) setBases.callback(this, newValue);
-			return;
-		}
-		if (input) {
-			if (newValue != value) setInput.callback(this, newValue);
-			return;
-		}
+		if (base) return;
 		Set<Component> components = getInputs();
 		if (components.size() == 0) {
 		} else {
@@ -83,7 +68,7 @@ public final class Proposition extends Component {
 			}
 		}
 	}
-
+	
 	public void startPropogate() {
 		lastPropogation = value;
 		for (Component c : getOutputs()){
