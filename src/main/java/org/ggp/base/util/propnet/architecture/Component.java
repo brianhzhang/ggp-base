@@ -14,152 +14,183 @@ public abstract class Component implements Serializable
 {
 
 	protected boolean value = false;
-    private static final long serialVersionUID = 352524175700224447L;
-    /** The inputs to the component. */
-    private final Set<Component> inputs;
-    /** The outputs of the component. */
-    private final Set<Component> outputs;
-    
-    protected boolean lastPropogation = false;
+	private static final long serialVersionUID = 352524175700224447L;
+	/** The inputs to the component. */
+	private Set<Component> inputs;
+	/** The outputs of the component. */
+	private Set<Component> outputs;
 
-    /**
-     * Creates a new Component with no inputs or outputs.
-     */
-    public Component()
-    {
-        this.inputs = new HashSet<Component>();
-        this.outputs = new HashSet<Component>();
-    }
+	private Component[] inputarr;
+	private Component[] outputarr;
+	
+	protected boolean lastPropogation = false;
 
-    /**
-     * Adds a new input.
-     *
-     * @param input
-     *            A new input.
-     */
-    public void addInput(Component input)
-    {
-        inputs.add(input);
-    }
+	/**
+	 * Creates a new Component with no inputs or outputs.
+	 */
+	public Component()
+	{
+		this.inputs = new HashSet<Component>();
+		this.outputs = new HashSet<Component>();
+	}
 
-    public void removeInput(Component input)
-    {
-        inputs.remove(input);
-    }
+	public void crystalize() {
+		inputarr = new Component[inputs.size()];
+		inputs.toArray(inputarr);
+		inputs = null;
+		outputarr = new Component[outputs.size()];
+		outputs.toArray(outputarr);
+		outputs = null;
+	}
 
-    public void removeOutput(Component output)
-    {
-        outputs.remove(output);
-    }
+	/**
+	 * Adds a new input.
+	 *
+	 * @param input
+	 *            A new input.
+	 */
+	public void addInput(Component input)
+	{
+		inputs.add(input);
+	}
 
-    public void removeAllInputs()
-    {
-        inputs.clear();
-    }
+	public void removeInput(Component input)
+	{
+		inputs.remove(input);
+	}
 
-    public void removeAllOutputs()
-    {
-        outputs.clear();
-    }
+	public void removeOutput(Component output)
+	{
+		outputs.remove(output);
+	}
 
-    /**
-     * Adds a new output.
-     *
-     * @param output
-     *            A new output.
-     */
-    public void addOutput(Component output)
-    {
-        outputs.add(output);
-    }
+	public void removeAllInputs()
+	{
+		inputs.clear();
+	}
 
-    /**
-     * Getter method.
-     *
-     * @return The inputs to the component.
-     */
-    public Set<Component> getInputs()
-    {
-        return inputs;
-    }
+	public void removeAllOutputs()
+	{
+		outputs.clear();
+	}
 
-    /**
-     * A convenience method, to get a single input.
-     * To be used only when the component is known to have
-     * exactly one input.
-     *
-     * @return The single input to the component.
-     */
-    public Component getSingleInput() {
-        assert inputs.size() == 1;
-        return inputs.iterator().next();
-    }
+	/**
+	 * Adds a new output.
+	 *
+	 * @param output
+	 *            A new output.
+	 */
+	public void addOutput(Component output)
+	{
+		outputs.add(output);
+	}
 
-    /**
-     * Getter method.
-     *
-     * @return The outputs of the component.
-     */
-    public Set<Component> getOutputs()
-    {
-        return outputs;
-    }
+	/**
+	 * Getter method.
+	 *
+	 * @return The inputs to the component.
+	 */
+	public Set<Component> getInputs()
+	{
+		return inputs;
+	}
+	
+	public Component[] getInputarr() {
+		return inputarr;
+	}
+	
+	public Component getSingleInputarr() {
+		assert inputarr.length == 1;
+		return inputarr[0];
+	}
+	
 
-    /**
-     * A convenience method, to get a single output.
-     * To be used only when the component is known to have
-     * exactly one output.
-     *
-     * @return The single output to the component.
-     */
-    public Component getSingleOutput() {
-        assert outputs.size() == 1;
-        return outputs.iterator().next();
-    }
+	/**
+	 * A convenience method, to get a single input.
+	 * To be used only when the component is known to have
+	 * exactly one input.
+	 *
+	 * @return The single input to the component.
+	 */
+	public Component getSingleInput() {
+		assert inputs.size() == 1;
+		return inputs.iterator().next();
+	}
 
-    /**
-     * Returns the value of the Component.
-     *
-     * @return The value of the Component.
-     */
-    public boolean getValue() {
-    	return value;
-    }
-    
-    public abstract void propogate(boolean newValue);
+	/**
+	 * Getter method.
+	 *
+	 * @return The outputs of the component.
+	 */
+	public Set<Component> getOutputs()
+	{
+		return outputs;
+	}
 
-    /**
-     * Returns a representation of the Component in .dot format.
-     *
-     * @see java.lang.Object#toString()
-     */
-    @Override
-    public abstract String toString();
-    
-    public abstract void reset();
+	/**
+	 * A convenience method, to get a single output.
+	 * To be used only when the component is known to have
+	 * exactly one output.
+	 *
+	 * @return The single output to the component.
+	 */
+	public Component getSingleOutput() {
+		assert outputs.size() == 1;
+		return outputs.iterator().next();
+	}
+	
+	public Component[] getOutputarr() {
+		return outputarr;
+	}
+	
+	public Component getSingleOutputarr() {
+		assert outputarr.length == 1;
+		return outputarr[0];
+	}
 
-    /**
-     * Returns a configurable representation of the Component in .dot format.
-     *
-     * @param shape
-     *            The value to use as the <tt>shape</tt> attribute.
-     * @param fillcolor
-     *            The value to use as the <tt>fillcolor</tt> attribute.
-     * @param label
-     *            The value to use as the <tt>label</tt> attribute.
-     * @return A representation of the Component in .dot format.
-     */
-    protected String toDot(String shape, String fillcolor, String label)
-    {
-        StringBuilder sb = new StringBuilder();
+	/**
+	 * Returns the value of the Component.
+	 *
+	 * @return The value of the Component.
+	 */
+	public boolean getValue() {
+		return value;
+	}
 
-        sb.append("\"@" + Integer.toHexString(hashCode()) + "\"[shape=" + shape + ", value="+ value+", fillcolor=" + fillcolor + ", label=\"" + label + "\"]; ");
-        for ( Component component : getOutputs() )
-        {
-            sb.append("\"@" + Integer.toHexString(hashCode()) + "\"->" + "\"@" + Integer.toHexString(component.hashCode()) + "\"; ");
-        }
+	public abstract void propogate(boolean newValue);
 
-        return sb.toString();
-    }
+	/**
+	 * Returns a representation of the Component in .dot format.
+	 *
+	 * @see java.lang.Object#toString()
+	 */
+	@Override
+	public abstract String toString();
+
+	public abstract void reset();
+
+	/**
+	 * Returns a configurable representation of the Component in .dot format.
+	 *
+	 * @param shape
+	 *            The value to use as the <tt>shape</tt> attribute.
+	 * @param fillcolor
+	 *            The value to use as the <tt>fillcolor</tt> attribute.
+	 * @param label
+	 *            The value to use as the <tt>label</tt> attribute.
+	 * @return A representation of the Component in .dot format.
+	 */
+	protected String toDot(String shape, String fillcolor, String label)
+	{
+		StringBuilder sb = new StringBuilder();
+
+		sb.append("\"@" + Integer.toHexString(hashCode()) + "\"[shape=" + shape + ", value="+ value+", fillcolor=" + fillcolor + ", label=\"" + label + "\"]; ");
+		for ( Component component : getOutputarr() )
+		{
+			sb.append("\"@" + Integer.toHexString(hashCode()) + "\"->" + "\"@" + Integer.toHexString(component.hashCode()) + "\"; ");
+		}
+
+		return sb.toString();
+	}
 
 }

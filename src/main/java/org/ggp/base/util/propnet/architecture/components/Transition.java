@@ -16,10 +16,10 @@ public final class Transition extends Component
     @Override
     public void propogate(boolean newValue)
     {
-        value = getSingleInput().getValue();
+        value = getSingleInputarr().getValue();
         if (value != lastPropogation) {
 			lastPropogation = value;
-			for (Component c : getOutputs()){
+			for (Component c : getOutputarr()){
 				c.propogate(value);
 			}
 		}

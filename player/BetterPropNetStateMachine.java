@@ -72,6 +72,9 @@ public class BetterPropNetStateMachine extends StateMachine {
 		try {
 			this.description = description;
 			propNet = OptimizingPropNetFactory.create(description);
+			for (Component c : propNet.getComponents()) {
+				c.crystalize();
+			}
 			roles = propNet.getRoles();
 			lastBases = new HashSet<GdlSentence>();
 			lastInputs = new HashSet<GdlSentence>();
@@ -124,7 +127,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 		Map<GdlSentence, Proposition> bases = propNet.getBasePropositions();
 		Set<GdlSentence> nexts = new HashSet<GdlSentence>();
 		for (GdlSentence s : bases.keySet()) {
-			if (bases.get(s).getSingleInput().getValue()) nexts.add(s);
+			if (bases.get(s).getSingleInputarr().getValue()) nexts.add(s);
 		}
 		MachineState initial = new MachineState(nexts);
 		propNet.getInitProposition().setValue(false);
@@ -172,7 +175,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 		Map<GdlSentence, Proposition> bases = propNet.getBasePropositions();
 		Set<GdlSentence> nexts = new HashSet<GdlSentence>();
 		for (GdlSentence s : bases.keySet()) {
-			if (bases.get(s).getSingleInput().getValue()) nexts.add(s);
+			if (bases.get(s).getSingleInputarr().getValue()) nexts.add(s);
 		}
 		return new MachineState(nexts);
 	}

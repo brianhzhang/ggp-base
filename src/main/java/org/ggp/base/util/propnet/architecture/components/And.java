@@ -19,10 +19,10 @@ public final class And extends Component
     public void propogate(boolean newValue)
     {
     	numTrue += (newValue)? 1 : -1;
-    	value = (numTrue == getInputs().size());
+    	value = (numTrue == getInputarr().length);
         if (value != lastPropogation) {
 			lastPropogation = value;
-			for (Component c : getOutputs()){
+			for (Component c : getOutputarr()){
 				c.propogate(value);
 			}
 		}

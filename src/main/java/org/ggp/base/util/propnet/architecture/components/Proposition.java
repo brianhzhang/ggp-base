@@ -1,7 +1,5 @@
 package org.ggp.base.util.propnet.architecture.components;
 
-import java.util.Set;
-
 import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
 
@@ -52,10 +50,10 @@ public final class Proposition extends Component {
 	@Override
 	public void propogate(boolean newValue) {
 		if (base) return;
-		Set<Component> components = getInputs();
-		if (components.size() == 0) {
+		Component[] components = getInputarr();
+		if (components.length == 0) {
 		} else {
-			Component c = getSingleInput();
+			Component c = getSingleInputarr();
 			if (c instanceof Transition) {
 			} else {
 				value = c.getValue();
@@ -63,7 +61,7 @@ public final class Proposition extends Component {
 		}
 		if (value != lastPropogation) {
 			lastPropogation = value;
-			for (Component c : getOutputs()){
+			for (Component c : getOutputarr()){
 				c.propogate(value);
 			}
 		}
@@ -71,7 +69,7 @@ public final class Proposition extends Component {
 	
 	public void startPropogate() {
 		lastPropogation = value;
-		for (Component c : getOutputs()){
+		for (Component c : getOutputarr()){
 			c.propogate(value);
 		}
 	}

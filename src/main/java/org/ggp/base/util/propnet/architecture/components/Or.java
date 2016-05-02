@@ -20,7 +20,7 @@ public final class Or extends Component
     {
     	numTrue += (newValue)? 1 : -1;
     	value = (numTrue != 0);
-        for ( Component component : getInputs() )
+        for ( Component component : getInputarr() )
         {
             if ( component.getValue() )
             {
@@ -30,7 +30,7 @@ public final class Or extends Component
         }
         if (value != lastPropogation) {
 			lastPropogation = value;
-			for (Component c : getOutputs()){
+			for (Component c : getOutputarr()){
 				c.propogate(value);
 			}
 		}
