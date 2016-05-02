@@ -21,7 +21,6 @@ public abstract class Component implements Serializable
     private final Set<Component> outputs;
     
     protected boolean lastPropogation = false;
-    protected boolean set = false;
 
     /**
      * Creates a new Component with no inputs or outputs.

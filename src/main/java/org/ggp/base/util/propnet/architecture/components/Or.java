@@ -25,8 +25,7 @@ public final class Or extends Component
                 break;
             }
         }
-        if (!set || value != lastPropogation) {
-			set = true;
+        if (value != lastPropogation) {
 			lastPropogation = value;
 			for (Component c : getOutputs()){
 				c.propogate();
@@ -35,7 +34,8 @@ public final class Or extends Component
     }
     
     public void reset() {
-		set = false;
+		value = false;
+		lastPropogation = false;
 	}
     /**
      * @see org.ggp.base.util.propnet.architecture.Component#toString()

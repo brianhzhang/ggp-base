@@ -17,8 +17,7 @@ public final class Transition extends Component
     public void propogate()
     {
         value = getSingleInput().getValue();
-        if (!set || value != lastPropogation) {
-			set = true;
+        if (value != lastPropogation) {
 			lastPropogation = value;
 			for (Component c : getOutputs()){
 				c.propogate();
@@ -27,7 +26,7 @@ public final class Transition extends Component
     }
     
     public void reset() {
-		set = false;
+    	lastPropogation = false;
 		value = false;
 	}
 

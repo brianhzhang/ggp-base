@@ -58,11 +58,9 @@ public final class Proposition extends Component {
 			if (c instanceof Transition) {
 			} else {
 				value = c.getValue();
-				set = true;
 			}
 		}
-		if (!set || value != lastPropogation) {
-			set = true;
+		if (value != lastPropogation) {
 			lastPropogation = value;
 			for (Component c : getOutputs()){
 				c.propogate();
@@ -71,7 +69,6 @@ public final class Proposition extends Component {
 	}
 	
 	public void startPropogate() {
-		set = true;
 		lastPropogation = value;
 		for (Component c : getOutputs()){
 			c.propogate();
@@ -79,7 +76,7 @@ public final class Proposition extends Component {
 	}
 
 	public void reset() {
-		set = false;
+		lastPropogation = false;
 		value = false;
 	}
 

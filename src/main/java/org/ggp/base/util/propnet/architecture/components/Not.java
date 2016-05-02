@@ -11,7 +11,6 @@ public final class Not extends Component
 
 	public Not() {
 		value = false;
-		set = false;
 	}
 	
     /**
@@ -26,8 +25,7 @@ public final class Not extends Component
 	@Override
 	public void propogate() {
 		value = !getSingleInput().getValue();
-		if (!set || value != lastPropogation) {
-			set = true;
+		if (value != lastPropogation) {
 			lastPropogation = value;
 			for (Component c : getOutputs()){
 				c.propogate();
@@ -37,7 +35,7 @@ public final class Not extends Component
 
 	@Override
 	public void reset() {
-		set = false;
+		lastPropogation = false;
 		value = false;
 	}
 }
