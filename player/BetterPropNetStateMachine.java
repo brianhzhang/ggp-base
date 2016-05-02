@@ -4,7 +4,6 @@ import java.util.BitSet;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,9 +36,11 @@ public class BetterPropNetStateMachine extends StateMachine {
 	private List<Role> roles;
 	
 	Proposition[] allbases;
+	Proposition[] allinputs;
+	Map<GdlSentence, Integer> inputmap;
 
 	private BitSet lastBases;
-	private Set<GdlSentence> lastInputs;
+	private BitSet lastInputs;
 	public List<Gdl> description;
 	private StateMachine[] machines;
 
@@ -76,12 +77,15 @@ public class BetterPropNetStateMachine extends StateMachine {
 			this.description = description;
 			propNet = OptimizingPropNetFactory.create(description);
 			roles = propNet.getRoles();
-			lastInputs = new HashSet<GdlSentence>();
 			Collection<Proposition> bases = propNet.getBasePropositions().values();
 			lastBases = new BitSet(bases.size());
 			allbases = new Proposition[bases.size()];
 			Collection<Proposition> inputs = propNet.getInputPropositions().values();
+			lastInputs = new BitSet(inputs.size());
+			allinputs = new Proposition[inputs.size()];
+			inputmap = new HashMap<GdlSentence, Integer>();
 			int i = 0;
+			int j = 0;
 			for (Proposition p : propNet.getPropositions()) {
 				if (bases.contains(p)) {
 					allbases[i] = p;
@@ -89,6 +93,9 @@ public class BetterPropNetStateMachine extends StateMachine {
 					p.base = true;
 				}
 				if (inputs.contains(p)) {
+					allinputs[j] = p;
+					inputmap.put(p.getName(), j);
+					j ++;
 					p.base = true;
 				}
 			}
@@ -204,13 +211,12 @@ public class BetterPropNetStateMachine extends StateMachine {
 	 * @param moves
 	 * @return
 	 */
-	private Set<GdlSentence> toDoes(List<Move> moves) {
-		Set<GdlSentence> doeses = new HashSet<GdlSentence>(moves.size());
+	private BitSet toDoes(List<Move> moves) {
+		BitSet doeses = new BitSet(allinputs.length);
 		Map<Role, Integer> roleIndices = getRoleIndices();
-
 		for (int i = 0; i < roles.size(); i++) {
 			int index = roleIndices.get(roles.get(i));
-			doeses.add(ProverQueryBuilder.toDoes(roles.get(i), moves.get(index)));
+			doeses.set(inputmap.get(ProverQueryBuilder.toDoes(roles.get(i), moves.get(index))));
 		}
 		return doeses;
 	}
@@ -247,21 +253,14 @@ public class BetterPropNetStateMachine extends StateMachine {
 		lastBases = (BitSet) contents.clone();
 	}
 
-	private void markactions(Set<GdlSentence> does) {
-		Set<GdlSentence> nowFalse = new HashSet<GdlSentence>(lastInputs);
-		Set<GdlSentence> nowTrue = new HashSet<GdlSentence>(does);
-		nowFalse.removeAll(does);
-		nowTrue.removeAll(lastInputs);
-		Map<GdlSentence, Proposition> bases = propNet.getInputPropositions();
-		for (GdlSentence s : nowFalse) {
-			bases.get(s).setValue(false);
-			bases.get(s).startPropogate();
+	private void markactions(BitSet does) {
+		BitSet bs = (BitSet) lastInputs.clone();
+		bs.xor(does);
+		for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i+1)) {
+		     allinputs[i].setValue(does.get(i));
+		     allinputs[i].startPropogate();
 		}
-		for (GdlSentence s : nowTrue) {
-			bases.get(s).setValue(true);
-			bases.get(s).startPropogate();
-		}
-		lastInputs = does;
+		lastInputs = (BitSet) does.clone();
 	}
 
 	private void clearpropnet() {
