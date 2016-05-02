@@ -31,49 +31,46 @@ public class TestPlayer extends StateMachineGamer {
 	@Override
 	public void stateMachineMetaGame(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
-		for (int i = 0; i < 5; i ++) {
-			// TODO Auto-generated method stub
-			prover.initialize(prop.description);
-			MachineState state = prover.getInitialState();
-			MachineState other = prop.getInitialState();
-			//		System.out.println(prop.getInitialState());
-			//		for (Component c : prop.propNet.getInitProposition().getOutputs())
-			//			System.out.println(c);
-			if (!other.equals(state)) {
-				System.out.println("Prop1 Initial error.");
-			}
-			while (!prover.isTerminal(state)) {
-				List<Move> moves = prover.getRandomJointMove(state);
-				List<Move> legals = prover.getLegalMoves(state, getRole());
-				List<Move> props = prop.getLegalMoves(state, getRole());
-				if (!(new HashSet<>(props)).equals(new HashSet<>(legals))) {
-					Set<Move> contents = new HashSet<Move>(props);
-					Set<Move> newcontents = new HashSet<Move>(legals);
-					System.out.print("Prop (Moves): [");
-					for (Move m : contents) {
-						System.out.print(m + ", ");
-					}
-					System.out.print("]\nProver (Moves): [");
-					for (Move m : newcontents) {
-						System.out.print(m + ", ");
-					}
-					System.out.println("]");
-					System.out.println();
+		// TODO Auto-generated method stub
+		prover.initialize(prop.description);
+		MachineState state = prover.getInitialState();
+//		System.out.println(prop.getInitialState());
+//		for (Component c : prop.propNet.getInitProposition().getOutputs())
+//			System.out.println(c);
+		if (!prop.getInitialState().equals(state)) {
+			System.out.println("Prop1 Initial error.");
+		}
+		while (!prover.isTerminal(state)) {
+			List<Move> moves = prover.getRandomJointMove(state);
+			List<Move> legals = prover.getLegalMoves(state, getRole());
+			List<Move> props = prop.getLegalMoves(state, getRole());
+			if (!(new HashSet<>(props)).equals(new HashSet<>(legals))) {
+				Set<Move> contents = new HashSet<Move>(props);
+				Set<Move> newcontents = new HashSet<Move>(legals);
+				System.out.print("Prop (Moves): [");
+				for (Move m : contents) {
+					System.out.print(m + ", ");
 				}
-				MachineState temp = state;
-				state = prover.getNextState(state, moves);
-				if (!prop.getNextState(temp, moves).equals(state)) {
-					Set<GdlSentence> contents = new HashSet<GdlSentence>(prop.getNextState(temp, moves).getContents());
-					Set<GdlSentence> newcontents = new HashSet<GdlSentence>(state.getContents());
-					contents.removeAll(state.getContents());
-					newcontents.removeAll(prop.getNextState(temp, moves).getContents());
-					System.out.println(prop.getNextState(temp, moves).getContents().size());
-					System.out.println(state.getContents().size());
-					System.out.println("Prop: " + new MachineState(contents));
-					System.out.println("Prover: " + new MachineState(newcontents));
-					System.out.println();
+				System.out.print("]\nProver (Moves): [");
+				for (Move m : newcontents) {
+					System.out.print(m + ", ");
 				}
+				System.out.println("]");
 			}
+			MachineState temp = state;
+			state = prover.getNextState(state, moves);
+			if (!prop.getNextState(temp, moves).equals(state)) {
+				Set<GdlSentence> contents = new HashSet<GdlSentence>(prop.getNextState(temp, moves).getContents());
+				Set<GdlSentence> newcontents = new HashSet<GdlSentence>(state.getContents());
+				contents.removeAll(state.getContents());
+				newcontents.removeAll(prop.getNextState(temp, moves).getContents());
+				System.out.println(prop.getNextState(temp, moves).getContents().size());
+				System.out.println(state.getContents().size());
+				System.out.println("Prop: " + new MachineState(contents));
+				System.out.println("Prover: " + new MachineState(newcontents));
+			}
+			System.out.println();
+//			System.out.println(state);
 		}
 	}
 
