@@ -8,15 +8,18 @@ import org.ggp.base.util.propnet.architecture.Component;
 @SuppressWarnings("serial")
 public final class Or extends Component
 {
+	
+	int numTrue = 0;
     /**
      * Returns true if and only if at least one of the inputs to the or is true.
      *
      * @see org.ggp.base.util.propnet.architecture.Component#getValue()
      */
     @Override
-    public void propogate()
+    public void propogate(boolean newValue)
     {
-    	value = false;
+    	numTrue += (newValue)? 1 : -1;
+    	value = (numTrue != 0);
         for ( Component component : getInputs() )
         {
             if ( component.getValue() )
@@ -28,7 +31,7 @@ public final class Or extends Component
         if (value != lastPropogation) {
 			lastPropogation = value;
 			for (Component c : getOutputs()){
-				c.propogate();
+				c.propogate(value);
 			}
 		}
     }
@@ -36,6 +39,7 @@ public final class Or extends Component
     public void reset() {
 		value = false;
 		lastPropogation = false;
+		numTrue = 0;
 	}
     /**
      * @see org.ggp.base.util.propnet.architecture.Component#toString()

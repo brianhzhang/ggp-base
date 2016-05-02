@@ -50,7 +50,7 @@ public final class Proposition extends Component {
 	 * @see org.ggp.base.util.propnet.architecture.Component#getValue()
 	 */
 	@Override
-	public void propogate() {
+	public void propogate(boolean newValue) {
 		Set<Component> components = getInputs();
 		if (components.size() == 0) {
 		} else {
@@ -63,7 +63,7 @@ public final class Proposition extends Component {
 		if (value != lastPropogation) {
 			lastPropogation = value;
 			for (Component c : getOutputs()){
-				c.propogate();
+				c.propogate(value);
 			}
 		}
 	}
@@ -71,7 +71,7 @@ public final class Proposition extends Component {
 	public void startPropogate() {
 		lastPropogation = value;
 		for (Component c : getOutputs()){
-			c.propogate();
+			c.propogate(value);
 		}
 	}
 

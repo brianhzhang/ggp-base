@@ -8,27 +8,22 @@ import org.ggp.base.util.propnet.architecture.Component;
 @SuppressWarnings("serial")
 public final class And extends Component
 {
+	
+	int numTrue = 0;
     /**
      * Returns true if and only if every input to the and is true.
      *
      * @see org.ggp.base.util.propnet.architecture.Component#getValue()
      */
     @Override
-    public void propogate()
+    public void propogate(boolean newValue)
     {
-    	value = true;
-        for ( Component component : getInputs() )
-        {
-            if ( !component.getValue() )
-            {
-                value = false;
-                break;
-            }
-        }
+    	numTrue += (newValue)? 1 : -1;
+    	value = (numTrue == getInputs().size());
         if (value != lastPropogation) {
 			lastPropogation = value;
 			for (Component c : getOutputs()){
-				c.propogate();
+				c.propogate(value);
 			}
 		}
     }
@@ -36,6 +31,7 @@ public final class And extends Component
     public void reset() {
 		value = false;
 		lastPropogation = false;
+		numTrue = 0;
 	}
 
     /**

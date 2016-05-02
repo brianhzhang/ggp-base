@@ -46,9 +46,9 @@ public final class Constant extends Component
 	public void reset() {}
 
 	@Override
-	public void propogate() {
+	public void propogate(boolean newValue) {
 		for (Component c : getOutputs()) {
-			c.propogate();
+			c.propogate(value);
 		}
 	}
 }

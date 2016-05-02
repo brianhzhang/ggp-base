@@ -14,13 +14,13 @@ public final class Transition extends Component
      * @see org.ggp.base.util.propnet.architecture.Component#getValue()
      */
     @Override
-    public void propogate()
+    public void propogate(boolean newValue)
     {
         value = getSingleInput().getValue();
         if (value != lastPropogation) {
 			lastPropogation = value;
 			for (Component c : getOutputs()){
-				c.propogate();
+				c.propogate(value);
 			}
 		}
     }

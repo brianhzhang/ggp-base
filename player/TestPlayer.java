@@ -44,7 +44,7 @@ public class TestPlayer extends StateMachineGamer {
 			List<Move> moves = prover.getRandomJointMove(state);
 			List<Move> legals = prover.getLegalMoves(state, getRole());
 			List<Move> props = prop.getLegalMoves(state, getRole());
-			if (!props.equals(legals)) {
+			if (!(new HashSet<>(props)).equals(new HashSet<>(legals))) {
 				Set<Move> contents = new HashSet<Move>(props);
 				Set<Move> newcontents = new HashSet<Move>(legals);
 				System.out.print("Prop (Moves): [");

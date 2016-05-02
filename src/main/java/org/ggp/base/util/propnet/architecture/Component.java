@@ -126,7 +126,7 @@ public abstract class Component implements Serializable
     	return value;
     }
     
-    public abstract void propogate();
+    public abstract void propogate(boolean newValue);
 
     /**
      * Returns a representation of the Component in .dot format.

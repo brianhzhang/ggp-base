@@ -23,12 +23,12 @@ public final class Not extends Component
     }
 
 	@Override
-	public void propogate() {
+	public void propogate(boolean newValue) {
 		value = !getSingleInput().getValue();
 		if (value != lastPropogation) {
 			lastPropogation = value;
 			for (Component c : getOutputs()){
-				c.propogate();
+				c.propogate(value);
 			}
 		}
 	}
