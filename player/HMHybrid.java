@@ -129,7 +129,7 @@ public class HMHybrid extends Heuristic {
 		MTreeNode root = null;
 		for (MTreeNode node : cache) {
 			if (node.state.equals(rootstate)) {
-				System.out.printf("cache retrieval: nodes=%d depth=%d\n", node.visits, node.depth);
+				Log.printf("cache retrieval: nodes=%d depth=%d\n", node.visits, node.depth);
 				root = node;
 				break;
 			}
@@ -175,14 +175,14 @@ public class HMHybrid extends Heuristic {
 		MTreeNode bestChild = null;
 		for (MTreeNode child : root.children) {
 			if (bestChild == null || child.utility() > bestChild.utility()) bestChild = child;
-			System.out.println("move=" + info(child, child));
+			Log.println("move=" + info(child, child));
 		}
 		for (MTreeNode child : bestChild.children) {
 			cache.add(child);
 		}
-		System.out.println("played=" + info(bestChild, root));
-		System.out.println("total time = " + (System.currentTimeMillis() - timestart));
-		System.out.println("time spent on sims = " + simtime);
+		Log.println("played=" + info(bestChild, root));
+		Log.println("total time = " + (System.currentTimeMillis() - timestart));
+		Log.println("time spent on sims = " + simtime);
 		return bestChild.move;
 	}
 

@@ -1,9 +1,9 @@
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.BitSet;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,13 +35,8 @@ public class BetterPropNetStateMachine extends StateMachine {
 	/** The player roles */
 	private List<Role> roles;
 
-	Proposition[] allbases;
-	Proposition[] allinputs;
-	Map<GdlSentence, Integer> inputmap;
-	Map<Proposition, Integer> basesmap;
-	
-	private BitSet lastBases;
-	private BitSet lastInputs;
+	private Set<GdlSentence> lastBases;
+	private Set<GdlSentence> lastInputs;
 	public List<Gdl> description;
 	private StateMachine[] machines;
 
@@ -72,33 +67,18 @@ public class BetterPropNetStateMachine extends StateMachine {
 			}
 		}
 	}
-
+	
 	public void threadInitialize(List<Gdl> description) {
 		try {
 			this.description = description;
 			propNet = OptimizingPropNetFactory.create(description);
 			roles = propNet.getRoles();
+			lastBases = new HashSet<GdlSentence>();
+			lastInputs = new HashSet<GdlSentence>();
 			Collection<Proposition> bases = propNet.getBasePropositions().values();
-			lastBases = new BitSet(bases.size());
-			allbases = new Proposition[bases.size()];
-			basesmap = new HashMap<Proposition, Integer>();
 			Collection<Proposition> inputs = propNet.getInputPropositions().values();
-			lastInputs = new BitSet(inputs.size());
-			allinputs = new Proposition[inputs.size()];
-			inputmap = new HashMap<GdlSentence, Integer>();
-			int i = 0;
-			int j = 0;
 			for (Proposition p : propNet.getPropositions()) {
-				if (bases.contains(p)) {
-					allbases[i] = p;
-					basesmap.put(p, i);
-					i ++;
-					p.base = true;
-				}
-				if (inputs.contains(p)) {
-					allinputs[j] = p;
-					inputmap.put(p.getName(), j);
-					j ++;
+				if (bases.contains(p) || inputs.contains(p)) {
 					p.base = true;
 				}
 			}
@@ -113,7 +93,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public boolean isTerminal(MachineState state) {
-		markbases(((PNMachineState) state).getBitContents());
+		markbases(state.getContents());
 		return propNet.getTerminalProposition().getValue();
 	}
 
@@ -124,7 +104,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public int getGoal(MachineState state, Role role) throws GoalDefinitionException {
-		markbases(((PNMachineState) state).getBitContents());
+		markbases(state.getContents());
 		Set<Proposition> bases = propNet.getGoalPropositions().get(role);
 		for (Proposition p : bases) {
 			if (p.getValue()) return Integer.parseInt(p.getName().get(1).toString());
@@ -141,11 +121,12 @@ public class BetterPropNetStateMachine extends StateMachine {
 		clearpropnet();
 		propNet.getInitProposition().setValue(true);
 		propNet.getInitProposition().propogate(false);
-		BitSet nexts = new BitSet(allbases.length);
-		for (int i = 0; i < allbases.length; i ++) {
-			if (allbases[i].getSingleInput().getValue()) nexts.set(i);
+		Map<GdlSentence, Proposition> bases = propNet.getBasePropositions();
+		Set<GdlSentence> nexts = new HashSet<GdlSentence>();
+		for (GdlSentence s : bases.keySet()) {
+			if (bases.get(s).getSingleInput().getValue()) nexts.add(s);
 		}
-		MachineState initial = new PNMachineState(nexts);
+		MachineState initial = new MachineState(nexts);
 		propNet.getInitProposition().setValue(false);
 		propNet.getInitProposition().propogate(false);
 		return initial;
@@ -176,7 +157,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public List<Move> getLegalMoves(MachineState state, Role role) throws MoveDefinitionException {
-		markbases(((PNMachineState) state).getBitContents());
+		markbases(state.getContents());
 		return propToMoves(propNet.getLegalPropositions().get(role), false);
 	}
 
@@ -186,13 +167,14 @@ public class BetterPropNetStateMachine extends StateMachine {
 	@Override
 	public MachineState getNextState(MachineState state, List<Move> moves)
 			throws TransitionDefinitionException {
-		markbases(((PNMachineState) state).getBitContents());
+		markbases(state.getContents());
 		markactions(toDoes(moves));
-		BitSet nexts = new BitSet(allbases.length);
-		for (int i = 0; i < allbases.length; i ++) {
-			if (allbases[i].getSingleInput().getValue()) nexts.set(i);
+		Map<GdlSentence, Proposition> bases = propNet.getBasePropositions();
+		Set<GdlSentence> nexts = new HashSet<GdlSentence>();
+		for (GdlSentence s : bases.keySet()) {
+			if (bases.get(s).getSingleInput().getValue()) nexts.add(s);
 		}
-		return new PNMachineState(nexts);
+		return new MachineState(nexts);
 	}
 
 	/* Already implemented for you */
@@ -214,12 +196,13 @@ public class BetterPropNetStateMachine extends StateMachine {
 	 * @param moves
 	 * @return
 	 */
-	private BitSet toDoes(List<Move> moves) {
-		BitSet doeses = new BitSet(allinputs.length);
+	private Set<GdlSentence> toDoes(List<Move> moves) {
+		Set<GdlSentence> doeses = new HashSet<GdlSentence>(moves.size());
 		Map<Role, Integer> roleIndices = getRoleIndices();
+
 		for (int i = 0; i < roles.size(); i++) {
 			int index = roleIndices.get(roles.get(i));
-			doeses.set(inputmap.get(ProverQueryBuilder.toDoes(roles.get(i), moves.get(index))));
+			doeses.add(ProverQueryBuilder.toDoes(roles.get(i), moves.get(index)));
 		}
 		return doeses;
 	}
@@ -246,24 +229,38 @@ public class BetterPropNetStateMachine extends StateMachine {
 		return Integer.parseInt(constant.toString());
 	}
 
-	private void markbases(BitSet contents) {
-		BitSet bs = (BitSet) lastBases.clone();
-		bs.xor(contents);
-		for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i+1)) {
-			allbases[i].setValue(contents.get(i));
-			allbases[i].startPropogate();
+	private void markbases(Set<GdlSentence> contents) {
+		Set<GdlSentence> nowFalse = new HashSet<GdlSentence>(lastBases);
+		Set<GdlSentence> nowTrue = new HashSet<GdlSentence>(contents);
+		nowFalse.removeAll(contents);
+		nowTrue.removeAll(lastBases);
+		Map<GdlSentence, Proposition> bases = propNet.getBasePropositions();
+		for (GdlSentence s : nowFalse) {
+			bases.get(s).setValue(false);
+			bases.get(s).startPropogate();
 		}
-		lastBases = (BitSet) contents.clone();
+		for (GdlSentence s : nowTrue) {
+			bases.get(s).setValue(true);
+			bases.get(s).startPropogate();
+		}
+		lastBases = contents;
 	}
 
-	private void markactions(BitSet does) {
-		BitSet bs = (BitSet) lastInputs.clone();
-		bs.xor(does);
-		for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i+1)) {
-			allinputs[i].setValue(does.get(i));
-			allinputs[i].startPropogate();
+	private void markactions(Set<GdlSentence> does) {
+		Set<GdlSentence> nowFalse = new HashSet<GdlSentence>(lastInputs);
+		Set<GdlSentence> nowTrue = new HashSet<GdlSentence>(does);
+		nowFalse.removeAll(does);
+		nowTrue.removeAll(lastInputs);
+		Map<GdlSentence, Proposition> bases = propNet.getInputPropositions();
+		for (GdlSentence s : nowFalse) {
+			bases.get(s).setValue(false);
+			bases.get(s).startPropogate();
 		}
-		lastInputs = (BitSet) does.clone();
+		for (GdlSentence s : nowTrue) {
+			bases.get(s).setValue(true);
+			bases.get(s).startPropogate();
+		}
+		lastInputs = does;
 	}
 
 	private void clearpropnet() {
@@ -285,7 +282,7 @@ class MTI extends Thread {
 		this.p = p;
 		this.description = description;
 	}
-
+	
 	public void run() {
 		p.threadInitialize(description);
 	}
