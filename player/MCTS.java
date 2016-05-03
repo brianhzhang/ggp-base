@@ -250,7 +250,7 @@ class MSimThread extends Thread {
 	public long timeout;
 	public int result;
 	public static final int MAX_SCORE = 99;
-	public static final int MIN_SCORE = 99;
+	public static final int MIN_SCORE = 1;
 
 	public MSimThread(StateMachine machine, MTreeNode node, Role role, long timeout) {
 		this.machine = machine;
