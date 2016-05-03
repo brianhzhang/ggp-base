@@ -54,7 +54,7 @@ public class MCTS extends Method {
 		Log.println("goal std: " + std);
 		// the std of a game that randomly ends with either 0 or 100 is 50.
 		// if this game should use a constant of 100 sqrt(2), then we must multiply std by sqrt 8
-		Log.println("breadth inclination: " + (breadth_inclination = Math.sqrt(8) * std));
+		Log.println("breadth inclination: " + (breadth_inclination = Math.sqrt(1) * std));
 	}
 
 	@Override

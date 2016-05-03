@@ -112,7 +112,7 @@ public class HMHybrid extends Heuristic {
 		Log.println("goal std: " + std);
 		// the std of a game that randomly ends with either 0 or 100 is 50.
 		// if this game should use a constant of 100 sqrt(2), then multiply std by sqrt 8
-		Log.println("breadth inclination: " + (breadth_inclination = Math.sqrt(.25) * std));
+		Log.println("breadth inclination: " + (breadth_inclination = Math.sqrt(1) * std));
 
 		Log.println("eval method: " + (useMC ? "monte carlo" : "heuristic"));
 	}
