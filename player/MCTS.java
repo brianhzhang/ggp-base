@@ -249,6 +249,8 @@ class MSimThread extends Thread {
 	public Role role;
 	public long timeout;
 	public int result;
+	public static final int MAX_SCORE = 99;
+	public static final int MIN_SCORE = 99;
 
 	public MSimThread(StateMachine machine, MTreeNode node, Role role, long timeout) {
 		this.machine = machine;
@@ -268,7 +270,10 @@ class MSimThread extends Thread {
 				if (System.currentTimeMillis() > timeout) return; // FAIL
 				state = machine.getRandomNextState(state);
 			}
-			result = machine.findReward(role, state);
+			int score = machine.findReward(role, state);
+			if (score > MAX_SCORE) result = MAX_SCORE;
+			else if (score < MIN_SCORE) result = MIN_SCORE;
+			else result = score;
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
