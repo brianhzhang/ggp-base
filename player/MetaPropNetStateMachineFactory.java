@@ -47,10 +47,10 @@ public class MetaPropNetStateMachineFactory {
 	Map<Proposition, Integer> goalMap;
 	Class<?> cls;
 	PropNet p;
-	
+
 	Map<Role, List<Move>> legalPropositions;
 	List<Move> movelist;
-	
+
 	@SuppressWarnings({ "rawtypes", "unchecked", "resource" })
 	public MetaPropNetStateMachineFactory(List<Gdl> description) {
 		p = null;
@@ -103,7 +103,7 @@ public class MetaPropNetStateMachineFactory {
 		createInit(file);
 		file.append("}\n");
 
-		file.append("boolean[] legal(boolean[] bases){\n");
+		file.append("boolean[] legal(boolean[] bases, int role){\n");
 		file.append("boolean[] next = new boolean[" + inputs.size() + "];\n");
 		createInput(file);
 		file.append("}\n");
@@ -181,10 +181,15 @@ public class MetaPropNetStateMachineFactory {
 
 	private void createInput(StringBuilder file) {
 		for (int i = 0; i < legals.size(); i ++) {
-			file.append("next[" + i + "] = " + createStructure(legals.get(i).getSingleInput()) + ";\n");
-			movelist.add(new Move(legals.get(i).getName().get(1)));
-			legalPropositions.get(new Role((GdlConstant) legals.get(i).getName().getBody().get(0))).
-			add(new Move(legals.get(i).getName().get(1)));
+			for (int j = 0; j < p.getRoles().size(); j ++) {
+				if (p.getRoles().get(j).getName().equals(legals.get(i).getName().getBody().get(0))) {
+					file.append("next[" + i + "] = role == " + j + " && " +
+							createStructure(legals.get(i).getSingleInput())+ ";\n");
+					movelist.add(new Move(legals.get(i).getName().get(1)));
+					legalPropositions.get(new Role((GdlConstant) legals.get(i).getName().getBody().get(0))).
+					add(new Move(legals.get(i).getName().get(1)));
+				}
+			}
 		}
 		file.append("return next;\n");
 	}

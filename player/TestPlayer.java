@@ -33,6 +33,7 @@ public class TestPlayer extends StateMachineGamer {
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
 		// TODO Auto-generated method stub
 		prover.initialize(prop.description);
+		MetaPropNetStateMachineFactory fac = new MetaPropNetStateMachineFactory(prop.description);
 		MachineState state = prover.getInitialState();
 //		System.out.println(prop.getInitialState());
 //		for (Component c : prop.propNet.getInitProposition().getOutputs())

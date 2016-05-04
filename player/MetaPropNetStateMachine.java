@@ -67,7 +67,7 @@ public abstract class MetaPropNetStateMachine extends StateMachine {
 
 	@Override
 	public List<Move> getLegalMoves(MachineState state, Role role) throws MoveDefinitionException {
-		boolean[] result = legal(((PropNetMachineState)state).props);
+		boolean[] result = legal(((PropNetMachineState)state).props, roles.indexOf(role));
 		List<Move> legals = new ArrayList<Move>();
 		for (int i = 0; i < result.length; i ++) {
 			if (result[i] && legalPropositions.get(role).contains(this.legals.get(i))) {
@@ -77,7 +77,7 @@ public abstract class MetaPropNetStateMachine extends StateMachine {
 		return legals;
 	}
 	
-	abstract boolean[] legal(boolean[] bases);
+	abstract boolean[] legal(boolean[] bases, int role);
 
 	@Override
 	public MachineState getNextState(MachineState state, List<Move> moves) throws TransitionDefinitionException {
@@ -94,8 +94,14 @@ public abstract class MetaPropNetStateMachine extends StateMachine {
 }
 
 class PropNetMachineState extends MachineState {
-	boolean[] props;
+	final boolean[] props;
 	public PropNetMachineState(boolean[] props) {
 		this.props = props;
+	}
+	public PropNetMachineState clone() {
+		return new PropNetMachineState(props);
+	}
+	public boolean equals(Object m) {
+		return props.equals(((PropNetMachineState)m).props);
 	}
 }
