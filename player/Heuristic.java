@@ -27,7 +27,7 @@ public class Heuristic extends Method {
 
 	// metagaming results
 	protected HeuristicFn[] heuristics = { this::mobility, this::oppMobility, this::goal,
-			this::oppGoal, this::goalProximity };
+			this::oppGoal};
 	protected double[] weights = new double[N_HEURISTIC];
 	protected double adjustment = 0;
 	protected int period; // one less than the period; i.e. if we make every move then period = 0
@@ -298,24 +298,6 @@ public class Heuristic extends Method {
 		}
 		return sum;
 	}
-
-	protected double goalProximity(Role role, MachineState state, StateMachine machine,
-			List<Move> actions) {
-		Set<GdlSentence> props = state.getContents();
-		double score = 0;
-		int count = 0;
-		for (GdlSentence prop : props) {
-			HGoalProp p = goalProps.get(prop);
-			if (p == null) {
-			} // do we want to do anything when the prop doesn't exist in terminal states?
-			else {
-				score += 1.0 * p.totalScore / p.count;
-				count++;
-			}
-		}
-		if (count == 0) return 0;
-		return 1.0 * score / count;
-	}
 }
 
 class HThread extends Thread {
@@ -373,16 +355,6 @@ class HThread extends Thread {
 			state = machine.getRandomNextState(state);
 		}
 		ret.goal = machine.findReward(role, state);
-		for (GdlSentence s : state.getContents()) {
-			HGoalProp p = goalProps.get(s);
-			if (p == null) {
-				p = new HGoalProp(ret.goal, 1);
-				goalProps.put(s, p);
-			} else {
-				p.count++;
-				p.totalScore += ret.goal;
-			}
-		}
 		return ret;
 	}
 }

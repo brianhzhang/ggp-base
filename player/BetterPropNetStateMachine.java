@@ -14,8 +14,12 @@ import org.ggp.base.util.gdl.grammar.GdlRelation;
 import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.PropNet;
+import org.ggp.base.util.propnet.architecture.components.And;
+import org.ggp.base.util.propnet.architecture.components.Constant;
 import org.ggp.base.util.propnet.architecture.components.Not;
+import org.ggp.base.util.propnet.architecture.components.Or;
 import org.ggp.base.util.propnet.architecture.components.Proposition;
+import org.ggp.base.util.propnet.architecture.components.Transition;
 import org.ggp.base.util.propnet.factory.OptimizingPropNetFactory;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
@@ -41,6 +45,10 @@ public class BetterPropNetStateMachine extends StateMachine {
 	public BetterPropNetStateMachine(StateMachine[] stateMachines) {
 		this.machines = stateMachines;
 	}
+	
+	public List<Gdl> getDescription() {
+		return description;
+	}
 
 	/**
 	 * Initializes the PropNetStateMachine. You should compute the topological ordering here.
@@ -65,7 +73,7 @@ public class BetterPropNetStateMachine extends StateMachine {
 			}
 		}
 	}
-	
+
 	public void threadInitialize(List<Gdl> description) {
 		try {
 			this.description = description;
@@ -283,7 +291,7 @@ class MTI extends Thread {
 		this.p = p;
 		this.description = description;
 	}
-	
+
 	public void run() {
 		p.threadInitialize(description);
 	}

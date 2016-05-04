@@ -37,10 +37,8 @@ public abstract class Component implements Serializable
 	public void crystalize() {
 		inputarr = new Component[inputs.size()];
 		inputs.toArray(inputarr);
-		inputs = null;
 		outputarr = new Component[outputs.size()];
 		outputs.toArray(outputarr);
-		outputs = null;
 	}
 
 	/**

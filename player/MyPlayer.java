@@ -2,12 +2,14 @@ import java.awt.GridLayout;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.ggp.base.apps.player.config.ConfigPanel;
 import org.ggp.base.player.gamer.exception.GamePreviewException;
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
 import org.ggp.base.util.game.Game;
+import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.match.Match;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
@@ -54,15 +56,22 @@ public class MyPlayer extends StateMachineGamer {
 //		return new CachedStateMachine(new ProverStateMachine());
 //		return new PropNetStateMachine();
 //		return new PropNetStateMachine2();
-		for (int i = 0; i < N_THREADS; i ++) {
-			machines[i] = new BetterPropNetStateMachine(new StateMachine[0]);
-		}
-		return new BetterPropNetStateMachine(machines);
+//		for (int i = 0; i < N_THREADS; i ++) {
+//			machines[i] = new BetterPropNetStateMachine(new StateMachine[0]);
+//		}
+//		return new BetterPropNetStateMachine(machines);
+		return new GDLGetter();
 	}
 
 	@Override
 	public void stateMachineMetaGame(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
+		MetaPropNetStateMachineFactory m = new MetaPropNetStateMachineFactory(
+				((GDLGetter)getStateMachine()).getDescription());
+		switchStateMachine(m.getNewMachine());
+		for (int i = 0; i < N_THREADS; i ++) {
+			machines[i] = m.getNewMachine();
+		}
 		Log.setFile(getMatch().getMatchId() + "_" + getRole());
 		if (method == LEGAL) player = new Legal();
 		if (method == RANDOM) player = new RandomPlayer();
@@ -140,5 +149,54 @@ public class MyPlayer extends StateMachineGamer {
 	@Override
 	public String getName() {
 		return "Brian and Jeff'); DROP TABLE TEAMS; --";
+	}
+}
+
+class GDLGetter extends StateMachine{
+
+	List<Gdl> contents;
+	
+	@Override
+	public List<Move> findActions(Role role) throws MoveDefinitionException {
+		return new ArrayList<Move>();
+	}
+
+	public List<Gdl> getDescription() {
+		return contents;
+	}
+
+	@Override
+	public void initialize(List<Gdl> description) {
+		this.contents = description;
+	}
+
+	@Override
+	public int getGoal(MachineState state, Role role) throws GoalDefinitionException {
+		return 0;
+	}
+
+	@Override
+	public boolean isTerminal(MachineState state) {
+		return false;
+	}
+
+	@Override
+	public List<Role> getRoles() {
+		return new ArrayList<Role>();
+	}
+
+	@Override
+	public MachineState getInitialState() {
+		return new MachineState();
+	}
+
+	@Override
+	public List<Move> getLegalMoves(MachineState state, Role role) throws MoveDefinitionException {
+		return new ArrayList<Move>();
+	}
+
+	@Override
+	public MachineState getNextState(MachineState state, List<Move> moves) throws TransitionDefinitionException {
+		return new MachineState();
 	}
 }
