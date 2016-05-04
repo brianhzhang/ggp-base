@@ -53,26 +53,26 @@ public class MyPlayer extends StateMachineGamer {
 
 	@Override
 	public StateMachine getInitialStateMachine() {
-//		return new CachedStateMachine(new ProverStateMachine());
-//		return new PropNetStateMachine();
-//		return new PropNetStateMachine2();
-//		for (int i = 0; i < N_THREADS; i ++) {
-//			machines[i] = new BetterPropNetStateMachine(new StateMachine[0]);
-//		}
-//		return new BetterPropNetStateMachine(machines);
+		// return new CachedStateMachine(new ProverStateMachine());
+		// return new PropNetStateMachine();
+		// return new PropNetStateMachine2();
+		// for (int i = 0; i < N_THREADS; i ++) {
+		// machines[i] = new BetterPropNetStateMachine(new StateMachine[0]);
+		// }
+		// return new BetterPropNetStateMachine(machines);
 		return new GDLGetter();
 	}
 
 	@Override
 	public void stateMachineMetaGame(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
+		Log.setFile(getMatch().getMatchId() + "_" + getRole());
 		MetaPropNetStateMachineFactory m = new MetaPropNetStateMachineFactory(
-				((GDLGetter)getStateMachine()).getDescription());
+				((GDLGetter) getStateMachine()).getDescription());
 		switchStateMachine(m.getNewMachine());
-		for (int i = 0; i < N_THREADS; i ++) {
+		for (int i = 0; i < N_THREADS; i++) {
 			machines[i] = m.getNewMachine();
 		}
-		Log.setFile(getMatch().getMatchId() + "_" + getRole());
 		if (method == LEGAL) player = new Legal();
 		if (method == RANDOM) player = new RandomPlayer();
 		if (method == ALPHABETA) player = new AlphaBeta();
@@ -152,10 +152,10 @@ public class MyPlayer extends StateMachineGamer {
 	}
 }
 
-class GDLGetter extends StateMachine{
+class GDLGetter extends StateMachine {
 
 	List<Gdl> contents;
-	
+
 	@Override
 	public List<Move> findActions(Role role) throws MoveDefinitionException {
 		return new ArrayList<Move>();
@@ -196,7 +196,8 @@ class GDLGetter extends StateMachine{
 	}
 
 	@Override
-	public MachineState getNextState(MachineState state, List<Move> moves) throws TransitionDefinitionException {
+	public MachineState getNextState(MachineState state, List<Move> moves)
+			throws TransitionDefinitionException {
 		return new MachineState();
 	}
 }

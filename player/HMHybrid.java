@@ -3,6 +3,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
 import org.ggp.base.util.statemachine.MachineState;
@@ -16,7 +17,8 @@ import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 public class HMHybrid extends Heuristic {
 	private boolean useMC;
 
-	private double breadth_inclination = 20000;
+	private static final double CFACTOR = 1.0;
+	private double breadth_inclination;
 	private List<MTreeNode> cache = new ArrayList<>();
 	private StateMachine[] machines;
 
@@ -112,7 +114,7 @@ public class HMHybrid extends Heuristic {
 		Log.println("goal std: " + std);
 		// the std of a game that randomly ends with either 0 or 100 is 50.
 		// if this game should use a constant of 100 sqrt(2), then multiply std by sqrt 8
-		Log.println("breadth inclination: " + (breadth_inclination = Math.sqrt(1) * std));
+		Log.println("breadth inclination: " + (breadth_inclination = CFACTOR * std));
 
 		Log.println("eval method: " + (useMC ? "monte carlo" : "heuristic"));
 	}
@@ -141,6 +143,12 @@ public class HMHybrid extends Heuristic {
 		}
 		Collections.shuffle(root.children);
 		root.parent = null;
+		HSimThread[] threads = new HSimThread[MyPlayer.N_THREADS];
+		LinkedBlockingQueue<Integer> output = new LinkedBlockingQueue<>();
+		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+			threads[i] = new HSimThread(machines[i], role, timeout, output);
+			threads[i].start();
+		}
 		while (System.currentTimeMillis() < timeout) {
 			if (root.isProven()) break;
 			MTreeNode node = select(root);
@@ -148,22 +156,20 @@ public class HMHybrid extends Heuristic {
 				backpropogate(node, machine.findReward(role, node.state), 0, true);
 			} else {
 				expand(machine, role, node);
-				MSimThread[] threads = new MSimThread[MyPlayer.N_THREADS];
 				if (useMC) {
 					for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-						threads[i] = new MSimThread(machines[i], node, role, timeout);
-						threads[i].start();
+						threads[i].input.offer(node);
 					}
+
 					long start = System.currentTimeMillis();
 					for (int i = 0; i < MyPlayer.N_THREADS; i++) {
 						try {
-							threads[i].join();
+							int eval = output.take();
+							if (eval == FAIL) continue;
+							backpropogate(node, eval, 0, false);
 						} catch (InterruptedException e) {
 							e.printStackTrace();
 						}
-						int eval = threads[i].result;
-						if (eval == FAIL) continue;
-						backpropogate(node, eval, 0, false);
 					}
 					simtime += System.currentTimeMillis() - start;
 				} else {
@@ -181,8 +187,8 @@ public class HMHybrid extends Heuristic {
 			cache.add(child);
 		}
 		Log.println("played=" + info(bestChild, root));
-		Log.println("total time = " + (System.currentTimeMillis() - timestart));
-		Log.println("time spent on sims = " + simtime);
+		Log.println("tot time = " + (System.currentTimeMillis() - timestart));
+		Log.println("sim time = " + simtime);
 		return bestChild.move;
 	}
 
@@ -264,5 +270,50 @@ public class HMHybrid extends Heuristic {
 	@Override
 	public void cleanUp() {
 		return;
+	}
+}
+
+class HSimThread extends Thread {
+
+	public StateMachine machine;
+	public Role role;
+	public long timeout;
+	public LinkedBlockingQueue<MTreeNode> input = new LinkedBlockingQueue<>();
+	public LinkedBlockingQueue<Integer> output;
+	public static final int MAX_SCORE = 99;
+	public static final int MIN_SCORE = 1;
+
+	public HSimThread(StateMachine machine, Role role, long timeout,
+			LinkedBlockingQueue<Integer> output) {
+		this.machine = machine;
+		this.role = role;
+		this.timeout = timeout;
+		this.output = output;
+	}
+
+	private int simulate(MTreeNode node)
+			throws MoveDefinitionException, TransitionDefinitionException, GoalDefinitionException {
+		MachineState state = node.state;
+		if (node.move != null) state = machine.getRandomNextState(state, role, node.move);
+		while (!machine.isTerminal(state)) {
+			if (System.currentTimeMillis() > timeout) return MCTS.FAIL;
+			state = machine.getRandomNextState(state);
+		}
+		int score = machine.findReward(role, state);
+		if (score > MAX_SCORE) return MAX_SCORE;
+		else if (score < MIN_SCORE) return MIN_SCORE;
+		else return score;
+	}
+
+	@Override
+	public void run() {
+		while (true) {
+			try {
+				output.offer(simulate(input.take()));
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
 	}
 }
