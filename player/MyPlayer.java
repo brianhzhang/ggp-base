@@ -66,13 +66,13 @@ public class MyPlayer extends StateMachineGamer {
 	@Override
 	public void stateMachineMetaGame(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
+		Log.setFile(getMatch().getMatchId() + "_" + getRole());
 		MetaPropNetStateMachineFactory m = new MetaPropNetStateMachineFactory(
 				((GDLGetter)getStateMachine()).getDescription());
 		switchStateMachine(m.getNewMachine());
 		for (int i = 0; i < N_THREADS; i ++) {
 			machines[i] = m.getNewMachine();
 		}
-		Log.setFile(getMatch().getMatchId() + "_" + getRole());
 		if (method == LEGAL) player = new Legal();
 		if (method == RANDOM) player = new RandomPlayer();
 		if (method == ALPHABETA) player = new AlphaBeta();

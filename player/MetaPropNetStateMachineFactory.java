@@ -96,7 +96,7 @@ public class MetaPropNetStateMachineFactory {
 
 		file.append("boolean[] next(boolean[] bases, boolean[] inputs){\n");
 		file.append("boolean[] next = new boolean[bases.length];\n");
-		createNext(file);
+		System.out.println("Total chain length: " + createNext(file));
 		file.append("}\n");
 
 		file.append("boolean[] initial(){\n");
@@ -154,11 +154,23 @@ public class MetaPropNetStateMachineFactory {
 		file.append("return " + createStructure(p.getTerminalProposition()) + ";\n");
 	}
 
-	private void createNext(StringBuilder file) {
+	private int createNext(StringBuilder file) {
+		int count = 0;
+		int size = 0;
 		for (Proposition prop : bases) {
-			file.append("next[" + basemap.get(prop.getName()) + "] = " + createStructure(prop.getSingleInput()) + ";\n");
+			String s = "next[" + basemap.get(prop.getName()) + "] = " + createStructure(prop.getSingleInput()) + ";\n";
+			size += s.length();
+			if (size < 64000) {
+				file.append(s);
+			} else {
+				count ++;
+				size = 0;
+				file.append("return next" + count + "(bases, inputs, next);}\n");
+				file.append("boolean[] next" + count + "(boolean[] bases, boolean[] inputs, boolean[] next){\n" + s);
+			}
 		}
 		file.append("return next;\n");
+		return count;
 	}
 
 	private void createInit(StringBuilder file) {
@@ -180,11 +192,22 @@ public class MetaPropNetStateMachineFactory {
 	}
 
 	private void createInput(StringBuilder file) {
+		int count = 0;
+		int size = 0;
 		for (int i = 0; i < legals.size(); i ++) {
 			for (int j = 0; j < p.getRoles().size(); j ++) {
 				if (p.getRoles().get(j).getName().equals(legals.get(i).getName().getBody().get(0))) {
-					file.append("next[" + i + "] = role == " + j + " && " +
+					String s = ("next[" + i + "] = role == " + j + " && " +
 							createStructure(legals.get(i).getSingleInput())+ ";\n");
+					size += s.length();
+					if (size < 64000) {
+						file.append(s);
+					} else {
+						count ++;
+						size = 0;
+						file.append("return legal" + count + "(bases, role, next);}\n");
+						file.append("boolean[] legal" + count + "(boolean[] bases, int role, boolean[] next){\n" + s);
+					}
 					movelist.add(new Move(legals.get(i).getName().get(1)));
 					legalPropositions.get(new Role((GdlConstant) legals.get(i).getName().getBody().get(0))).
 					add(new Move(legals.get(i).getName().get(1)));
