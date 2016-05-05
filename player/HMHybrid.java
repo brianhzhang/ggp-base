@@ -53,13 +53,13 @@ public class HMHybrid extends Method {
 
 	public HMHybrid(MyPlayer gamer, List<Gdl> description) {
 		this.gamer = gamer;
-		smthread = new StateMachineCreatorThread(description);
-		smthread.start();
 		machines = new StateMachine[MyPlayer.N_THREADS];
 		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
 			machines[i] = gamer.getStateMachine();
 			machines[i].initialize(description);
 		}
+		smthread = new StateMachineCreatorThread(description);
+		smthread.start();
 	}
 
 	@Override

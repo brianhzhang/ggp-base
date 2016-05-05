@@ -44,15 +44,16 @@ public class MetaPropNetStateMachineFactory {
 	List<Proposition> legals;
 	Map<GdlSentence, Integer> basemap;
 	Map<GdlSentence, Integer> inputmap;
-	Map<Proposition, Integer> goalMap;
 	Class<?> cls;
 	PropNet p;
+	static int thing;
 
 	Map<Role, List<Move>> legalPropositions;
 	List<Move> movelist;
 
 	@SuppressWarnings({ "rawtypes", "unchecked", "resource" })
 	public MetaPropNetStateMachineFactory(List<Gdl> description) {
+		thing ++;
 		p = null;
 		try {
 			p = OptimizingPropNetFactory.create(description);
@@ -69,6 +70,7 @@ public class MetaPropNetStateMachineFactory {
 		movelist = new ArrayList<Move>();
 		goals = new ArrayList<Proposition>();
 		legals = new ArrayList<Proposition>();
+		goals = new ArrayList<Proposition>();
 		for (Role r : p.getRoles()) {
 			goals.addAll(p.getGoalPropositions().get(r));
 			legals.addAll(p.getLegalPropositions().get(r));
@@ -87,7 +89,7 @@ public class MetaPropNetStateMachineFactory {
 			inputmap.put(prop.getName(), i);
 			i ++;
 		}
-		StringBuilder file = new StringBuilder("class MetaPNSM extends MetaPropNetStateMachine {\n");
+		StringBuilder file = new StringBuilder("class MetaPNSM"+thing+" extends MetaPropNetStateMachine {\n");
 
 		file.append("private boolean init = false;\n");
 		file.append("boolean terminal(boolean[] bases){\n");
@@ -96,7 +98,7 @@ public class MetaPropNetStateMachineFactory {
 
 		file.append("boolean[] next(boolean[] bases, boolean[] inputs){\n");
 		file.append("boolean[] next = new boolean[bases.length];\n");
-		System.out.println("Total chain length: " + createNext(file));
+		System.out.println("Total next chain length: " + createNext(file));
 		file.append("}\n");
 
 		file.append("boolean[] initial(){\n");
@@ -105,7 +107,7 @@ public class MetaPropNetStateMachineFactory {
 
 		file.append("boolean[] legal(boolean[] bases, int role){\n");
 		file.append("boolean[] next = new boolean[" + inputs.size() + "];\n");
-		createInput(file);
+		System.out.println("Total input chain length: " + createInput(file));
 		file.append("}\n");
 
 		file.append("int goal(boolean[] bases, int role){\n");
@@ -133,7 +135,7 @@ public class MetaPropNetStateMachineFactory {
 		// Load and instantiate compiled class.
 		URLClassLoader classLoader = new URLClassLoader(new URL[0]);
 		try {
-			cls = classLoader.loadClass("MetaPNSM");
+			cls = classLoader.loadClass("MetaPNSM"+thing);
 		} catch (ClassNotFoundException e) {
 			e.printStackTrace();
 		}
@@ -143,7 +145,7 @@ public class MetaPropNetStateMachineFactory {
 	static SimpleJavaFileObject getJavaFileContentsAsString(StringBuilder javaFileContents){
 		JavaObjectFromString javaFileObject = null;
 		try{
-			javaFileObject = new JavaObjectFromString("MetaPNSM", javaFileContents.toString());
+			javaFileObject = new JavaObjectFromString("MetaPNSM"+thing, javaFileContents.toString());
 		}catch(Exception exception){
 			exception.printStackTrace();
 		}
@@ -191,7 +193,7 @@ public class MetaPropNetStateMachineFactory {
 		file.append("return result;\n");
 	}
 
-	private void createInput(StringBuilder file) {
+	private int createInput(StringBuilder file) {
 		int count = 0;
 		int size = 0;
 		for (int i = 0; i < legals.size(); i ++) {
@@ -215,6 +217,7 @@ public class MetaPropNetStateMachineFactory {
 			}
 		}
 		file.append("return next;\n");
+		return count;
 	}
 
 	private void createGoal(StringBuilder file) {
