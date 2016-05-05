@@ -18,7 +18,7 @@ import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 public class HMHybrid extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
-	private static final double CFACTOR = 1.0;
+	private static final double CFACTOR = 2.0;
 	private List<MTreeNode> cache = new ArrayList<>();
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
