@@ -2,10 +2,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
+import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
@@ -14,115 +15,82 @@ import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 
-public class HMHybrid extends Heuristic {
-	private boolean useMC;
+public class HMHybrid extends Method {
 
+	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	private static final double CFACTOR = 1.0;
-	private double breadth_inclination;
 	private List<MTreeNode> cache = new ArrayList<>();
 	private StateMachine[] machines;
+	private boolean propNetInitialized = false;
+	private MyPlayer gamer;
 
-	public HMHybrid(StateMachine[] machines) {
-		this.machines = machines;
+	private StateMachineCreatorThread smthread;
+
+	private class StateMachineCreatorThread extends Thread {
+		private List<Gdl> description;
+		public MetaPropNetStateMachineFactory m;
+
+		public StateMachineCreatorThread(List<Gdl> description) {
+			this.description = description;
+		}
+
+		@Override
+		public void run() {
+			m = new MetaPropNetStateMachineFactory(description);
+			Log.println("Propnets ready");
+		}
+	}
+
+	// if the metapropnetstatemachinefactory has finished, update the machines
+	private boolean checkStateMachineStatus() {
+		// if (!propNetInitialized && !smthread.isAlive()) {
+		// gamer.switchToPropnets(smthread.m, machines);
+		// Log.println("Propnets initialized");
+		// return propNetInitialized = true;
+		// }
+		return false;
+	}
+
+	public HMHybrid(MyPlayer gamer, List<Gdl> description) {
+		this.gamer = gamer;
+		smthread = new StateMachineCreatorThread(description);
+		smthread.start();
+		machines = new StateMachine[MyPlayer.N_THREADS];
+		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+			machines[i] = gamer.getStateMachine();
+			machines[i].initialize(description);
+		}
 	}
 
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
-		ConcurrentLinkedQueue<HGameData> data = new ConcurrentLinkedQueue<>();
-		List<HThread> threads = new ArrayList<HThread>();
-		Role role = gamer.getRole();
-		opps = new ArrayList<>(gamer.getStateMachine().findRoles());
-		opps.remove(role);
-		Log.println("");
-		Log.println("begin random exploration");
-		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-			HThread t = new HThread(gamer, opps, timeout, this, machines[i], data, goalProps);
-			threads.add(t);
-			t.start();
+		try {
+			smthread.join(timeout - System.currentTimeMillis());
+		} catch (InterruptedException e) {
+			e.printStackTrace();
 		}
-		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-			try {
-				threads.get(i).join();
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
+		if (!checkStateMachineStatus()) Log.println("Still building propnet...");
+	}
+
+	private boolean sameState(MachineState state1, MachineState state2) {
+		if (propNetInitialized) {
+			boolean[] props1 = ((PropNetMachineState) state1).props;
+			boolean[] props2 = ((PropNetMachineState) state2).props;
+			return Arrays.equals(props1, props2);
 		}
-
-		int ngame = data.size();
-		Log.println("games analyzed: " + ngame);
-		double[] goals = new double[ngame];
-		double[][] totals = new double[N_HEURISTIC][ngame];
-		HGameData[] games = new HGameData[ngame];
-		int count = 0;
-		int movetot = 0;
-		int steptot = 0;
-		while (!data.isEmpty()) {
-			HGameData game = games[count] = data.poll();
-			goals[count] = game.goal;
-			for (int j = 0; j < N_HEURISTIC; j++) {
-				totals[j][count] = game.heuristics[j] / game.nstep;
-			}
-			count++;
-			steptot += game.nstep;
-			movetot += game.nmove;
-		}
-		period = (int) Math.round(1.0 * steptot / movetot);
-		Log.printf("total steps %d / our moves %d = period %d\n", steptot, movetot, period);
-		double tot_rsq = 0;
-		adjustment = 0;
-		Correlation[] c = new Correlation[N_HEURISTIC];
-		for (int i = 0; i < N_HEURISTIC; i++) {
-			c[i] = Statistics.linreg(totals[i], goals);
-			Log.printf("component %d: g = %fx + %f, r^2=%f\n", i, c[i].m, c[i].b, c[i].rsq);
-			tot_rsq += c[i].rsq;
-		}
-		double old_tot = tot_rsq;
-		tot_rsq = 0;
-		double max_rsq = 0;
-		for (int i = 0; i < N_HEURISTIC; i++) {
-			if (c[i].rsq / old_tot < 0.1) c[i].m = c[i].b = c[i].rsq = 0;
-			weights[i] = c[i].m * c[i].rsq / 2; // dividing by 2 to counter the effect of averaging
-			adjustment += c[i].b * c[i].rsq;
-			tot_rsq += c[i].rsq;
-			max_rsq = Math.max(max_rsq, c[i].rsq);
-		}
-		for (int i = 0; i < N_HEURISTIC; i++) {
-			weights[i] /= tot_rsq;
-		}
-		adjustment /= tot_rsq;
-		Log.printf("heuristic = %f + %s\n", adjustment, Arrays.toString(weights));
-
-		double[] avgheuristic = new double[ngame];
-		for (int i = 0; i < ngame; i++) {
-			avgheuristic[i] = adjustment;
-			for (int j = 0; j < N_HEURISTIC; j++) {
-				avgheuristic[i] += weights[j] * games[i].heuristics[j] / games[i].nstep;
-			}
-		}
-
-		Log.printf("tot r^2 = %f\n", max_rsq);
-		useMC = max_rsq < 0.5;
-
-		double[] results = new double[ngame + 2];
-		System.arraycopy(useMC ? goals : avgheuristic, 0, results, 0, ngame);
-		results[ngame] = MyPlayer.MIN_SCORE;
-		results[ngame + 1] = MyPlayer.MAX_SCORE;
-
-		double std = Statistics.stdev(results);
-
-		Log.println("goal mean: " + Statistics.mean(results));
-		Log.println("goal std: " + std);
-		// the std of a game that randomly ends with either 0 or 100 is 50.
-		// if this game should use a constant of 100 sqrt(2), then multiply std by sqrt 8
-		Log.println("breadth inclination: " + (breadth_inclination = CFACTOR * std));
-
-		Log.println("eval method: " + (useMC ? "monte carlo" : "heuristic"));
+		return state1.equals(state2);
 	}
 
 	@Override
 	public Move run(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
+		if (checkStateMachineStatus()) {
+			// reinit state machine
+			machine = gamer.getStateMachine();
+			rootstate = gamer.getCurrentState();
+			cache.clear();
+		}
 		long timestart = System.currentTimeMillis();
 		long simtime = 0;
 
@@ -130,7 +98,7 @@ public class HMHybrid extends Heuristic {
 		// set up tree
 		MTreeNode root = null;
 		for (MTreeNode node : cache) {
-			if (node.state.equals(rootstate)) {
+			if (sameState(node.state, rootstate)) {
 				Log.printf("cache retrieval: nodes=%d depth=%d\n", node.visits, node.depth);
 				root = node;
 				break;
@@ -141,12 +109,12 @@ public class HMHybrid extends Heuristic {
 			root = new MTreeNode(rootstate, null, null);
 			expand(machine, role, root);
 		}
-		Collections.shuffle(root.children);
 		root.parent = null;
 		HSimThread[] threads = new HSimThread[MyPlayer.N_THREADS];
-		LinkedBlockingQueue<Integer> output = new LinkedBlockingQueue<>();
+		BlockingQueue<MTreeNode> input = new LinkedBlockingQueue<>();
+		BlockingQueue<Integer> output = new LinkedBlockingQueue<>();
 		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-			threads[i] = new HSimThread(machines[i], role, timeout, output);
+			threads[i] = new HSimThread(machines[i], role, timeout, input, output);
 			threads[i].start();
 		}
 		while (System.currentTimeMillis() < timeout) {
@@ -156,26 +124,20 @@ public class HMHybrid extends Heuristic {
 				backpropogate(node, machine.findReward(role, node.state), 0, true);
 			} else {
 				expand(machine, role, node);
-				if (useMC) {
-					for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-						threads[i].input.offer(node);
-					}
-
-					long start = System.currentTimeMillis();
-					for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-						try {
-							int eval = output.take();
-							if (eval == FAIL) continue;
-							backpropogate(node, eval, 0, false);
-						} catch (InterruptedException e) {
-							e.printStackTrace();
-						}
-					}
-					simtime += System.currentTimeMillis() - start;
-				} else {
-					List<Move> legals = machine.findLegals(role, node.state);
-					backpropogate(node, heuristic(role, node.state, machine, legals), 0, false);
+				long start = System.currentTimeMillis();
+				for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+					input.offer(node);
 				}
+				for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+					try {
+						int eval = output.take();
+						if (eval == FAIL) continue;
+						backpropogate(node, eval, 0, false);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}
+				}
+				simtime += System.currentTimeMillis() - start;
 			}
 		}
 		MTreeNode bestChild = null;
@@ -189,13 +151,20 @@ public class HMHybrid extends Heuristic {
 		Log.println("played=" + info(bestChild, root));
 		Log.println("tot time = " + (System.currentTimeMillis() - timestart));
 		Log.println("sim time = " + simtime);
+		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+			threads[i].input.offer(HSimThread.HALT);
+		}
 		return bestChild.move;
 	}
 
+	private double score(MTreeNode node, int sgn) {
+		return node.score(sgn * CFACTOR);
+	}
+
 	private String info(MTreeNode scoreNode, MTreeNode rootNode) {
-		return String.format("%s score=%f bound=(%d, %d) nodes=%d depth=%d", scoreNode.move,
-				scoreNode.utility(), scoreNode.lower, scoreNode.upper, rootNode.visits,
-				rootNode.depth);
+		return String.format("%s score=%f ci=(%f, %f) bound=(%d, %d) visits=%d depth=%d",
+				scoreNode.move, scoreNode.utility(), score(scoreNode, -1), score(scoreNode, 1),
+				scoreNode.lower, scoreNode.upper, rootNode.visits, rootNode.depth);
 	}
 
 	private MTreeNode select(MTreeNode node) {
@@ -205,21 +174,21 @@ public class HMHybrid extends Heuristic {
 				if (child.visits == 0) return child;
 			}
 			MTreeNode best = null;
-			if (node.isMaxNode()) { // max node
+			if (node.isMaxNode()) {
 				double score = Double.NEGATIVE_INFINITY;
 				for (MTreeNode child : node.children) {
 					if (child.isProven()) continue;
-					double newscore = child.score(breadth_inclination);
+					double newscore = score(child, 1);
 					if (newscore > score) {
 						score = newscore;
 						best = child;
 					}
 				}
-			} else { // min node
+			} else {
 				double score = Double.POSITIVE_INFINITY;
 				for (MTreeNode child : node.children) {
 					if (child.isProven()) continue;
-					double newscore = child.score(-breadth_inclination);
+					double newscore = score(child, -1);
 					if (newscore < score) {
 						score = newscore;
 						best = child;
@@ -233,10 +202,6 @@ public class HMHybrid extends Heuristic {
 	private void expand(StateMachine machine, Role role, MTreeNode node)
 			throws MoveDefinitionException, TransitionDefinitionException {
 		if (node.isMaxNode()) { // max-node
-			if (machine.isTerminal(node.state)) {
-				System.err.println("Asked to expand terminal state...");
-				return;
-			}
 			List<Move> actions = machine.findLegals(role, node.state);
 			for (Move move : actions) {
 				MTreeNode newnode = new MTreeNode(node.state, move, node);
@@ -250,6 +215,7 @@ public class HMHybrid extends Heuristic {
 				node.children.add(newnode);
 			}
 		}
+		Collections.shuffle(node.children);
 	}
 
 	private void backpropogate(MTreeNode node, int eval, int depth, boolean proven) {
@@ -259,6 +225,7 @@ public class HMHybrid extends Heuristic {
 		while (true) {
 			node.visits++;
 			node.sum_utility += eval;
+			node.sum_sq += eval * eval;
 			node.depth = Math.max(node.depth, depth);
 			if (node.isMaxNode()) depth++;
 			node = node.parent;
@@ -274,20 +241,22 @@ public class HMHybrid extends Heuristic {
 }
 
 class HSimThread extends Thread {
+	public static final MTreeNode HALT = new MTreeNode(null, null, null);
 
 	public StateMachine machine;
 	public Role role;
 	public long timeout;
-	public LinkedBlockingQueue<MTreeNode> input = new LinkedBlockingQueue<>();
-	public LinkedBlockingQueue<Integer> output;
+	public BlockingQueue<MTreeNode> input;
+	public BlockingQueue<Integer> output;
 	public static final int MAX_SCORE = 99;
 	public static final int MIN_SCORE = 1;
 
-	public HSimThread(StateMachine machine, Role role, long timeout,
-			LinkedBlockingQueue<Integer> output) {
+	public HSimThread(StateMachine machine, Role role, long timeout, BlockingQueue<MTreeNode> input,
+			BlockingQueue<Integer> output) {
 		this.machine = machine;
 		this.role = role;
 		this.timeout = timeout;
+		this.input = input;
 		this.output = output;
 	}
 
@@ -309,9 +278,10 @@ class HSimThread extends Thread {
 	public void run() {
 		while (true) {
 			try {
-				output.offer(simulate(input.take()));
+				MTreeNode node = input.take();
+				if (node == HALT) return;
+				output.offer(simulate(node));
 			} catch (Exception e) {
-				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 		}

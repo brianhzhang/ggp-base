@@ -15,9 +15,11 @@ import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
 import org.ggp.base.util.statemachine.StateMachine;
+import org.ggp.base.util.statemachine.cache.CachedStateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
+import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
 public class MyPlayer extends StateMachineGamer {
 
@@ -33,10 +35,9 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int HMHYBRID = 7;
 
 	public static final int N_OPTIONS = 10;
-	public static final int TIMEOUT_BUFFER = 3000; // time for network
-													// communication in ms
+	public static final int TIMEOUT_BUFFER = (int) PREFERRED_PLAY_BUFFER; // time for network
+	// communication in ms
 	public static final int N_THREADS = 4;
-	private StateMachine[] machines = new StateMachine[N_THREADS];
 
 	public static final PrintWriter gamelog = getGameLog();
 	public int method = HMHYBRID;
@@ -63,23 +64,30 @@ public class MyPlayer extends StateMachineGamer {
 		return new GDLGetter();
 	}
 
-	@Override
-	public void stateMachineMetaGame(long timeout)
-			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
-		Log.setFile(getMatch().getMatchId() + "_" + getRole());
-		MetaPropNetStateMachineFactory m = new MetaPropNetStateMachineFactory(
-				((GDLGetter) getStateMachine()).getDescription());
+	public void switchToPropnets(MetaPropNetStateMachineFactory m, StateMachine[] machines) {
 		switchStateMachine(m.getNewMachine());
 		for (int i = 0; i < N_THREADS; i++) {
 			machines[i] = m.getNewMachine();
 		}
+	}
+
+	@Override
+	public void stateMachineMetaGame(long timeout)
+			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
+		Log.setFile(getMatch().getMatchId() + "_" + getRole());
+		Log.println("");
+		List<Gdl> gameDescription = ((GDLGetter) getStateMachine()).getDescription();
+
+		StateMachine m = new CachedStateMachine(new ProverStateMachine());
+		m.initialize(gameDescription);
+		switchStateMachine(m);
 		if (method == LEGAL) player = new Legal();
 		if (method == RANDOM) player = new RandomPlayer();
 		if (method == ALPHABETA) player = new AlphaBeta();
 		if (method == HEURISTIC) player = new Heuristic();
 		if (method == MONTECARLO) player = new MonteCarlo();
 		if (method == MCTS) player = new MCTS();
-		if (method == HMHYBRID) player = new HMHybrid(machines);
+		if (method == HMHYBRID) player = new HMHybrid(this, gameDescription);
 		player.metaGame(this, timeout - TIMEOUT_BUFFER);
 		return;
 	}

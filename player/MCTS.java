@@ -176,8 +176,10 @@ public class MCTS extends Method {
 }
 
 class MTreeNode {
-	public int visits = 0;
-	public int sum_utility = 0;
+	// prior: sum squaers = 10000 so that stdev != 0
+	public long visits = 0;
+	public long sum_utility = 0;
+	public long sum_sq = 10000;
 	// bounds
 	public int lower = MyPlayer.MIN_SCORE;
 	public int upper = MyPlayer.MAX_SCORE;
@@ -237,8 +239,11 @@ class MTreeNode {
 		return putInBounds((double) sum_utility / visits);
 	}
 
+	// dynamic score: multiplies by standard deviation
 	public double score(double c) {
-		return utility() + c * Math.sqrt(Math.log(parent.visits) / visits);
+		double util = (double) sum_utility / visits;
+		double var = (double) sum_sq / visits - util * util;
+		return putInBounds(util) + c * Math.sqrt(Math.log(parent.visits) / visits * var);
 	}
 }
 
