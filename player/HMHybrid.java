@@ -43,11 +43,11 @@ public class HMHybrid extends Method {
 
 	// if the metapropnetstatemachinefactory has finished, update the machines
 	private boolean checkStateMachineStatus() {
-		// if (!propNetInitialized && !smthread.isAlive()) {
-		// gamer.switchToPropnets(smthread.m, machines);
-		// Log.println("Propnets initialized");
-		// return propNetInitialized = true;
-		// }
+		if (!propNetInitialized && !smthread.isAlive()) {
+			gamer.switchToPropnets(smthread.m, machines);
+			Log.println("Propnets initialized");
+			return propNetInitialized = true;
+		}
 		return false;
 	}
 
