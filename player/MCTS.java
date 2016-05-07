@@ -1,9 +1,20 @@
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
+import org.ggp.base.util.gdl.grammar.Gdl;
+import org.ggp.base.util.gdl.grammar.GdlConstant;
+import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
@@ -13,101 +24,231 @@ import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 
 public class MCTS extends Method {
+
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
-
-	private double breadth_inclination = 20000;
+	private static final double CFACTOR = 2.0;
 	private List<MTreeNode> cache = new ArrayList<>();
+	private StateMachine[] machines;
+	private boolean propNetInitialized = false;
+	private MyPlayer gamer;
+	private GdlConstant clockConstant;
+	private Set<Integer> ignoreProps = new HashSet<Integer>();
+	private Map<MachineState, MTreeNode> pnCache = new TreeMap<>(this::compare);
 
-	@Override
-	public void metaGame(StateMachineGamer gamer, long timeout) {
+	private StateMachineCreatorThread smthread;
 
-		ConcurrentLinkedQueue<Integer> data = new ConcurrentLinkedQueue<>();
-		List<MThread> threads = new ArrayList<MThread>();
+	/* BEGIN MACHINESTATE HELPER METHODS */
 
-		Log.println("");
-		Log.println("begin random exploration");
-		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-			MThread t = new MThread(gamer, timeout, data);
-			threads.add(t);
-			t.start();
+	private int compare(MachineState state1, MachineState state2) {
+		boolean[] props1 = ((PropNetMachineState) state1).props;
+		boolean[] props2 = ((PropNetMachineState) state2).props;
+		for (int i = 0; i < props1.length; i++) {
+			if (props1[i] == props2[i] || ignoreProps.contains(i)) continue;
+			return props1[i] ? 1 : -1;
 		}
-		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-			try {
-				threads.get(i).join();
-			} catch (InterruptedException e) {
-				e.printStackTrace();
+		return 0;
+	}
+
+	public boolean contains(Collection<MachineState> collection, MachineState test) {
+		for (MachineState s : collection) {
+			if (sameState(s, test)) return true;
+		}
+		return false;
+	}
+
+	private boolean sameState(MachineState state1, MachineState state2) {
+		if (propNetInitialized) {
+			boolean[] props1 = ((PropNetMachineState) state1).props;
+			boolean[] props2 = ((PropNetMachineState) state2).props;
+			for (int i = 0; i < props1.length; i++) {
+				if (ignoreProps.contains(i)) continue;
+				if (props1[i] != props2[i]) return false;
+			}
+			return true;
+		}
+		return state1.equals(state2);
+	}
+
+	private class StateMachineCreatorThread extends Thread {
+		private List<Gdl> description;
+		public BetterMetaPropNetStateMachineFactory m;
+
+		public StateMachineCreatorThread(List<Gdl> description) {
+			this.description = description;
+		}
+
+		@Override
+		public void run() {
+			m = new BetterMetaPropNetStateMachineFactory(description);
+			Log.println("Propnets ready");
+		}
+	}
+
+	// if the metapropnetstatemachinefactory has finished, update the machines
+	private boolean checkStateMachineStatus() {
+		if (propNetInitialized || smthread.isAlive()) return false;
+		gamer.switchToPropnets(smthread.m, machines);
+		Log.println("Propnets initialized");
+		propNetInitialized = true;
+		if (clockConstant != null) {
+			Log.println("Ignoring clock proposition " + clockConstant);
+			Map<GdlSentence, Integer> basemap = new HashMap<>();
+			for (int i = 0; i < smthread.m.bases.size(); i++) {
+				basemap.put(smthread.m.bases.get(i).getName(), i);
+			}
+			for (GdlSentence g : basemap.keySet()) {
+				if (g.get(0).toSentence().getName().equals(clockConstant)) {
+					ignoreProps.add(basemap.get(g));
+				}
 			}
 		}
+		return true;
+	}
 
-		int ngame = data.size();
-		double[] results = new double[ngame + 2];
-		for (int i = 0; i < ngame; i++) {
-			results[i] = data.poll();
+	public MCTS(MyPlayer gamer, List<Gdl> description) {
+		this.gamer = gamer;
+		machines = new StateMachine[MyPlayer.N_THREADS];
+		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+			machines[i] = gamer.getStateMachine();
+			machines[i].initialize(description);
 		}
-		results[ngame] = MyPlayer.MIN_SCORE;
-		results[ngame + 1] = MyPlayer.MAX_SCORE;
-		// as a prior, so that variance is never 0
-
-		Log.println("games analyzed: " + ngame);
-		double std = Statistics.stdev(results);
-		Log.println("goal mean: " + Statistics.mean(results));
-		Log.println("goal std: " + std);
-		// the std of a game that randomly ends with either 0 or 100 is 50.
-		// if this game should use a constant of 100 sqrt(2), then we must multiply std by sqrt 8
-		Log.println("breadth inclination: " + (breadth_inclination = Math.sqrt(1) * std));
+		smthread = new StateMachineCreatorThread(description);
+		smthread.start();
 	}
 
 	@Override
-	public Move run(StateMachine machine, MachineState state, Role role, List<Move> moves,
+	public void metaGame(StateMachineGamer gamer, long timeout) {
+		pnCache.clear();
+		StateMachine machine = gamer.getStateMachine();
+		MachineState state = machine.getInitialState();
+		Set<GdlConstant> all = new HashSet<>();
+		Set<GdlConstant> impossibles = new HashSet<>();
+
+		while (System.currentTimeMillis() < timeout && smthread.isAlive()) {
+			Map<GdlConstant, Set<GdlSentence>> possibles = new HashMap<>();
+			while (!machine.isTerminal(state) && System.currentTimeMillis() < timeout) {
+				for (GdlSentence sent : state.getContents()) {
+					sent = sent.get(0).toSentence();
+					GdlConstant name = sent.getName();
+					if (impossibles.contains(name)) continue;
+					if (!possibles.containsKey(name)) {
+						possibles.put(name, new HashSet<>());
+						all.add(name);
+					}
+					Set<GdlSentence> previous = possibles.get(name);
+					if (previous.contains(sent)) {
+						impossibles.add(name);
+						possibles.remove(name);
+						Log.println(name + " is not the clock");
+					} else previous.add(sent);
+				}
+				try {
+					state = machine.getRandomNextState(state);
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		}
+
+		clockConstant = null;
+		all.removeAll(impossibles);
+		if (all.size() == 0) Log.println("no clock");
+		else if (all.size() > 1) Log.println("too many possible clocks: " + all);
+		else Log.println("the clock is " + (clockConstant = all.iterator().next()));
+
+		if (!checkStateMachineStatus()) {
+			Log.println("Still building propnet...");
+			return;
+		}
+	}
+
+	@Override
+	public Move run(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
+		if (checkStateMachineStatus()) {
+			// reinit state machine
+			machine = gamer.getStateMachine();
+			rootstate = gamer.getCurrentState();
+			cache.clear();
+		}
+		long timestart = System.currentTimeMillis();
+		long simtime = 0;
+
 		Log.println("--------------------");
 		// set up tree
 		MTreeNode root = null;
 		for (MTreeNode node : cache) {
-			if (node.state.equals(state)) {
-				System.out.printf("cache retrieval: nodes=%d depth=%d\n", node.visits, node.depth);
+			if (sameState(node.state, rootstate)) {
+				Log.printf("cache retrieval: nodes=%d depth=%d\n", node.visits, node.depth);
 				root = node;
 				break;
 			}
 		}
 		cache.clear();
-		if (root == null) {
-			root = new MTreeNode(state, null, null);
+		if (root == null || root.children.isEmpty()) { // second case for repeated nodes
+			root = new MTreeNode(rootstate, null);
 			expand(machine, role, root);
 		}
-		Collections.shuffle(root.children);
+		// root.parents.clear();
+		HSimThread[] threads = new HSimThread[MyPlayer.N_THREADS];
+		BlockingQueue<MTreeNode> input = new LinkedBlockingQueue<>();
+		BlockingQueue<Integer> output = new LinkedBlockingQueue<>();
+		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+			threads[i] = new HSimThread(machines[i], role, timeout, input, output);
+			threads[i].start();
+		}
 		while (System.currentTimeMillis() < timeout) {
-			MTreeNode node = select(root);
-			expand(machine, role, node);
-			MSimThread[] threads = new MSimThread[MyPlayer.N_THREADS];
-			for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-				threads[i] = new MSimThread(machine, node, role, timeout);
-				threads[i].start();
+			if (root.isProven()) {
+				Log.println("Game solved with value " + root.lower);
+				break;
 			}
-			for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-				try {
-					threads[i].join();
-				} catch (InterruptedException e) {
-					e.printStackTrace();
+			MTreeNode node = select(root);
+			if (machine.isTerminal(node.state)) {
+				backpropogate(node, machine.findReward(role, node.state), true);
+			} else {
+				expand(machine, role, node);
+				long start = System.currentTimeMillis();
+				for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+					input.offer(node);
 				}
-				int eval = threads[i].result;
-				if (eval == FAIL) continue;
-				backpropogate(node, eval, 0);
+				for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+					try {
+						int eval = output.take();
+						if (eval == FAIL) continue;
+						backpropogate(node, eval, false);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}
+				}
+				simtime += System.currentTimeMillis() - start;
 			}
 		}
 		MTreeNode bestChild = null;
 		for (MTreeNode child : root.children) {
 			if (bestChild == null || child.utility() > bestChild.utility()) bestChild = child;
-			System.out.printf("move=%s score=%f nodes=%d depth=%d\n", child.move, child.utility(),
-					child.visits, child.depth);
+			Log.println("move=" + info(child, child));
 		}
 		for (MTreeNode child : bestChild.children) {
 			cache.add(child);
 		}
-		System.out.printf("played=%s score=%f nodes=%d depth=%d\n", bestChild.move,
-				bestChild.utility(), root.visits, root.depth);
+		Log.println("played=" + info(bestChild, root));
+		Log.println("tot time = " + (System.currentTimeMillis() - timestart));
+		Log.println("sim time = " + simtime);
+		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+			threads[i].input.offer(HSimThread.HALT);
+		}
 		return bestChild.move;
+	}
+
+	private double score(MTreeNode node, int sgn) {
+		return node.score(sgn * CFACTOR);
+	}
+
+	private String info(MTreeNode scoreNode, MTreeNode rootNode) {
+		return String.format("%s score=%f ci=(%f, %f) bound=(%d, %d) visits=%d depth=%d",
+				scoreNode.move, scoreNode.utility(), score(scoreNode, -1), score(scoreNode, 1),
+				scoreNode.lower, scoreNode.upper, rootNode.visits, rootNode.depth);
 	}
 
 	private MTreeNode select(MTreeNode node) {
@@ -117,19 +258,21 @@ public class MCTS extends Method {
 				if (child.visits == 0) return child;
 			}
 			MTreeNode best = null;
-			if (node.move == null) { // max node
+			if (node.isMaxNode()) {
 				double score = Double.NEGATIVE_INFINITY;
 				for (MTreeNode child : node.children) {
-					double newscore = child.score(breadth_inclination);
+					if (child.isProven()) continue;
+					double newscore = score(child, 1);
 					if (newscore > score) {
 						score = newscore;
 						best = child;
 					}
 				}
-			} else { // min node
+			} else {
 				double score = Double.POSITIVE_INFINITY;
 				for (MTreeNode child : node.children) {
-					double newscore = child.score(-breadth_inclination);
+					if (child.isProven()) continue;
+					double newscore = score(child, -1);
 					if (newscore < score) {
 						score = newscore;
 						best = child;
@@ -140,38 +283,107 @@ public class MCTS extends Method {
 		}
 	}
 
+	// returns whether node is a parent of child
+	private boolean isAncestor(MTreeNode node, MTreeNode child) {
+		if (node == child) return true;
+		for (MTreeNode parent : child.parents) {
+			if (isAncestor(node, parent)) return true;
+		}
+		return false;
+	}
+
 	private void expand(StateMachine machine, Role role, MTreeNode node)
 			throws MoveDefinitionException, TransitionDefinitionException {
-		if (node.move == null) { // max-node
-			if (machine.isTerminal(node.state)) return;
+		if (node.isMaxNode()) { // max-node
 			List<Move> actions = machine.findLegals(role, node.state);
 			for (Move move : actions) {
-				MTreeNode newnode = new MTreeNode(node.state, move, node);
+				MTreeNode newnode = new MTreeNode(node.state, move);
+				newnode.parents.add(node);
 				node.children.add(newnode);
 			}
 		} else {
 			List<List<Move>> actions = machine.getLegalJointMoves(node.state, role, node.move);
 			for (List<Move> jmove : actions) {
 				MachineState newstate = machine.findNext(jmove, node.state);
-				MTreeNode newnode = new MTreeNode(newstate, null, node);
+				MTreeNode newnode = new MTreeNode(newstate, null);
+				newnode.parents.add(node);
 				node.children.add(newnode);
 			}
 		}
+		Collections.shuffle(node.children);
 	}
 
-	private void backpropogate(MTreeNode node, int eval, int depth) {
-		while (node != null) {
-			node.visits++;
-			node.sum_utility += eval;
-			node.depth = Math.max(node.depth, depth);
-			node = node.parent;
-			depth++;
+	private static final int MIN_EVAL = 1;
+	private static final int MAX_EVAL = 99; // never propogate 0 or 100
+
+	private void backpropogate(MTreeNode node, int eval, boolean proven) {
+		if (proven) node.lower = node.upper = eval;
+		if (eval < MIN_EVAL) eval = MIN_EVAL;
+		if (eval > MAX_EVAL) eval = MAX_EVAL;
+		backpropogate(node, 1, eval, eval * eval, 0, proven);
+	}
+
+	private void backpropogate(MTreeNode node, int nvisit, int eval, int sumsq, int depth,
+			boolean propogate_bound) {
+		node.visits += nvisit;
+		node.sum_utility += eval;
+		node.sum_sq += sumsq;
+
+		node.depth = Math.max(node.depth, depth);
+		if (node.isMaxNode()) depth++;
+		for (MTreeNode parent : node.parents) {
+			boolean parent_propogate = propogate_bound;
+			if (propogate_bound) parent_propogate = parent.setBounds();
+			backpropogate(parent, nvisit, eval, sumsq, depth, parent_propogate);
 		}
 	}
 
 	@Override
 	public void cleanUp() {
 		return;
+	}
+}
+
+class HSimThread extends Thread {
+	public static final MTreeNode HALT = new MTreeNode(null, null);
+
+	public StateMachine machine;
+	public Role role;
+	public long timeout;
+	public BlockingQueue<MTreeNode> input;
+	public BlockingQueue<Integer> output;
+
+	public HSimThread(StateMachine machine, Role role, long timeout, BlockingQueue<MTreeNode> input,
+			BlockingQueue<Integer> output) {
+		this.machine = machine;
+		this.role = role;
+		this.timeout = timeout;
+		this.input = input;
+		this.output = output;
+	}
+
+	private int simulate(MTreeNode node)
+			throws MoveDefinitionException, TransitionDefinitionException, GoalDefinitionException {
+		MachineState state = node.state;
+		if (node.move != null) state = machine.getRandomNextState(state, role, node.move);
+		while (!machine.isTerminal(state)) {
+			if (System.currentTimeMillis() > timeout) return MCTS.FAIL;
+			state = machine.getRandomNextState(state);
+		}
+		return machine.findReward(role, state);
+	}
+
+	@Override
+	public void run() {
+		while (true) {
+			try {
+				MTreeNode node = input.take();
+				if (node == HALT) return;
+				output.offer(simulate(node));
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
 	}
 }
 
@@ -185,14 +397,13 @@ class MTreeNode {
 	public int upper = MyPlayer.MAX_SCORE;
 
 	public List<MTreeNode> children = new ArrayList<>();
-	public MTreeNode parent;
+	public List<MTreeNode> parents = new ArrayList<>();
 
 	public MachineState state;
 	public Move move; // null if max-node; non-null if min-node
 	public int depth = 0;
 
-	public MTreeNode(MachineState state, Move move, MTreeNode parent) {
-		this.parent = parent;
+	public MTreeNode(MachineState state, Move move) {
 		this.move = move;
 		this.state = state;
 	}
@@ -243,7 +454,11 @@ class MTreeNode {
 	public double score(double c) {
 		double util = (double) sum_utility / visits;
 		double var = (double) sum_sq / visits - util * util;
-		return putInBounds(util) + c * Math.sqrt(Math.log(parent.visits) / visits * var);
+		int sum_parent_visits = 0;
+		for (MTreeNode parent : parents) {
+			sum_parent_visits += parent.visits;
+		}
+		return putInBounds(util) + c * Math.sqrt(Math.log(sum_parent_visits) / visits * var);
 	}
 }
 
@@ -254,8 +469,6 @@ class MSimThread extends Thread {
 	public Role role;
 	public long timeout;
 	public int result;
-	public static final int MAX_SCORE = 99;
-	public static final int MIN_SCORE = 1;
 
 	public MSimThread(StateMachine machine, MTreeNode node, Role role, long timeout) {
 		this.machine = machine;
@@ -276,9 +489,7 @@ class MSimThread extends Thread {
 				state = machine.getRandomNextState(state);
 			}
 			int score = machine.findReward(role, state);
-			if (score > MAX_SCORE) result = MAX_SCORE;
-			else if (score < MIN_SCORE) result = MIN_SCORE;
-			else result = score;
+			result = score;
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
