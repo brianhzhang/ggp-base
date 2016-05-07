@@ -28,7 +28,7 @@ public class HMHybrid extends Method {
 
 	private class StateMachineCreatorThread extends Thread {
 		private List<Gdl> description;
-		public MetaPropNetStateMachineFactory m;
+		public BetterMetaPropNetStateMachineFactory m;
 
 		public StateMachineCreatorThread(List<Gdl> description) {
 			this.description = description;
@@ -36,7 +36,7 @@ public class HMHybrid extends Method {
 
 		@Override
 		public void run() {
-			m = new MetaPropNetStateMachineFactory(description);
+			m = new BetterMetaPropNetStateMachineFactory(description);
 			Log.println("Propnets ready");
 		}
 	}

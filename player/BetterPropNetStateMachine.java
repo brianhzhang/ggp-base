@@ -128,15 +128,13 @@ public class BetterPropNetStateMachine extends StateMachine {
 	@Override
 	public MachineState getInitialState() {
 		clearpropnet();
-		propNet.getInitProposition().setValue(true);
-		propNet.getInitProposition().propogate(false);
+		propNet.getInitProposition().propogate(true);
 		Map<GdlSentence, Proposition> bases = propNet.getBasePropositions();
 		Set<GdlSentence> nexts = new HashSet<GdlSentence>();
 		for (GdlSentence s : bases.keySet()) {
 			if (bases.get(s).getSingleInputarr().getValue()) nexts.add(s);
 		}
 		MachineState initial = new MachineState(nexts);
-		propNet.getInitProposition().setValue(false);
 		propNet.getInitProposition().propogate(false);
 		return initial;
 	}

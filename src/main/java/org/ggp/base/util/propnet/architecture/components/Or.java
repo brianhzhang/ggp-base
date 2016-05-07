@@ -1,5 +1,7 @@
 package org.ggp.base.util.propnet.architecture.components;
 
+import java.util.List;
+
 import org.ggp.base.util.propnet.architecture.Component;
 
 /**
@@ -34,6 +36,25 @@ public final class Or extends Component
 				c.propogate(value);
 			}
 		}
+    }
+    
+    public void makeMethod(StringBuilder file, List<Component> comps) {
+    	file.append("private void propagate" + comps.indexOf(this) + "(boolean newValue){\n");
+    	file.append("boolean next = ");
+    	file.append("comps[" + comps.indexOf(getInputarr()[0]) + "]");
+    	for (int i = 1; i < getInputarr().length; i ++) {
+    		file.append(" || comps[" + comps.indexOf(getInputarr()[i]) + "]");
+    	}
+    	file.append(";\n");
+    	
+    	file.append("if (next != comps[" + comps.indexOf(this) + "]){\n");
+		file.append("comps[" + comps.indexOf(this) + "] = next;\n");
+		for (Component c : getOutputarr()) {
+			file.append("propagate" + comps.indexOf(c) + "(next);\n");
+		}
+		file.append("}\n");
+    	
+    	file.append("}\n");
     }
     
     public void reset() {

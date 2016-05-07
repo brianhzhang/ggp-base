@@ -1,5 +1,7 @@
 package org.ggp.base.util.propnet.architecture.components;
 
+import java.util.List;
+
 import org.ggp.base.util.propnet.architecture.Component;
 
 /**
@@ -50,5 +52,13 @@ public final class Constant extends Component
 		for (Component c : getOutputarr()) {
 			c.propogate(value);
 		}
+	}
+	
+	public void makeMethod(StringBuilder file, List<Component> comps) {
+		file.append("private void propagate" + comps.indexOf(this) + "(boolean newValue){\n");
+		for (Component c : getOutputarr()) {
+			file.append("propagate" + comps.indexOf(c) + "(comps[" + comps.indexOf(this) + "]);\n");
+		}
+		file.append("}\n");
 	}
 }

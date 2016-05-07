@@ -2,6 +2,7 @@ package org.ggp.base.util.propnet.architecture;
 
 import java.io.Serializable;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -71,6 +72,8 @@ public abstract class Component implements Serializable
 	{
 		outputs.clear();
 	}
+	
+	public abstract void makeMethod(StringBuilder file, List<Component> comps);
 
 	/**
 	 * Adds a new output.

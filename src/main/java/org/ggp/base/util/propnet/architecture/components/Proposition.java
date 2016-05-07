@@ -1,5 +1,7 @@
 package org.ggp.base.util.propnet.architecture.components;
 
+import java.util.List;
+
 import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
 
@@ -50,21 +52,28 @@ public final class Proposition extends Component {
 	@Override
 	public void propogate(boolean newValue) {
 		if (base) return;
-		Component[] components = getInputarr();
-		if (components.length == 0) {
-		} else {
-			Component c = getSingleInputarr();
-			if (c instanceof Transition) {
-			} else {
-				value = c.getValue();
-			}
-		}
+		value = newValue;
 		if (value != lastPropogation) {
 			lastPropogation = value;
 			for (Component c : getOutputarr()){
 				c.propogate(value);
 			}
 		}
+	}
+	
+	public void makeMethod(StringBuilder file, List<Component> comps) {
+		file.append("private void propagate" + comps.indexOf(this) + "(boolean newValue){\n");
+		if (base) {
+			file.append("return;}\n");
+			return;
+		}
+		file.append("if (newValue != comps[" + comps.indexOf(this) + "]){\n");
+		file.append("comps[" + comps.indexOf(this) + "] = newValue;\n");
+		for (Component c : getOutputarr()) {
+			file.append("propagate" + comps.indexOf(c) + "(newValue);\n");
+		}
+		file.append("}\n");
+		file.append("}\n");
 	}
 	
 	public void startPropogate() {

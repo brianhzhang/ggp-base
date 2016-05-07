@@ -1,5 +1,7 @@
 package org.ggp.base.util.propnet.architecture.components;
 
+import java.util.List;
+
 import org.ggp.base.util.propnet.architecture.Component;
 
 /**
@@ -16,7 +18,7 @@ public final class Transition extends Component
     @Override
     public void propogate(boolean newValue)
     {
-        value = getSingleInputarr().getValue();
+        value = newValue;
         if (value != lastPropogation) {
 			lastPropogation = value;
 			for (Component c : getOutputarr()){
@@ -24,6 +26,18 @@ public final class Transition extends Component
 			}
 		}
     }
+    
+    @Override
+	public void makeMethod(StringBuilder file, List<Component> comps) {
+    	file.append("private void propagate" + comps.indexOf(this) + "(boolean newValue){\n");
+		file.append("if (newValue != comps[" + comps.indexOf(this) + "]){\n");
+		file.append("comps[" + comps.indexOf(this) + "] = newValue;\n");
+		for (Component c : getOutputarr()) {
+			file.append("propagate" + comps.indexOf(c) + "(newValue);\n");
+		}
+		file.append("}\n");
+		file.append("}\n");
+	}
     
     public void reset() {
     	lastPropogation = false;

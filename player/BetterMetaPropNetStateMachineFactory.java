@@ -11,8 +11,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.LinkedBlockingDeque;
 
+import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaCompiler.CompilationTask;
@@ -37,26 +37,26 @@ import org.ggp.base.util.propnet.factory.OptimizingPropNetFactory;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
 import org.ggp.base.util.statemachine.implementation.prover.query.ProverQueryBuilder;
-import org.python.modules.synchronize;
 
 public class BetterMetaPropNetStateMachineFactory {
 	List<Proposition> bases;
 	List<Proposition> inputs;
 	List<Proposition> goals;
 	List<Proposition> legals;
-	Map<GdlSentence, Integer> inputmap;
-	Map<Proposition, Integer> goalMap;
-	List<Component> comps;
+	List<Role> roles;
 	Class<?> cls;
 	PropNet p;
-	
-	Set<Integer> found;
+	static int thing;
+	ArrayList<Component> comps;
+
+	Map<GdlSentence, Integer> inputmap;
 
 	Map<Role, List<Move>> legalPropositions;
 	List<Move> movelist;
 
 	@SuppressWarnings({ "rawtypes", "unchecked", "resource" })
 	public BetterMetaPropNetStateMachineFactory(List<Gdl> description) {
+		thing ++;
 		p = null;
 		try {
 			p = OptimizingPropNetFactory.create(description);
@@ -67,48 +67,56 @@ public class BetterMetaPropNetStateMachineFactory {
 			c.crystalize();
 		}
 		legalPropositions = new HashMap<Role, List<Move>>();
-		for (Role r : p.getRoles()) {
+		roles = new ArrayList<Role>(p.getRoles());
+		for (Role r : roles) {
 			legalPropositions.put(r, new ArrayList<Move>());
 		}
 		comps = new ArrayList<Component>(p.getComponents());
-		comps.removeAll(p.getPropositions());
-		found = new HashSet<Integer>();
-		for (int i = 0; i < comps.size(); i ++) {
-			found.add(i);
-		}
 		movelist = new ArrayList<Move>();
 		goals = new ArrayList<Proposition>();
 		legals = new ArrayList<Proposition>();
-		for (Role r : p.getRoles()) {
+		goals = new ArrayList<Proposition>();
+		for (Role r : roles) {
 			goals.addAll(p.getGoalPropositions().get(r));
 			legals.addAll(p.getLegalPropositions().get(r));
 		}
 		bases = new ArrayList<Proposition>(p.getBasePropositions().values());
 		inputs = new ArrayList<Proposition>(p.getInputPropositions().values());
 		inputmap = new HashMap<GdlSentence, Integer>();
-		for (int i = 0; i < inputs.size(); i ++) {
-			inputmap.put(inputs.get(i).getName(), i);
+		for (Proposition p : inputs) {
+			inputmap.put(p.getName(), inputs.indexOf(p));
 		}
-		StringBuilder file = new StringBuilder("import java.util.Arrays;class MetaPNSM extends MetaPropNetStateMachine {\n");
+		for (Proposition prop : p.getPropositions()) {
+			if (bases.contains(prop) || inputs.contains(prop)) {
+				prop.base = true;
+			}
+		}
+		StringBuilder file = new StringBuilder("class BMetaPNSM"+thing+" extends MetaPropNetStateMachine {\n");
 
-		//private variables.
 		file.append("private boolean init = false;\n");
-		file.append("private boolean[] prevbases;\n");
-		file.append("private boolean[] previnputs;\n");
-		file.append("private int[] components;\n");
+		file.append("private boolean[] comps;\n");
+		//		file.append("private boolean[] lastbases;\n");
+		//		file.append("private boolean[] lastinputs;\n");
 
-		//TODO constructor
-		file.append("public MetaPNSM(){\n");
+		file.append("public BMetaPNSM" + thing + "(){\n");
+		file.append("clear();\n");
+		file.append("}\n");
+
+		file.append("private void clear() {\n");
 		createConstructor(file);
 		file.append("}\n");
+
+		for (Component c : comps) {
+			c.makeMethod(file, comps);
+		}
 
 		file.append("boolean terminal(boolean[] bases){\n");
 		createTerminal(file, p);
 		file.append("}\n");
 
 		file.append("boolean[] next(boolean[] bases, boolean[] inputs){\n");
-		file.append("boolean[] next = new boolean[" + bases.size() + "];\n");
-		System.out.println("Total chain length: " + createNext(file));
+		file.append("boolean[] next = new boolean[bases.length];\n");
+		System.out.println("Total next chain length: " + createNext(file));
 		file.append("}\n");
 
 		file.append("boolean[] initial(){\n");
@@ -117,7 +125,7 @@ public class BetterMetaPropNetStateMachineFactory {
 
 		file.append("boolean[] legal(boolean[] bases, int role){\n");
 		file.append("boolean[] next = new boolean[" + inputs.size() + "];\n");
-		createInput(file);
+		System.out.println("Total input chain length: " + createInput(file));
 		file.append("}\n");
 
 		file.append("int goal(boolean[] bases, int role){\n");
@@ -126,8 +134,14 @@ public class BetterMetaPropNetStateMachineFactory {
 
 		file.append("}\n");
 		System.out.println(file);
-		System.out.println((found.size() - comps.size()) + "  " + found);
-		System.out.println(p.getPropositions().size());
+		int constant = 0;
+		for (Component c : comps) {
+			if (c instanceof Constant) constant ++;
+		}
+		System.out.println("Number of Constants: " + constant);
+		System.out.println("Number of Ands: " + p.getNumAnds());
+		System.out.println("Number of Ors: " + p.getNumOrs());
+		System.out.println("Number of Nots: " + p.getNumNots());
 
 		JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
 		DiagnosticCollector diagnosticsCollector =
@@ -144,30 +158,55 @@ public class BetterMetaPropNetStateMachineFactory {
 			System.out.println("Compilation has succeeded in " + (System.currentTimeMillis() - start) + "ms");
 		}else{
 			System.out.println("Compilation fails.");
+			List<Diagnostic> diagnostics = diagnosticsCollector.getDiagnostics();
+
+			for (Diagnostic d : diagnostics) {
+				System.out.println(d.toString());
+			}
 		}
 		// Load and instantiate compiled class.
 		URLClassLoader classLoader = new URLClassLoader(new URL[0]);
 		try {
-			cls = classLoader.loadClass("MetaPNSM");
+			cls = classLoader.loadClass("BMetaPNSM"+thing);
 		} catch (ClassNotFoundException e) {
 			e.printStackTrace();
 		}
 	}
 
-
-	private void createConstructor(StringBuilder file) {
-		file.append("int[] components = {");
-		file.append(makeInit(comps.get(0)));
-		for (int i = 1; i < comps.size(); i ++) {
-			file.append(", " + makeInit(comps.get(i)));
+	static SimpleJavaFileObject getJavaFileContentsAsString(StringBuilder javaFileContents){
+		JavaObjectFromString javaFileObject = null;
+		try{
+			javaFileObject = new JavaObjectFromString("BMetaPNSM"+thing, javaFileContents.toString());
+		}catch(Exception exception){
+			exception.printStackTrace();
 		}
-		file.append("};\n");
-		file.append("this.components = components;\n");
-		file.append("prevbases = new boolean[" + bases.size() + "];\n");
-		file.append("previnputs = new boolean[" + inputs.size() + "];\n");
+		return javaFileObject;
 	}
 
-	private String makeInit(Component c) {
+	private void createConstructor(StringBuilder file) {
+		//		file.append("int[] components = {");
+		//		file.append(createComponent(comps.get(0)));
+		//		for (int i = 1; i < comps.size(); i ++) {
+		//			file.append(", " + createComponent(comps.get(i)));
+		//		}
+		//		file.append("};\n");
+		//		file.append("comps = components;\n");
+
+		//		file.append("lastbases = new boolean[" + bases.size() + "];\n");
+		//		file.append("lastinputs = new boolean[" + inputs.size() + "];\n");
+		file.append("comps = new boolean[" + comps.size() + "];\n");
+		for (Component c : comps) {
+			if (c instanceof Constant) {
+				file.append("comps[" + comps.indexOf(c) + "] = " + c.getValue() + ";\n");
+				file.append("propagate" + comps.indexOf(c) + "(" + c.getValue() + ");\n");
+			}
+			if (c instanceof Not) {
+				file.append("propagate" + comps.indexOf(c) + "(true);\n");
+			}
+		}
+	}
+
+	private String createComponent(Component c) {
 		if (c instanceof Or) {
 			return "0x7FFFFFFF";
 		} else if (c instanceof And) {
@@ -176,63 +215,86 @@ public class BetterMetaPropNetStateMachineFactory {
 			return "0xFFFFFFFF";
 		} else if (c instanceof Transition) {
 			return "0x7FFFFFFF";
-		} else {
-			if (c.getValue())
-			return "0xF0000000";
-			else
-				return "0x0F000000";
+		} else { //  instanceof Constant
+			return (c.getValue()) ? "0xF0000000" : "0x0F000000";
 		}
 	}
 
-	static SimpleJavaFileObject getJavaFileContentsAsString(StringBuilder javaFileContents){
-		JavaObjectFromString javaFileObject = null;
-		try{
-			javaFileObject = new JavaObjectFromString("MetaPNSM", javaFileContents.toString());
-		}catch(Exception exception){
-			exception.printStackTrace();
-		}
-		return javaFileObject;
-	}
-
+	//boolean terminal(boolean[] bases)
 	private void createTerminal(StringBuilder file, PropNet p) {
 		file.append("return " + createStructure(p.getTerminalProposition()) + ";\n");
 	}
 
+	//boolean[] next(boolean[] bases, boolean[] inputs)
 	private int createNext(StringBuilder file) {
+		createPropogateBases(file);
+		createPropogateInputs(file);
 		int count = 0;
 		int size = 0;
-		xorbases(file);
-		xorinput(file);
 		for (Proposition prop : bases) {
-			String s = "next[" + bases.indexOf(prop) + "] = (components["
-					+ comps.indexOf(prop.getSingleInput())+ "] >> 31) == 1;\n";
-			found.remove(comps.indexOf(prop.getSingleInput()));
+			String s = "next[" + bases.indexOf(prop) + "] = " + getValue(prop.getSingleInput()) + ";\n";
 			size += s.length();
-			if (size < 64000) {
+			if (size < 32000) {
 				file.append(s);
 			} else {
 				count ++;
-				size = 0;
+				size = s.length();
 				file.append("return next" + count + "(bases, inputs, next);}\n");
 				file.append("boolean[] next" + count + "(boolean[] bases, boolean[] inputs, boolean[] next){\n" + s);
 			}
 		}
-		file.append("prevbases = bases;\n");
-		file.append("previnputs = inputs;\n");
 		file.append("return next;\n");
 		return count;
 	}
 
+	private void createPropogation(StringBuilder file, Component c) {
+		String s = "";
+		for (Component next : c.getOutputs()) {
+			s += recCreatePropogation("", next);
+		}
+		file.append("private void propogate" + comps.indexOf(c) + "(int pass){\n");
+		if (s.length() != 0) {
+			file.append("int newPass = comps[" + comps.indexOf(c) + "] >> 31;\n");
+		}
+		file.append("comps[" + comps.indexOf(c) + "] += pass;\n");
+		if (s.length() != 0) {
+			file.append("if ((comps[" + comps.indexOf(c) + "] >> 31) != newPass){\n");
+			file.append("newPass = (comps[" + comps.indexOf(c) + "] >> 31) - newPass;\n");
+			file.append(s);
+			file.append("}\n");
+		}
+		file.append("}\n");
+	}
+
+	private String recCreatePropogation(String s, Component c) {
+		if (comps.contains(c)) {
+			s += ("propogate" + comps.indexOf(c) + "(newPass);\n");
+		} else {
+			if (!p.getInputPropositions().values().contains(c) && !p.getBasePropositions().values().contains(c)) {
+				for (Component next : c.getOutputs()) {
+					s += recCreatePropogation("", next);
+				}
+			}
+		}
+		return s;
+	}
+
+	//boolean[] initial()
 	private void createInit(StringBuilder file) {
 		boolean[] basearr = new boolean[bases.size()];
 		p.getInitProposition().setValue(true);
-		p.getInitProposition().propogate(false);
-		Map<GdlSentence, Proposition> bases = p.getBasePropositions();
-		for (GdlSentence s : bases.keySet()) {
-			if (bases.get(s).getSingleInputarr().getValue()) basearr[this.bases.indexOf(bases.get(s))] = true;
+		p.getInitProposition().startPropogate();
+		for (Proposition p : bases) {
+			if (p.getSingleInputarr().getValue()) basearr[bases.indexOf(p)] = true;
 		}
 		p.getInitProposition().setValue(false);
-		p.getInitProposition().propogate(false);
+		p.getInitProposition().startPropogate();
+		//		for (int i = 0; i < comps.size(); i ++) {
+		//			if (comps.get(i) instanceof Not) {
+		//				file.append("propogate" + i + "((" + getValue(comps.get(i).getSingleInput()) + ")? 1: -1);\n");
+		//			}
+		//		}
+		file.append("clear();\n");
 		file.append("boolean[] result = {");
 		for (int i = 0; i < basearr.length - 1; i ++) {
 			file.append(basearr[i] + ", ");
@@ -241,144 +303,109 @@ public class BetterMetaPropNetStateMachineFactory {
 		file.append("return result;\n");
 	}
 
+	//boolean[] legal(boolean[] bases, int role)
 	private int createInput(StringBuilder file) {
+		createPropogateBases(file);
 		int count = 0;
 		int size = 0;
-		xorbases(file);
 		for (int i = 0; i < legals.size(); i ++) {
-			String s;
-			if (bases.contains(legals.get(i).getSingleInput())) {
-				s = "next[" + i + "] = bases["
-						+ bases.indexOf(legals.get(i).getSingleInput())+ "];\n";
-			}
-			else {
-				s = "next[" + i + "] = (components["
-						+ comps.indexOf(legals.get(i).getSingleInput())+ "] >> 31) == 1;\n";
-				found.remove(comps.indexOf(legals.get(i).getSingleInput()));
-			}
-			size += s.length();
-			movelist.add(new Move(legals.get(i).getName().get(1)));
-			legalPropositions.get(new Role((GdlConstant) legals.get(i).getName().getBody().get(0))).
-			add(new Move(legals.get(i).getName().get(1)));
-			if (size < 64000) {
-				file.append(s);
-			} else {
-				count ++;
-				size = 0;
-				file.append("return next" + count + "(bases, inputs, next);}\n");
-				file.append("boolean[] next" + count + "(boolean[] bases, boolean[] inputs, boolean[] next){\n" + s);
+			for (int j = 0; j < roles.size(); j ++) {
+				if (roles.get(j).getName().equals(legals.get(i).getName().getBody().get(0))) {
+					System.out.println("Legal: " + legals.get(i).getInputs().size());
+					String s = ("next[" + i + "] = role == " + j + " && " +
+							getValue(legals.get(i).getSingleInput()) + ";\n");
+					size += s.length();
+					if (size < 32000) {
+						file.append(s);
+					} else {
+						count ++;
+						size = s.length();
+						file.append("return legal" + count + "(bases, role, next);}\n");
+						file.append("boolean[] legal" + count + "(boolean[] bases, int role, boolean[] next){\n" + s);
+					}
+					movelist.add(new Move(legals.get(i).getName().get(1)));
+					legalPropositions.get(new Role((GdlConstant) legals.get(i).getName().getBody().get(0))).
+					add(new Move(legals.get(i).getName().get(1)));
+				}
 			}
 		}
-		file.append("prevbases = bases;\n");
 		file.append("return next;\n");
 		return count;
 	}
 
-	/*
-	 * movelist.add(new Move(legals.get(i).getName().get(1)));
-					legalPropositions.get(new Role((GdlConstant) legals.get(i).getName().getBody().get(0))).
-					add(new Move(legals.get(i).getName().get(1)));
-	 */
-
+	//int goal(boolean[] bases, int role)
 	private void createGoal(StringBuilder file) {
-		xorbases(file);
+		createPropogateBases(file);
 		for (int i = 0; i < goals.size(); i ++) {
-			for (int j = 0; j < p.getRoles().size(); j ++) {
-				if (p.getRoles().get(j).getName().equals(goals.get(i).getName().getBody().get(0))) {
-					file.append("if ((role == " + j + ") && (components["
-							+ comps.indexOf(goals.get(i).getSingleInput()) + "] >> 31 == 1))\n");
+			for (int j = 0; j < roles.size(); j ++) {
+				if (roles.get(j).getName().equals(goals.get(i).getName().getBody().get(0))) {
+					System.out.println("Goals: " + goals.get(i).getInputs().size());
+					file.append("if (role == " + j + " && " + getValue(goals.get(i).getSingleInput()) + ")\n");
 					file.append("\treturn " + getGoalValue(goals.get(i)) + ";\n");
-					found.remove(comps.indexOf(goals.get(i).getSingleInput()));
 				}
 			}
 		}
-		file.append("prevbases = bases;\n");
 		file.append("return -1;\n");
+	}
+
+	private String getValue(Component c) {
+		//		if (bases.contains(c)) {
+		//			return "bases[" + bases.indexOf(c) + "]";
+		//		} else if (inputs.contains(c)) {
+		//			return "inputs[" + inputs.indexOf(c) + "]";
+		//		} else if (comps.contains(c)) {
+		//			return "(comps[" + comps.indexOf(c) + "] >> 31) == 1";
+		//		} else {
+		//			String s = "";
+		//			for (Component next : c.getInputs()) {
+		//				s += getValue(next) + "||";
+		//			}
+		//			return s.substring(0, s.length() - 2);
+		//		}
+		return "comps[" + comps.indexOf(c) + "]";
+	}
+
+	private void createPropogateBases(StringBuilder file) {
+		//		for (int i = 0; i < bases.size(); i ++) {
+		//			if (comps.contains(bases.get(i).getSingleOutput())) {
+		//				file.append("if (bases[" + i + "] ^ lastbases[" + i + "]){\n");
+		//				file.append("propogate" + comps.indexOf(bases.get(i).getSingleOutput()) + "((bases[" + i + "])? 1:-1);\n");
+		//				file.append("}\n");
+		//			}
+		//		}
+		//		file.append("lastbases = bases;\n");
+		for (int i = 0; i < bases.size(); i ++) {
+			file.append("if (comps[" + comps.indexOf(bases.get(i)) + "] != bases[" + i + "]){\n");
+			file.append("comps[" + comps.indexOf(bases.get(i)) + "] = bases[" + i + "];\n");
+			for (Component c : bases.get(i).getOutputs())
+				file.append("propagate" + comps.indexOf(c) + "(bases[" + i + "]);\n");
+			file.append("}\n");
+		}
+	}
+
+	private void createPropogateInputs(StringBuilder file) {
+		//		for (int i = 0; i < inputs.size(); i ++) {
+		//			if (inputs.get(i).getOutputs().size() == 0) continue;
+		//			if (comps.contains(inputs.get(i).getSingleOutput())) {
+		//				file.append("if (inputs[" + i + "] ^ lastinputs[" + i + "]){\n");
+		//				file.append("propogate" + comps.indexOf(inputs.get(i).getSingleOutput()) + "((inputs[" + i + "])? 1:-1);\n");
+		//				file.append("}\n");
+		//			}
+		//		}
+		//		file.append("lastinputs = inputs;\n");
+		for (int i = 0; i < inputs.size(); i ++) {
+			file.append("if (comps[" + comps.indexOf(inputs.get(i)) + "] != inputs[" + i + "]){\n");
+			file.append("comps[" + comps.indexOf(inputs.get(i)) + "] = inputs[" + i + "];\n");
+			for (Component c : inputs.get(i).getOutputs())
+				file.append("propagate" + comps.indexOf(c) + "(inputs[" + i + "]);\n");
+			file.append("}\n");
+		}
 	}
 
 	private int getGoalValue(Proposition goalProposition) {
 		GdlRelation relation = (GdlRelation) goalProposition.getName();
 		GdlConstant constant = (GdlConstant) relation.get(1);
 		return Integer.parseInt(constant.toString());
-	}
-
-	private void xorbases(StringBuilder file) {
-		file.append("boolean[] xorbases = new boolean[" + bases.size() + "];\n");
-		file.append("for (int i = 0; i < " + bases.size() + "; i ++) {\n");
-		file.append("xorbases[i] = (bases[i] && !prevbases[i]) || (!bases[i] && prevbases[i]);\n");
-		file.append("}\n");
-		file.append("int nextb = 0;\n");
-		file.append("int tempb = 0;\n");
-		//TODO forward propogate
-		for (int i = 0; i < bases.size(); i ++) {
-			file.append("if (xorbases[" + i + "]){\n");
-			LinkedBlockingDeque<Component> queue = new LinkedBlockingDeque<Component>();
-			Component input = bases.get(i).getSingleOutput();
-			queue.add(input);
-			file.append("nextb = (bases[" + i + "])?1:-1;\n");
-			while (!queue.isEmpty()) {
-				input = queue.poll();
-				if (comps.contains(input)){
-					file.append(generateOutput(input, "b"));
-					for (Component c : input.getOutputs()) {
-						queue.add(c);
-					}
-				} else {
-					if (!bases.contains(input)) {
-						for (Component c : input.getOutputs()) {
-							queue.add(c);
-						}
-					}
-				}
-			}
-			file.append("}\n");
-		}
-	}
-
-	private void xorinput(StringBuilder file) {
-		file.append("boolean[] xorinput = new boolean[" + inputs.size() + "];\n");
-		file.append("for (int i = 0; i < " + inputs.size() + "; i ++) {\n");
-		file.append("xorinput[i] = (!inputs[i] && previnputs[i]) || (inputs[i] && !previnputs[i]);\n");
-		file.append("}\n");
-		file.append("int nexti = 0;\n");
-		file.append("int tempi = 0;\n");
-		//TODO forward propogate
-		for (int i = 0; i < legals.size(); i ++) {
-			file.append("if (xorinput[" + i + "]){\n");
-			if (p.getLegalInputMap().get(legals.get(i)).getOutputs().size() == 0) {
-				file.append("}\n");
-				continue;
-			}
-			Component input = p.getLegalInputMap().get(legals.get(i)).getSingleOutput();
-			LinkedBlockingDeque<Component> queue = new LinkedBlockingDeque<Component>();
-			queue.add(input);
-			file.append("nexti = (inputs[" + i + "])?1:-1;\n");
-			while (!queue.isEmpty()) {
-				input = queue.poll();
-				if (comps.contains(input)){
-					file.append(generateOutput(input, "i"));
-					for (Component c : input.getOutputs()) {
-						queue.add(c);
-					}
-				} else {
-					if (!bases.contains(input)) {
-						for (Component c : input.getOutputs()) {
-							queue.add(c);
-						}
-					}
-				}
-			}
-			file.append("}\n");
-		}
-	}
-
-	private String generateOutput(Component c, String thing) {
-		String s = "";
-		s += "temp" + thing + " = (components[" + comps.indexOf(c) + "] >> 31);\n";
-		found.remove(comps.indexOf(c));
-		s += "components[" + comps.indexOf(c) + "] += next" + thing + ";\n";
-		s += "next" + thing + " = (components[" + comps.indexOf(c) + "] >> 31) - temp" + thing + ";\n";
-		return s;
 	}
 
 	private String createStructure(Component c) {
@@ -422,7 +449,7 @@ public class BetterMetaPropNetStateMachineFactory {
 		} catch (InstantiationException | IllegalAccessException e) {
 			e.printStackTrace();
 		}
-		instance.init(p.getRoles(), inputmap, legalPropositions, movelist);
+		instance.init(roles, inputmap, legalPropositions, movelist);
 		return instance;
 	}
 }

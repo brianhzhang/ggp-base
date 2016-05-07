@@ -1,3 +1,4 @@
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -18,27 +19,30 @@ import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
 public class TestPlayer extends StateMachineGamer {
 
-	ProverStateMachine prover;
-	BetterPropNetStateMachine prop;
+	StateMachine prover;
+	StateMachine prop;
 
 	@Override
 	public StateMachine getInitialStateMachine() {
-		prover = new ProverStateMachine();
-		prop = new BetterPropNetStateMachine(new StateMachine[0]);
-		return prop;
+		return new GDLGetter();
 	}
 
 	@Override
 	public void stateMachineMetaGame(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
 		// TODO Auto-generated method stub
-		prover.initialize(prop.description);
-		MetaPropNetStateMachineFactory fac = new MetaPropNetStateMachineFactory(prop.description);
+		MetaPropNetStateMachineFactory fac =
+				new MetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
+		BetterMetaPropNetStateMachineFactory facb =
+				new BetterMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
+		prover = fac.getNewMachine();
+		prop = facb.getNewMachine();
+		
 		MachineState state = prover.getInitialState();
 //		System.out.println(prop.getInitialState());
 //		for (Component c : prop.propNet.getInitProposition().getOutputs())
 //			System.out.println(c);
-		if (!prop.getInitialState().equals(state)) {
+		if (Arrays.equals(((PropNetMachineState)prop.getInitialState()).props,(((PropNetMachineState)state).props))) {
 			System.out.println("Prop1 Initial error.");
 		}
 		while (!prover.isTerminal(state)) {
@@ -60,15 +64,9 @@ public class TestPlayer extends StateMachineGamer {
 			}
 			MachineState temp = state;
 			state = prover.getNextState(state, moves);
-			if (!prop.getNextState(temp, moves).equals(state)) {
-				Set<GdlSentence> contents = new HashSet<GdlSentence>(prop.getNextState(temp, moves).getContents());
-				Set<GdlSentence> newcontents = new HashSet<GdlSentence>(state.getContents());
-				contents.removeAll(state.getContents());
-				newcontents.removeAll(prop.getNextState(temp, moves).getContents());
-				System.out.println(prop.getNextState(temp, moves).getContents().size());
-				System.out.println(state.getContents().size());
-				System.out.println("Prop: " + new MachineState(contents));
-				System.out.println("Prover: " + new MachineState(newcontents));
+			if (Arrays.equals(((PropNetMachineState) prop.getNextState(temp, moves)).props, ((PropNetMachineState)state).props)) {
+				System.out.println("Prop: " + Arrays.toString(((PropNetMachineState)prop.getNextState(temp, moves)).props));
+				System.out.println("Prover: " + Arrays.toString(((PropNetMachineState)state).props));
 			}
 			System.out.println();
 //			System.out.println(state);

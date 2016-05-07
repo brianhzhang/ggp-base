@@ -64,7 +64,7 @@ public class MyPlayer extends StateMachineGamer {
 		return new GDLGetter();
 	}
 
-	public void switchToPropnets(MetaPropNetStateMachineFactory m, StateMachine[] machines) {
+	public void switchToPropnets(BetterMetaPropNetStateMachineFactory m, StateMachine[] machines) {
 		switchStateMachine(m.getNewMachine());
 		for (int i = 0; i < N_THREADS; i++) {
 			machines[i] = m.getNewMachine();
