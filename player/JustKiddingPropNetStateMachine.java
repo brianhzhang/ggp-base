@@ -1,0 +1,354 @@
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import org.ggp.base.util.gdl.grammar.Gdl;
+import org.ggp.base.util.gdl.grammar.GdlConstant;
+import org.ggp.base.util.gdl.grammar.GdlRelation;
+import org.ggp.base.util.propnet.architecture.Component;
+import org.ggp.base.util.propnet.architecture.PropNet;
+import org.ggp.base.util.propnet.architecture.components.And;
+import org.ggp.base.util.propnet.architecture.components.Constant;
+import org.ggp.base.util.propnet.architecture.components.Not;
+import org.ggp.base.util.propnet.architecture.components.Or;
+import org.ggp.base.util.propnet.architecture.components.Proposition;
+import org.ggp.base.util.propnet.architecture.components.Transition;
+import org.ggp.base.util.propnet.factory.OptimizingPropNetFactory;
+import org.ggp.base.util.statemachine.MachineState;
+import org.ggp.base.util.statemachine.Move;
+import org.ggp.base.util.statemachine.Role;
+import org.ggp.base.util.statemachine.StateMachine;
+import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
+import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
+import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
+
+public class JustKiddingPropNetStateMachine extends StateMachine {
+
+	int[][] comps;
+	int[][] structure;
+	List<Role> roles;
+	Map<Role, List<Move>> actions;
+	int term;
+	int init;
+	int[] basearr;
+	int[] inputarr;
+	Map<RoleMove, Integer> inputmap;
+	Move[] legals;
+	int[][] legalarr;
+	int[][] goals;
+
+	PropNet p;
+	ArrayList<Proposition> props;
+	
+	class RoleMove implements Serializable {
+		private static final long serialVersionUID = 1L;
+		Move m;
+		int role;
+		RoleMove(Move m, int role) {
+			this.m = m;
+			this.role = role;
+		}
+		
+		@Override
+	    public boolean equals(Object o)
+	    {
+	        if ((o != null) && (o instanceof RoleMove)) {
+	        	RoleMove move = (RoleMove) o;
+	            return move.m.equals(m) && move.role == role;
+	        }
+
+	        return false;
+	    }
+		
+		@Override
+	    public int hashCode()
+	    {
+	        return m.hashCode() + role;
+	    }
+	}
+
+	@Override
+	public void initialize(List<Gdl> description) {
+		p = null;
+		try {
+			p = OptimizingPropNetFactory.create(description);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+		for (Component c : p.getComponents()) {
+			c.crystalize();
+		}
+
+		props = new ArrayList<Proposition>();
+		List<Component> components = new ArrayList<Component>(p.getComponents());
+		comps = new int[components.size()][2];
+		structure = new int[components.size()][];
+		roles = p.getRoles();
+		actions = new HashMap<Role, List<Move>>();
+		basearr = new int[p.getBasePropositions().values().size()];
+		inputarr = new int[p.getInputPropositions().values().size()];
+		inputmap = new HashMap<RoleMove, Integer>();
+		int count = 0;
+		int goalcount = 0;
+		for (Role r : roles) {
+			count += p.getLegalPropositions().get(r).size();
+			goalcount += p.getGoalPropositions().get(r).size();
+		}
+		goals = new int[goalcount][3];
+		legalarr = new int[count][2];
+		legals = new Move[count];
+
+		for (Role r : roles) {
+			actions.put(r, propToMoves(p.getLegalPropositions().get(r)));
+		}
+
+		int base = 0;
+		int input = 0;
+		int legal = 0;
+		int goal = 0;
+		//Fill the components array
+		for (int i = 0; i < components.size(); i ++) {
+			if (p.getBasePropositions().values().contains(components.get(i))) {
+				comps[i][0] = 0;
+				comps[i][1] = components.indexOf(components.get(i).getSingleInput());
+				basearr[base] = i;
+				props.add((Proposition) components.get(i));
+				base ++;
+			} else if (p.getInputPropositions().values().contains(components.get(i))) {
+				comps[i][0] = 0;
+				comps[i][1] = 0;
+				inputarr[input] = i;
+				for (Role r : roles) {
+					if (p.getLegalPropositions().get(r).contains(p.getLegalInputMap().get(components.get(i)))) {
+						inputmap.put(new RoleMove(new Move(((Proposition) components.get(i)).getName().get(1)), roles.indexOf(r)), input);
+					}
+				}
+				input ++;
+			} else if (components.get(i) instanceof Proposition) {
+				boolean isView = true;
+				for (Role r : roles) {
+					if (p.getGoalPropositions().get(r).contains(components.get(i))) {
+						comps[i][0] = 0;
+						comps[i][1] = components.indexOf(components.get(i).getSingleInput());
+						goals[goal][0] = components.indexOf(components.get(i).getSingleInput());
+						goals[goal][1] = roles.indexOf(r);
+						goals[goal][2] = getGoalValue((Proposition) components.get(i));
+						goal ++;
+						isView = false;
+						break;
+					}
+					if (p.getLegalPropositions().get(r).contains(components.get(i))) {
+						comps[i][0] = 0;
+						comps[i][1] = components.indexOf(components.get(i).getSingleInput());
+						legalarr[legal][0] = i;
+						legalarr[legal][1] = roles.indexOf(r);
+						legals[legal] = new Move(((Proposition) components.get(i)).getName().get(1));
+						legal ++;
+						isView = false;
+						break;
+					}
+				}
+				if (p.getTerminalProposition().equals(components.get(i))) {
+					comps[i][0] = 0;
+					comps[i][1] = components.indexOf(components.get(i).getSingleInput());
+					term = i;
+				} else if (p.getInitProposition().equals(components.get(i))) {
+					comps[i][0] = 0;
+					comps[i][1] = 0;
+					init = i;
+				} else if (isView) {
+					comps[i][0] = 0x7FFFFFFF;
+					comps[i][1] = -1;
+				}
+			} else { //Component
+				comps[i][0] = getComp(components.get(i));
+				comps[i][1] = -1;
+			}
+
+			//fill the stucture array:
+			structure[i] = new int[components.get(i).getOutputs().size()];
+			for (int j = 0; j < structure[i].length; j ++) {
+				structure[i][j] = components.indexOf(components.get(i).getOutputarr()[j]);
+			}
+		}
+
+		for (int i = 0; i < basearr.length; i ++) {
+			for (int j = 0; j < structure[basearr[i]].length; j ++) {
+				startPropagate(structure[basearr[i]][j], 0, components);
+			}
+		}
+		for (int i = 0; i < inputarr.length; i ++) {
+			for (int j = 0; j < structure[inputarr[i]].length; j ++) {
+				startPropagate(structure[inputarr[i]][j], 0, components);
+			}
+		}
+		System.out.println("Num nots: " + p.getNumNots());
+
+//		for (int i = 0; i < components.size(); i ++) {
+//			if (components.get(i) instanceof Not) {
+//				//propagate(i, (((comps[components.indexOf(components.get(i).getSingleInput())][0] >> 31) & 1) == 1) ? 0 : -1);
+//				comps[i][0] = getComp(components.get(i));
+//				comps[i][1] = -1;
+//			}
+//			if (components.get(i) instanceof Constant) {
+//				for (Component c : components.get(i).getOutputs()) {
+//					propagate(components.indexOf(c), c.getValue() ? 1 : 0);
+//				}
+//			}
+//		}
+
+
+	}
+
+	private int getComp(Component c) {
+		if (c instanceof And) {
+			return 0x80000000 - c.getInputs().size();
+		} else if (c instanceof Or) {
+			return 0x7FFFFFFF;
+		} else if (c instanceof Not) {
+			return 0xFFFFFFFF;
+		} else if (c instanceof Transition) {
+			return 0x7FFFFFFF;
+		} else if (c instanceof Constant) {
+			return (c.getValue()) ? 0xF0000000 : 0x0F000000;
+		}
+		return 0x1337420;
+	}
+
+	private List<Move> propToMoves(Set<Proposition> set) {
+		List<Move> moves = new ArrayList<Move>(set.size());
+		for (Proposition p : set) {
+			moves.add(new Move(p.getName().get(1)));
+		}
+		return moves;
+	}
+
+	private int getGoalValue(Proposition goalProposition) {
+		GdlRelation relation = (GdlRelation) goalProposition.getName();
+		GdlConstant constant = (GdlConstant) relation.get(1);
+		return Integer.parseInt(constant.toString());
+	}
+
+	@Override
+	public List<Move> findActions(Role role) throws MoveDefinitionException {
+		return actions.get(role);
+	}
+
+	@Override
+	public int getGoal(MachineState state, Role role) throws GoalDefinitionException {
+		markbases(((PropNetMachineState)state).props);
+		for (int i = 0; i < goals.length; i ++) {
+			if (((comps[goals[i][0]][0] >> 31) & 1) == 1 && roles.indexOf(role) == goals[i][1]) {
+				return goals[i][2];
+			}
+		}
+		return -1;
+	}
+
+	@Override
+	public boolean isTerminal(MachineState state) {
+		markbases(((PropNetMachineState)state).props);
+		return ((comps[comps[term][1]][0] >> 31) & 1) == 1;
+	}
+
+	@Override
+	public List<Role> getRoles() {
+		return roles;
+	}
+
+	@Override
+	public MachineState getInitialState() {
+		for (int i = 0; i < structure[init].length; i ++) {
+			comps[init][0] = 0xF0000000;
+			propagate(structure[init][i], 1);
+		}
+		boolean[] next = new boolean[basearr.length];
+		for (int i = 0; i < basearr.length; i ++) {
+			next[i] = (((comps[comps[basearr[i]][1]][0] >> 31) & 1) == 1);
+		}
+		for (int i = 0; i < structure[init].length; i ++) {
+			comps[init][0] = 0;
+			propagate(structure[init][i], -1);
+		}
+		return new PropNetMachineState(next);
+	}
+
+	@Override
+	public List<Move> getLegalMoves(MachineState state, Role role) throws MoveDefinitionException {
+		markbases(((PropNetMachineState)state).props);
+		ArrayList<Move> moves = new ArrayList<Move>();
+		for (int i = 0; i < legals.length; i ++) {
+			if (((comps[comps[legalarr[i][0]][1]][0] >> 31) & 1) == 1 && legalarr[i][1] == roles.indexOf(role)) {
+				moves.add(legals[i]);
+			}
+		}
+		return moves;
+	}
+
+	@Override
+	public MachineState getNextState(MachineState state, List<Move> moves) throws TransitionDefinitionException {
+		markbases(((PropNetMachineState)state).props);
+		boolean[] inputs = new boolean[inputarr.length];
+		for (int i = 0; i < moves.size(); i ++) {
+			inputs[inputmap.get(new RoleMove(moves.get(i), i))] = true;
+		}
+		markinputs(inputs);
+		boolean[] next = new boolean[basearr.length];
+		for (int i = 0; i < basearr.length; i ++) {
+			next[i] = (((comps[comps[basearr[i]][1]][0] >> 31) & 1) == 1);
+		}
+		return new PropNetMachineState(next);
+	}
+
+	private void markbases(boolean[] bases) {
+		for (int i = 0; i < bases.length; i ++) {
+			if (bases[i] != (((comps[basearr[i]][0] >> 31) & 1) == 1)) {
+				comps[basearr[i]][0] = bases[i] ? 0xF0000000 : 0x0F000000;
+				for (int j = 0; j < structure[basearr[i]].length; j ++) {
+					propagate(structure[basearr[i]][j], bases[i] ? 1 : -1);
+				}
+			}
+		}
+	}
+
+	private void markinputs(boolean[] inputs) {
+		for (int i = 0; i < inputs.length; i ++) {
+			if (inputs[i] != (((comps[inputarr[i]][0] >> 31) & 1) == 1)) {
+				comps[inputarr[i]][0] = inputs[i] ? 0xF0000000 : 0x0F000000;
+				for (int j = 0; j < structure[inputarr[i]].length; j ++) {
+					propagate(structure[inputarr[i]][j], inputs[i] ? 1 : -1);
+				}
+			}
+		}
+	}
+
+	private void propagate(int index, int newValue) {
+		if (comps[index][1] == -1) {
+			int old = ((comps[index][0] >> 31) & 1);
+			comps[index][0] += newValue;
+			if (old != ((comps[index][0] >> 31) & 1)) {
+				old = ((comps[index][0] >> 31) & 1) - old;
+				for (int i = 0; i < structure[index].length; i ++) {
+					propagate(structure[index][i], old);
+				}
+			}
+		}
+	}
+
+	private void startPropagate(int index, int newValue, List<Component> components) {
+		if (comps[index][1] != -1) {
+			return;
+		}
+		int old = ((comps[index][0] >> 31) & 1);
+		comps[index][0] += newValue;
+		if (old != ((comps[index][0] >> 31) & 1) || components.get(index) instanceof Not
+				|| components.get(index) instanceof Constant) {
+			for (int i = 0; i < structure[index].length; i ++) {
+				startPropagate(structure[index][i], ((comps[index][0] >> 31) & 1), components);
+			}
+		}
+	}
+}
