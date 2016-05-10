@@ -3,12 +3,9 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
-import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
@@ -27,7 +24,7 @@ public class Heuristic extends Method {
 
 	// metagaming results
 	protected HeuristicFn[] heuristics = { this::mobility, this::oppMobility, this::goal,
-			this::oppGoal};
+			this::oppGoal };
 	protected double[] weights = new double[N_HEURISTIC];
 	protected double adjustment = 0;
 	protected int period; // one less than the period; i.e. if we make every move then period = 0
@@ -43,9 +40,6 @@ public class Heuristic extends Method {
 	private List<Double> mobility;
 	private List<Double> oppMobility;
 
-	// For goal
-	protected ConcurrentHashMap<GdlSentence, HGoalProp> goalProps = new ConcurrentHashMap<GdlSentence, HGoalProp>();
-
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
 		cache = new HashMap<>();
@@ -60,7 +54,7 @@ public class Heuristic extends Method {
 		Log.println("");
 		Log.println("begin random exploration");
 		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
-			HThread t = new HThread(gamer, opps, timeout, this, gamer.getStateMachine(), data, goalProps);
+			HThread t = new HThread(gamer, opps, timeout, this, gamer.getStateMachine(), data);
 			threads.add(t);
 			t.start();
 		}
@@ -298,90 +292,78 @@ public class Heuristic extends Method {
 		}
 		return sum;
 	}
-}
 
-class HThread extends Thread {
+	class HThread extends Thread {
 
-	StateMachineGamer gamer;
-	List<Role> roles;
-	long timeout;
-	Heuristic h;
-	ConcurrentLinkedQueue<HGameData> data;
-	private ConcurrentHashMap<GdlSentence, HGoalProp> goalProps;
-	StateMachine machine;
+		StateMachineGamer gamer;
+		List<Role> roles;
+		long timeout;
+		Heuristic h;
+		ConcurrentLinkedQueue<HGameData> data;
+		StateMachine machine;
 
-	public HThread(StateMachineGamer gamer, List<Role> roles, long timeout, Heuristic h,
-			StateMachine machine, ConcurrentLinkedQueue<HGameData> data2,
-			ConcurrentHashMap<GdlSentence, HGoalProp> goalProps) {
-		this.gamer = gamer;
-		this.roles = roles;
-		this.timeout = timeout;
-		this.h = h;
-		this.data = data2;
-		this.machine = machine;
-		this.goalProps = goalProps;
-	}
+		public HThread(StateMachineGamer gamer, List<Role> roles, long timeout, Heuristic h,
+				StateMachine machine, ConcurrentLinkedQueue<HGameData> data2) {
+			this.gamer = gamer;
+			this.roles = roles;
+			this.timeout = timeout;
+			this.h = h;
+			this.data = data2;
+			this.machine = machine;
+		}
 
-	@Override
-	public void run() {
-		Role role = gamer.getRole();
-		MachineState initial = machine.getInitialState();
+		@Override
+		public void run() {
+			Role role = gamer.getRole();
+			MachineState initial = machine.getInitialState();
 
-		while (System.currentTimeMillis() < timeout) {
-			HGameData game = null;
-			try {
-				game = randomGame(machine, initial, role, timeout);
-			} catch (Exception e) {
-				e.printStackTrace();
-				continue;
+			while (System.currentTimeMillis() < timeout) {
+				HGameData game = null;
+				try {
+					game = randomGame(machine, initial, role, timeout);
+				} catch (Exception e) {
+					e.printStackTrace();
+					continue;
+				}
+				if (game == null) break;
+				data.add(game);
 			}
-			if (game == null) break;
-			data.add(game);
+		}
+
+		private HGameData randomGame(StateMachine machine, MachineState state, Role role,
+				long timeout) throws MoveDefinitionException, GoalDefinitionException,
+						TransitionDefinitionException {
+			HGameData ret = new HGameData();
+			while (!machine.isTerminal(state)) {
+				if (System.currentTimeMillis() > timeout) return null;
+				ret.nstep++;
+				List<Move> actions = machine.findLegals(role, state);
+				if (actions.size() > 1) ret.nmove++;
+				for (int i = 0; i < Heuristic.N_HEURISTIC; i++) {
+					ret.heuristics[i] += h.heuristics[i].eval(role, state, machine, actions);
+				}
+
+				state = machine.getRandomNextState(state);
+			}
+			ret.goal = machine.findReward(role, state);
+			return ret;
 		}
 	}
 
-	private HGameData randomGame(StateMachine machine, MachineState state, Role role, long timeout)
-			throws MoveDefinitionException, GoalDefinitionException, TransitionDefinitionException {
-		HGameData ret = new HGameData();
-		while (!machine.isTerminal(state)) {
-			if (System.currentTimeMillis() > timeout) return null;
-			ret.nstep++;
-			List<Move> actions = machine.findLegals(role, state);
-			if (actions.size() > 1) ret.nmove++;
-			for (int i = 0; i < Heuristic.N_HEURISTIC; i++) {
-				ret.heuristics[i] += h.heuristics[i].eval(role, state, machine, actions);
-			}
-
-			state = machine.getRandomNextState(state);
-		}
-		ret.goal = machine.findReward(role, state);
-		return ret;
+	private class HGameData {
+		public int nstep; // total number of steps
+		public int nmove; // total number of times we had >1 legal moves
+		public double[] heuristics = new double[Heuristic.N_HEURISTIC];
+		public int goal;
 	}
-}
 
-class HGameData {
-	public int nstep; // total number of steps
-	public int nmove; // total number of times we had >1 legal moves
-	public double[] heuristics = new double[Heuristic.N_HEURISTIC];
-	public int goal;
-}
-
-interface HeuristicFn {
-	public double eval(Role role, MachineState state, StateMachine machine, List<Move> actions);
-}
-
-class HGoalProp {
-	public int totalScore;
-	public int count;
-
-	public HGoalProp(int totalScore, int count) {
-		this.totalScore = totalScore;
-		this.count = count;
+	private interface HeuristicFn {
+		public double eval(Role role, MachineState state, StateMachine machine, List<Move> actions);
 	}
-}
 
-class HCacheEnt {
-	public int lower = MyPlayer.MIN_SCORE;
-	public int upper = MyPlayer.MAX_SCORE;
-	public int depth = Integer.MIN_VALUE;
+	private class HCacheEnt {
+		public int lower = MyPlayer.MIN_SCORE;
+		public int upper = MyPlayer.MAX_SCORE;
+		public int depth = Integer.MIN_VALUE;
+	}
 }

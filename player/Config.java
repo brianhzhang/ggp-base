@@ -39,6 +39,8 @@ public class Config extends ConfigPanel {
 		addMethod(m, "Heuristic", MyPlayer.HEURISTIC);
 		addMethod(m, "Monte Carlo", MyPlayer.MONTECARLO);
 		addMethod(m, "MCTS", MyPlayer.MCTS);
+
+		addMethod(m, "Experimental", MyPlayer.EXPERIMENTAL);
 	}
 
 }

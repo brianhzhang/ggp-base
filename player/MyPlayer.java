@@ -3,6 +3,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.ggp.base.apps.player.config.ConfigPanel;
@@ -26,6 +27,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int MAX_SCORE = 100;
 	public static final int MIN_SCORE = 0;
 
+	public static final int EXPERIMENTAL = 0;
 	public static final int LEGAL = 1;
 	public static final int RANDOM = 2;
 	public static final int ALPHABETA = 3;
@@ -34,7 +36,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int MCTS = 6;
 
 	public static final int N_OPTIONS = 10;
-	public static final int TIMEOUT_BUFFER = (int) PREFERRED_PLAY_BUFFER; // time for network
+	public static final int TIMEOUT_BUFFER = 3000; // time for network
 	// communication in ms
 	public static final int N_THREADS = 4;
 
@@ -64,12 +66,39 @@ public class MyPlayer extends StateMachineGamer {
 		return new GDLGetter();
 	}
 
+	private ISwearLastOnePropNetStateMachine copyMachine(ISwearLastOnePropNetStateMachine p) {
+		ISwearLastOnePropNetStateMachine newp = new ISwearLastOnePropNetStateMachine();
+		newp.roles = p.roles;
+		newp.comps = Arrays.copyOf(p.comps, p.comps.length);
+		newp.initcomps = p.initcomps;
+		newp.structure = p.structure;
+		newp.actions = p.actions;
+		newp.inputmap = p.inputmap;
+		newp.legalarr = p.legalarr;
+		newp.bases = p.bases;
+		newp.inputs = p.inputs;
+		newp.legals = p.legals;
+		newp.nots = p.nots;
+		newp.goals = p.goals;
+		newp.init = p.init;
+		newp.terminal = p.terminal;
+		return newp;
+	}
+
+	public void switchToNewPropnets(ISwearLastOnePropNetStateMachine machine,
+			StateMachine[] machines) {
+		switchStateMachine(machine);
+		for (int i = 0; i < N_THREADS; i++) {
+			machines[i] = copyMachine(machine);
+		}
+	}
+
 	public void switchToPropnets(BetterMetaPropNetStateMachineFactory m, StateMachine[] machines) {
-		StateMachine machine = new ISwearLastOnePropNetStateMachine();
+		StateMachine machine = m.getNewMachine();
 		machine.initialize(gameDescription);
 		switchStateMachine(machine);
 		for (int i = 0; i < N_THREADS; i++) {
-			machines[i] = new ISwearLastOnePropNetStateMachine();
+			machines[i] = m.getNewMachine();
 			machines[i].initialize(gameDescription);
 		}
 	}
@@ -90,6 +119,7 @@ public class MyPlayer extends StateMachineGamer {
 		if (method == HEURISTIC) player = new Heuristic();
 		if (method == MONTECARLO) player = new MonteCarlo();
 		if (method == MCTS) player = new MCTS(this, gameDescription);
+		if (method == EXPERIMENTAL) player = new Experiment(this, gameDescription);
 		player.metaGame(this, timeout - TIMEOUT_BUFFER);
 		return;
 	}

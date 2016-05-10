@@ -37,13 +37,18 @@ public class Statistics {
 		out.b = mean(y) - out.m * mean(x);
 		out.t = r / Math.sqrt((1 - out.rsq) / (x.length - 2));
 		if (!Double.isFinite(out.b) || !Double.isFinite(out.t)) out.rsq = out.m = out.b = out.t = 0;
+		out.residues = new double[y.length];
+		for (int i = 0; i < y.length; i++) {
+			out.residues[i] = y[i] - (out.m * x[i] + out.b);
+		}
 		return out;
 	}
 }
 
 class Correlation {
-	double m;
-	double b;
-	double rsq;
-	double t;
+	public double m;
+	public double b;
+	public double rsq;
+	public double t;
+	public double[] residues;
 }
