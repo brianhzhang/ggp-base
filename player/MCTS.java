@@ -196,7 +196,7 @@ public class MCTS extends Method {
 		}
 		FastThread ft = new FastThread(timeout, machines[nthread], role, rootstate);
 		ft.start();
-		while (ft.isAlive() && !root.isProven()) {
+		while (System.currentTimeMillis() < timeout && !root.isProven()) {
 			MTreeNode node = select(root);
 			if (machine.isTerminal(node.state)) {
 				backpropogate(node, machine.findReward(role, node.state), 0, true);
@@ -224,7 +224,9 @@ public class MCTS extends Method {
 				child.lower = Math.max(child.lower, fastChild.lower);
 				child.upper = Math.min(child.upper, fastChild.upper);
 			}
-			if (bestChild == null || child.utility() > bestChild.utility()) bestChild = child;
+			if (bestChild == null || child.utility() > bestChild.utility()
+					|| (child.utility() == bestChild.utility() && child.visits > bestChild.visits))
+				bestChild = child;
 			Log.println("move=" + info(child, child));
 		}
 		for (MTreeNode child : bestChild.children) {
