@@ -31,24 +31,36 @@ public class TestPlayer extends StateMachineGamer {
 	public void stateMachineMetaGame(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
 		// TODO Auto-generated method stub
-		MetaPropNetStateMachineFactory fac =
-				new MetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
-		BetterMetaPropNetStateMachineFactory facb =
+		BetterMetaPropNetStateMachineFactory fac =
 				new BetterMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
+//		LolAnotherMetaPropNetStateMachineFactory facb =
+//				new LolAnotherMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
 		prover = fac.getNewMachine();
-		prop = facb.getNewMachine();
+		prop = new ISwearLastOnePropNetStateMachine();
+		prop.initialize(((GDLGetter) getStateMachine()).getDescription());
+		int total = 0;
 		
 		MachineState state = prover.getInitialState();
 //		System.out.println(prop.getInitialState());
 //		for (Component c : prop.propNet.getInitProposition().getOutputs())
 //			System.out.println(c);
-		if (Arrays.equals(((PropNetMachineState)prop.getInitialState()).props,(((PropNetMachineState)state).props))) {
+		MachineState propstate = prop.getInitialState();
+		int countB = 0;
+		for (int i = 0; i < ((PropNetMachineState) propstate).props.length; i ++){
+			countB += ((PropNetMachineState) propstate).props[i] ? 1 : -1;
+			countB += ((PropNetMachineState) state).props[i] ? -1 : 1;
+		}
+		if (countB != 0) {
 			System.out.println("Prop1 Initial error.");
+			System.out.println("Prop: " + Arrays.toString(((PropNetMachineState)propstate).props));
+			System.out.println("Prover: " + Arrays.toString(((PropNetMachineState)state).props));
 		}
 		while (!prover.isTerminal(state)) {
+			total ++;
+			if (total > 7) break;
 			List<Move> moves = prover.getRandomJointMove(state);
 			List<Move> legals = prover.getLegalMoves(state, getRole());
-			List<Move> props = prop.getLegalMoves(state, getRole());
+			List<Move> props = prop.getLegalMoves(propstate, getRole());
 			if (!(new HashSet<>(props)).equals(new HashSet<>(legals))) {
 				Set<Move> contents = new HashSet<Move>(props);
 				Set<Move> newcontents = new HashSet<Move>(legals);
@@ -62,10 +74,15 @@ public class TestPlayer extends StateMachineGamer {
 				}
 				System.out.println("]");
 			}
-			MachineState temp = state;
 			state = prover.getNextState(state, moves);
-			if (Arrays.equals(((PropNetMachineState) prop.getNextState(temp, moves)).props, ((PropNetMachineState)state).props)) {
-				System.out.println("Prop: " + Arrays.toString(((PropNetMachineState)prop.getNextState(temp, moves)).props));
+			propstate = prop.getNextState(propstate, moves);
+			int count = 0;
+			for (int i = 0; i < ((PropNetMachineState) propstate).props.length; i ++){
+				count += ((PropNetMachineState) propstate).props[i] ? 1 : -1;
+				count += ((PropNetMachineState) state).props[i] ? -1 : 1;
+			}
+			if (count != 0) {
+				System.out.println("Prop: " + Arrays.toString(((PropNetMachineState)propstate).props));
 				System.out.println("Prover: " + Arrays.toString(((PropNetMachineState)state).props));
 			}
 			System.out.println();
@@ -76,7 +93,7 @@ public class TestPlayer extends StateMachineGamer {
 	@Override
 	public Move stateMachineSelectMove(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
-		return getStateMachine().getLegalMoves(getCurrentState(), getRole()).get(0);
+		return null;
 	}
 
 	@Override

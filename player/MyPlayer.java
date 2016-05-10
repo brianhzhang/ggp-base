@@ -41,6 +41,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final PrintWriter gamelog = getGameLog();
 	public int method = 6;
 	private Method player;
+	List<Gdl> gameDescription;
 
 	private static PrintWriter getGameLog() {
 		try {
@@ -64,9 +65,12 @@ public class MyPlayer extends StateMachineGamer {
 	}
 
 	public void switchToPropnets(BetterMetaPropNetStateMachineFactory m, StateMachine[] machines) {
-		switchStateMachine(m.getNewMachine());
+		StateMachine machine = new ISwearLastOnePropNetStateMachine();
+		machine.initialize(gameDescription);
+		switchStateMachine(machine);
 		for (int i = 0; i < N_THREADS; i++) {
-			machines[i] = m.getNewMachine();
+			machines[i] = new ISwearLastOnePropNetStateMachine();
+			machines[i].initialize(gameDescription);
 		}
 	}
 
@@ -75,7 +79,7 @@ public class MyPlayer extends StateMachineGamer {
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
 		Log.setFile(getMatch().getMatchId() + "_" + getRole());
 		Log.println("");
-		List<Gdl> gameDescription = ((GDLGetter) getStateMachine()).getDescription();
+		gameDescription = ((GDLGetter) getStateMachine()).getDescription();
 
 		StateMachine m = new CachedStateMachine(new ProverStateMachine());
 		m.initialize(gameDescription);

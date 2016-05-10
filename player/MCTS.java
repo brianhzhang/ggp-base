@@ -79,7 +79,7 @@ public class MCTS extends Method {
 
 		@Override
 		public void run() {
-			m = new BetterMetaPropNetStateMachineFactory(description);
+//			m = new BetterMetaPropNetStateMachineFactory(description);
 			Log.println("Propnets ready");
 		}
 	}

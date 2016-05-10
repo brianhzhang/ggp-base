@@ -186,7 +186,7 @@ public abstract class Component implements Serializable
 		StringBuilder sb = new StringBuilder();
 
 		sb.append("\"@" + Integer.toHexString(hashCode()) + "\"[shape=" + shape + ", value="+ value+", fillcolor=" + fillcolor + ", label=\"" + label + "\"]; ");
-		for ( Component component : getOutputarr() )
+		for ( Component component : getOutputs() )
 		{
 			sb.append("\"@" + Integer.toHexString(hashCode()) + "\"->" + "\"@" + Integer.toHexString(component.hashCode()) + "\"; ");
 		}

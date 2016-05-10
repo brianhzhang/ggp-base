@@ -38,7 +38,7 @@ import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
 import org.ggp.base.util.statemachine.implementation.prover.query.ProverQueryBuilder;
 
-public class BetterMetaPropNetStateMachineFactory {
+public class LolAnotherMetaPropNetStateMachineFactory {
 	List<Proposition> bases;
 	List<Proposition> inputs;
 	List<Proposition> goals;
@@ -55,16 +55,13 @@ public class BetterMetaPropNetStateMachineFactory {
 	List<Move> movelist;
 
 	@SuppressWarnings({ "rawtypes", "unchecked", "resource" })
-	public BetterMetaPropNetStateMachineFactory(List<Gdl> description) {
+	public LolAnotherMetaPropNetStateMachineFactory(List<Gdl> description) {
 		thing ++;
 		p = null;
 		try {
 			p = OptimizingPropNetFactory.create(description);
 		} catch (InterruptedException e) {
 			e.printStackTrace();
-		}
-		for (Component c : p.getComponents()) {
-			c.crystalize();
 		}
 		legalPropositions = new HashMap<Role, List<Move>>();
 		roles = new ArrayList<Role>(p.getRoles());
@@ -91,30 +88,36 @@ public class BetterMetaPropNetStateMachineFactory {
 				prop.base = true;
 			}
 		}
-		StringBuilder file = new StringBuilder("class BMetaPNSM"+thing+" extends MetaPropNetStateMachine {\n");
+		for (Component c : p.getComponents()) {
+			c.crystalize();
+		}
+//		optimizePropNet(comps);
+		StringBuilder file = new StringBuilder("class LMetaPNSM"+thing+" extends MetaPropNetStateMachine {\n");
 
 		file.append("private boolean init = false;\n");
-		file.append("private boolean[] comps;\n");
+		file.append("private int[] comps;\n");
+		file.append("private int[] structure;\n");
 
-		file.append("public BMetaPNSM" + thing + "(){\n");
-		file.append("clear();\n");
-		file.append("}\n");
-
-		file.append("private void clear() {\n");
+		file.append("public LMetaPNSM" + thing + "(){\n");
 		createConstructor(file);
 		file.append("}\n");
 		
+		createPropagate(file);
+
+//		file.append("private void clear() {\n");
+//		file.append("}\n");
+		
 		file.append("private void markbases(boolean[] bases) {\n");
-		createPropogateBases(file);
+		createPropagateBases(file);
 		file.append("}\n");
 		
 		file.append("private void markinputs(boolean[] inputs) {\n");
-		createPropogateInputs(file);
+		createPropagateInputs(file);
 		file.append("}\n");
 
-		for (Component c : comps) {
-			c.makeMethod(file, comps);
-		}
+//		for (Component c : comps) {
+//			c.makeMethod(file, comps);
+//		}
 
 		file.append("boolean terminal(boolean[] bases){\n");
 		createTerminal(file, p);
@@ -139,6 +142,7 @@ public class BetterMetaPropNetStateMachineFactory {
 		file.append("}\n");
 
 		file.append("}\n");
+		System.out.println(file);
 		
 //		int constant = 0;
 //		for (Component c : comps) {
@@ -164,7 +168,7 @@ public class BetterMetaPropNetStateMachineFactory {
 			System.out.println("Compilation has succeeded in " + (System.currentTimeMillis() - start) + "ms");
 		}else{
 			System.out.println("Compilation fails.");
-			//TODO Add creation of a B
+			//TODO Add creation of a different thing if compilation fails
 			List<Diagnostic> diagnostics = diagnosticsCollector.getDiagnostics();
 
 			for (Diagnostic d : diagnostics) {
@@ -174,16 +178,43 @@ public class BetterMetaPropNetStateMachineFactory {
 		// Load and instantiate compiled class.
 		URLClassLoader classLoader = new URLClassLoader(new URL[0]);
 		try {
-			cls = classLoader.loadClass("BMetaPNSM"+thing);
+			cls = classLoader.loadClass("LMetaPNSM"+thing);
 		} catch (ClassNotFoundException e) {
 			e.printStackTrace();
 		}
+	}
+	
+	private void optimizePropNet(List<Component> comps) {
+		List<Component> toremove = new ArrayList<Component>();
+		for (Component c : comps) {
+			if (c instanceof Proposition) {
+				if (!(p.getBasePropositions().values().contains(c) || p.getLegalPropositions().values().contains(c) ||
+						p.getInputPropositions().values().contains(c) || p.getGoalPropositions().values().contains(c))) {
+					for (Component before : c.getInputs()) {
+						before.getOutputs().addAll(c.getOutputs());
+						before.removeOutput(c);
+					}
+					toremove.add(c);
+				}
+			} else if (c instanceof Not) {
+				if (c.getInputs().size() == 1 && c.getSingleInput().getOutputs().size() == 1) {
+					if (c.getSingleInput() instanceof And) {
+						((And)c.getSingleInput()).nand = true;
+						toremove.add(c);
+					} else if (c.getSingleInput() instanceof Or) {
+						((Or)c.getSingleInput()).nor = true;
+						toremove.add(c);
+					}
+				}
+			}
+		}
+		comps.removeAll(toremove);
 	}
 
 	static SimpleJavaFileObject getJavaFileContentsAsString(StringBuilder javaFileContents){
 		JavaObjectFromString javaFileObject = null;
 		try{
-			javaFileObject = new JavaObjectFromString("BMetaPNSM"+thing, javaFileContents.toString());
+			javaFileObject = new JavaObjectFromString("LMetaPNSM"+thing, javaFileContents.toString());
 		}catch(Exception exception){
 			exception.printStackTrace();
 		}
@@ -191,33 +222,41 @@ public class BetterMetaPropNetStateMachineFactory {
 	}
 
 	private void createConstructor(StringBuilder file) {
-		//		file.append("int[] components = {");
-		//		file.append(createComponent(comps.get(0)));
-		//		for (int i = 1; i < comps.size(); i ++) {
-		//			file.append(", " + createComponent(comps.get(i)));
-		//		}
-		//		file.append("};\n");
-		//		file.append("comps = components;\n");
-
-		//		file.append("lastbases = new boolean[" + bases.size() + "];\n");
-		//		file.append("lastinputs = new boolean[" + inputs.size() + "];\n");
-		file.append("comps = new boolean[" + comps.size() + "];\n");
-		for (Component c : comps) {
-			if (c instanceof Constant) {
-				file.append("comps[" + comps.indexOf(c) + "] = " + c.getValue() + ";\n");
-				file.append("propagate" + comps.indexOf(c) + "(" + c.getValue() + ");\n");
-			}
-			if (c instanceof Not) {
-				file.append("propagate" + comps.indexOf(c) + "(true);\n");
+		int count = 0;
+		String firstArray = "";
+		String structureArray = "";
+		for (int i = 0; i < comps.size(); i ++) {
+			firstArray += createComponent(comps.get(i)) + "," + ((p.getBasePropositions().values().contains(comps.get(i)) ||
+					p.getInputPropositions().values().contains(comps.get(i))) ? "1" : "0")
+					+ "," + count + ",";
+			structureArray += comps.get(i).getOutputs().size() + ",";
+			count ++;
+			for (Component c : comps.get(i).getOutputs()) {
+				count ++;
+				structureArray += (comps.indexOf(c) * 3) + ",";
 			}
 		}
+		file.append("int[] temp = {" + firstArray.substring(0, firstArray.length() - 1) + "};\n");
+		file.append("int[] temp2 = {" + structureArray.substring(0, structureArray.length() - 1) + "};\n");
+		file.append("comps = temp;\n");
+		file.append("structure = temp2;\n");
+//		for (Component c : comps) {
+//			if (c instanceof Constant) {
+//				file.append("propagate(" +  (comps.indexOf(c) * 3) + "," + (c.getValue()? 1 : -1) + ");\n");
+//			}
+//			if (c instanceof Not) {
+//				file.append("propagate(" +  (comps.indexOf(c) * 3) + ", 1);\n");
+//			}
+//		}
+		
+		//TODO propagate constants and nots?
 	}
 
 	private String createComponent(Component c) {
 		if (c instanceof Or) {
-			return "0x7FFFFFFF";
+			return ((((Or)c).nor)? "0xFFFFFFFF" : "0x7FFFFFFF");
 		} else if (c instanceof And) {
-			return "0x" + Integer.toString(0x80000000 - c.getInputs().size(), 16).toUpperCase();
+			return "0x" + Integer.toString(((((And)c).nand)?0:0x80000000) - c.getInputs().size(), 16).toUpperCase();
 		} else if (c instanceof Not) {
 			return "0xFFFFFFFF";
 		} else if (c instanceof Transition) {
@@ -230,7 +269,7 @@ public class BetterMetaPropNetStateMachineFactory {
 	//boolean terminal(boolean[] bases)
 	private void createTerminal(StringBuilder file, PropNet p) {
 		file.append("markbases(bases);\n");
-		file.append("return " + getValue(p.getTerminalProposition()) + ";\n");
+		file.append("return " + createStructure(p.getTerminalProposition().getSingleInput()) + ";\n");
 	}
 
 	//boolean[] next(boolean[] bases, boolean[] inputs)
@@ -254,12 +293,7 @@ public class BetterMetaPropNetStateMachineFactory {
 		}
 		p.getInitProposition().setValue(false);
 		p.getInitProposition().startPropogate();
-		//		for (int i = 0; i < comps.size(); i ++) {
-		//			if (comps.get(i) instanceof Not) {
-		//				file.append("propogate" + i + "((" + getValue(comps.get(i).getSingleInput()) + ")? 1: -1);\n");
-		//			}
-		//		}
-		file.append("clear();\n");
+//		file.append("clear();\n");
 		file.append("boolean[] result = {");
 		for (int i = 0; i < basearr.length - 1; i ++) {
 			file.append(basearr[i] + ", ");
@@ -301,18 +335,18 @@ public class BetterMetaPropNetStateMachineFactory {
 	}
 
 	private String getValue(Component c) {
-		return "comps[" + comps.indexOf(c) + "]";
+		return "((comps[" + comps.indexOf(c) * 3 + "] >> 31) == 1)";
 	}
 
-	private void createPropogateBases(StringBuilder file) {
+	private void createPropagateBases(StringBuilder file) {
 		int count = 0;
 		int size = 0;
 		for (int i = 0; i < bases.size(); i ++) {
 			String s = "";
-			s += ("if (comps[" + comps.indexOf(bases.get(i)) + "] != bases[" + i + "]){\n");
-			s += ("comps[" + comps.indexOf(bases.get(i)) + "] = bases[" + i + "];\n");
+			s += ("if (" + getValue(bases.get(i)) + " != bases[" + i + "]){\n");
+			s += "comps[" + (comps.indexOf(bases.get(i)) * 3) + "] = (bases[" + i + "]) ? 0x80000000 : 0;\n";
 			for (Component c : bases.get(i).getOutputs())
-				s += ("propagate" + comps.indexOf(c) + "(bases[" + i + "]);\n");
+				s += ("propagate(" + (comps.indexOf(c) * 3) + ", (bases[" + i + "])?1:-1);\n");
 			s += ("}\n");
 			size += s.length();
 			if (size < 40000) {
@@ -327,15 +361,15 @@ public class BetterMetaPropNetStateMachineFactory {
 		}
 	}
 
-	private void createPropogateInputs(StringBuilder file) {
+	private void createPropagateInputs(StringBuilder file) {
 		int size = 0;
 		int count = 0;
 		for (int i = 0; i < inputs.size(); i ++) {
 			String s = "";
-			s += ("if (comps[" + comps.indexOf(inputs.get(i)) + "] != inputs[" + i + "]){\n");
-			s += ("comps[" + comps.indexOf(inputs.get(i)) + "] = inputs[" + i + "];\n");
+			s += ("if (" + getValue(inputs.get(i)) + " != inputs[" + i + "]){\n");
+			s += "comps[" + (comps.indexOf(inputs.get(i)) * 3) + "] = (inputs[" + i + "]) ? 0xF0000000 : 0x0F00000;\n";
 			for (Component c : inputs.get(i).getOutputs())
-				s += ("propagate" + comps.indexOf(c) + "(inputs[" + i + "]);\n");
+				s += ("propagate(" + (comps.indexOf(c) * 3) + ", (inputs[" + i + "])?1:-1);\n");
 			s += ("}\n");
 			size += s.length();
 			if (size < 40000) {
@@ -348,6 +382,54 @@ public class BetterMetaPropNetStateMachineFactory {
 				file.append(s);
 			}
 		}
+	}
+	
+	private String createStructure(Component c) {
+		if (bases.contains(c)) {
+			return "bases[" + bases.indexOf(((Proposition) c)) + "]";
+		} else if (inputs.contains(c)) {
+			return "inputs[" + inputmap.get(((Proposition) c).getName()) + "]";
+		} else if (c instanceof Proposition) {
+			if (((Proposition) c).getName().toString().equals("init")) return "init";
+			return createStructure(c.getSingleInput());
+		} else if (c instanceof Transition) {
+			return createStructure(c.getSingleInput());
+		} else if (c instanceof Not) {
+			return "(!" + createStructure(c.getSingleInput()) + ")";
+		} else if (c instanceof Constant) {
+			return "" + c.getValue();
+		} else if (c instanceof And) {
+			String s = "(";
+			Iterator<Component> it = c.getInputs().iterator();
+			Component next;
+			for (next = it.next(); it.hasNext(); next = it.next()) {
+				s += createStructure(next) + " && ";
+			}
+			return s + createStructure(next) + ")";
+		} else if (c instanceof Or) {
+			String s = "(";
+			Iterator<Component> it = c.getInputs().iterator();
+			Component next;
+			for (next = it.next(); it.hasNext(); next = it.next()) {
+				s += createStructure(next) + " || ";
+			}
+			return s + createStructure(next) + ")";
+		}
+		else return ""; //shouldn't get here ever.
+	}
+	
+	private void createPropagate(StringBuilder file) {
+		file.append("private void propagate(int index, int newValue){\n");
+		file.append("if (comps[index + 1] == 1) return;\n");
+		file.append("int old = comps[index] >> 31;\n");
+		file.append("comps[index] += newValue;\n");
+		file.append("if (old != comps[index] >> 31){\n");
+		file.append("old = (comps[index] >> 31) - old;\n");
+		file.append("for (int i = 0; i < structure[comps[index + 2]]; i ++){\n");
+		file.append("propagate(structure[comps[index + 2] + i + 1], old);\n");
+		file.append("}\n");
+		file.append("}\n");
+		file.append("}\n");
 	}
 
 	private int getGoalValue(Proposition goalProposition) {

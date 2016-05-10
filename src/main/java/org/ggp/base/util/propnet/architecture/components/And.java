@@ -10,7 +10,7 @@ import org.ggp.base.util.propnet.architecture.Component;
 @SuppressWarnings("serial")
 public final class And extends Component
 {
-	
+	public boolean nand = false;
 	int numTrue = 0;
     /**
      * Returns true if and only if every input to the and is true.
@@ -21,7 +21,7 @@ public final class And extends Component
     public void propogate(boolean newValue)
     {
     	numTrue += (newValue)? 1 : -1;
-    	value = (numTrue == getInputarr().length);
+    	value = (numTrue == getInputarr().length) ^ nand;
         if (value != lastPropogation) {
 			lastPropogation = value;
 			for (Component c : getOutputarr()){
