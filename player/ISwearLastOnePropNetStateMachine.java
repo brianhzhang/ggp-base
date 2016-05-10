@@ -43,10 +43,12 @@ public class ISwearLastOnePropNetStateMachine extends StateMachine {
 	int[] goals;
 	int init;
 	int terminal;
+	PropNet p;
+	ArrayList<Proposition> props;
 
 	@Override
 	public void initialize(List<Gdl> description) {
-		PropNet p = null;
+		p = null;
 		try {
 			p = OptimizingPropNetFactory.create(description);
 		} catch (InterruptedException e) {
@@ -71,12 +73,12 @@ public class ISwearLastOnePropNetStateMachine extends StateMachine {
 
 		for (Role r : roles) {
 			actions.put(r, propToMoves(p.getLegalPropositions().get(r), true));
-			//TODO Use this area to input into the "legals" map.
 		}
 		int base = 0;
 		int input = 0;
 		int legal = 0;
 		List<Component> nots = new ArrayList<Component>();
+		props = new ArrayList<Proposition>();
 		for (int i = 0; i < components.size(); i ++) {
 			comps[i * 3] = createComponent(components.get(i), p);
 			boolean thing = false;
@@ -85,6 +87,8 @@ public class ISwearLastOnePropNetStateMachine extends StateMachine {
 				bases[base] = i * 3;
 				base ++;
 				thing = true;
+				props.add((Proposition) components.get(i));
+				//System.out.println(components.get(i).getInputs().size() + "    " + ((Proposition) components.get(i)).getName() + "    " + components.get(i).getSingleInput());
 			} else if (p.getInputPropositions().values().contains(components.get(i))) {
 				comps[i * 3 + 1] = 0x13370420;
 				inputmap.put(new Move(((Proposition) components.get(i)).getName().get(1)), input);
@@ -106,8 +110,6 @@ public class ISwearLastOnePropNetStateMachine extends StateMachine {
 					thing = true;
 				}
 			}
-			//roles.get(j).getName().equals(components.get(i)).getName().getBody().get(0))
-			//TODO THIS DOES NOT FILL CORRECTLY BECAUSE IT IS A MAP FROM ROLES TO SETS
 			if (!thing) {
 				if (components.get(i) instanceof Proposition) {
 					comps[i * 3 + 1] = 0xFFFFFFFF;
@@ -223,7 +225,7 @@ public class ISwearLastOnePropNetStateMachine extends StateMachine {
 			if (p.getBasePropositions().values().contains(c) || p.getInputPropositions().values().contains(c)) {
 				return 0x0F000000;
 			} else {
-				return 0x7FFFFFFF;
+				return 0x13370420;
 			}
 		} else if (c instanceof Or) {
 			return 0x7FFFFFFF;
