@@ -31,7 +31,7 @@ import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 public class MCTS extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
-	private double cfactor;
+	private static final double CFACTOR = 1.0;
 	private List<MTreeNode> cache = new ArrayList<>();
 	private List<MTreeNode> fastCache = new ArrayList<>();
 	private StateMachine[] machines;
@@ -73,7 +73,6 @@ public class MCTS extends Method {
 		Set<GdlConstant> impossibles = new HashSet<>();
 
 		StateMachine machine = gamer.getStateMachine();
-		cfactor = 2.0 / machine.findRoles().size();
 
 		while (System.currentTimeMillis() < timeout && smthread.isAlive()) {
 			Map<GdlConstant, Set<GdlSentence>> possibles = new HashMap<>();
@@ -242,7 +241,7 @@ public class MCTS extends Method {
 	}
 
 	private double score(MTreeNode node, int sgn) {
-		return node.score(sgn * cfactor);
+		return node.score(sgn * CFACTOR);
 	}
 
 	private String info(MTreeNode scoreNode, MTreeNode rootNode) {
@@ -436,7 +435,7 @@ public class MCTS extends Method {
 		public double score(double c) {
 			double util = sum_utility / visits;
 			double var = sum_sq / visits - util * util;
-			return putInBounds(util) + c * Math.sqrt(Math.log(parent.visits) / visits * var);
+			return util + c * Math.sqrt(Math.log(parent.visits) / visits * var);
 		}
 	}
 

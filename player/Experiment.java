@@ -31,7 +31,7 @@ import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 public class Experiment extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
-	private static final double CFACTOR = 2.0;
+	private static final double CFACTOR = 1.0;
 	private List<MTreeNode> cache = new ArrayList<>();
 	private List<MTreeNode> fastCache = new ArrayList<>();
 	private StateMachine[] machines;
@@ -435,7 +435,7 @@ public class Experiment extends Method {
 		public double score(double c) {
 			double util = sum_utility / visits;
 			double var = sum_sq / visits - util * util;
-			return putInBounds(util) + c * Math.sqrt(Math.log(parent.visits) / visits * var);
+			return util + c * Math.sqrt(Math.log(parent.visits) / visits * var);
 		}
 	}
 
