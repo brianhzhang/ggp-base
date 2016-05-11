@@ -46,7 +46,7 @@ public class Experiment extends Method {
 	// if the metapropnetstatemachinefactory has finished, update the machines
 	private boolean checkStateMachineStatus() {
 		if (!propNetInitialized && !smthread.isAlive()) {
-			gamer.switchToPropnets(smthread.m, machines);
+			gamer.switchToNewPropnets(smthread.m, machines);
 			Log.println("propnets initialized");
 			return propNetInitialized = true;
 		}
@@ -117,8 +117,8 @@ public class Experiment extends Method {
 		if (clockConstant != null) {
 			Log.println("ignoring clock proposition " + clockConstant);
 			Map<GdlSentence, Integer> basemap = new HashMap<>();
-			for (int i = 0; i < smthread.m.bases.size(); i++) {
-				basemap.put(smthread.m.bases.get(i).getName(), i);
+			for (int i = 0; i < smthread.m.props.size(); i++) {
+				basemap.put(smthread.m.props.get(i).getName(), i);
 			}
 			for (GdlSentence g : basemap.keySet()) {
 				if (g.get(0).toSentence().getName().equals(clockConstant)) {
@@ -451,7 +451,7 @@ public class Experiment extends Method {
 
 	private class StateMachineCreatorThread extends Thread {
 		private List<Gdl> description;
-		public BetterMetaPropNetStateMachineFactory m;
+		public JustKiddingPropNetStateMachine m;
 
 		public StateMachineCreatorThread(List<Gdl> description) {
 			this.description = description;
@@ -468,7 +468,8 @@ public class Experiment extends Method {
 
 		@Override
 		public void run() {
-			m = new BetterMetaPropNetStateMachineFactory(description);
+			m = new JustKiddingPropNetStateMachine();
+			m.initialize(description);
 			Log.println("computing goal similarity heuristic...");
 			Set<Proposition> goalProps = m.p.getGoalPropositions().get(gamer.getRole());
 			Set<GdlSentence> bases = m.p.getBasePropositions().keySet();
@@ -485,8 +486,8 @@ public class Experiment extends Method {
 					if (bases.contains(sent.getName())) totals.add(sent);
 				}
 			}
-			for (int i = 0; i < m.bases.size(); i++) {
-				Proposition base = m.bases.get(i);
+			for (int i = 0; i < m.props.size(); i++) {
+				Proposition base = m.props.get(i);
 				if (totals.contains(base)) targetSet.add(i);
 			}
 			Log.println("propnet ready");

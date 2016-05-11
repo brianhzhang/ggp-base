@@ -3,7 +3,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 import org.ggp.base.apps.player.config.ConfigPanel;
@@ -66,26 +65,29 @@ public class MyPlayer extends StateMachineGamer {
 		return new GDLGetter();
 	}
 
-	private ISwearLastOnePropNetStateMachine copyMachine(ISwearLastOnePropNetStateMachine p) {
-		ISwearLastOnePropNetStateMachine newp = new ISwearLastOnePropNetStateMachine();
-		newp.roles = p.roles;
-		newp.comps = Arrays.copyOf(p.comps, p.comps.length);
-		newp.initcomps = p.initcomps;
+	private JustKiddingPropNetStateMachine copyMachine(JustKiddingPropNetStateMachine p) {
+		JustKiddingPropNetStateMachine newp = new JustKiddingPropNetStateMachine();
+		newp.comps = new int[p.comps.length][];
+		for (int i = 0; i < p.comps.length; i++) {
+			newp.comps[i] = p.comps[i].clone();
+		}
 		newp.structure = p.structure;
+		newp.roles = p.roles;
 		newp.actions = p.actions;
-		newp.inputmap = p.inputmap;
-		newp.legalarr = p.legalarr;
-		newp.bases = p.bases;
-		newp.inputs = p.inputs;
-		newp.legals = p.legals;
-		newp.nots = p.nots;
-		newp.goals = p.goals;
+		newp.term = p.term;
 		newp.init = p.init;
-		newp.terminal = p.terminal;
+		newp.basearr = p.basearr;
+		newp.inputarr = p.inputarr;
+		newp.inputmap = p.inputmap;
+		newp.legals = p.legals;
+		newp.legalarr = p.legalarr;
+		newp.goals = p.goals;
+		newp.p = p.p;
+		newp.props = p.props;
 		return newp;
 	}
 
-	public void switchToNewPropnets(ISwearLastOnePropNetStateMachine machine,
+	public void switchToNewPropnets(JustKiddingPropNetStateMachine machine,
 			StateMachine[] machines) {
 		switchStateMachine(machine);
 		for (int i = 0; i < N_THREADS; i++) {
