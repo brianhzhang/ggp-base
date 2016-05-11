@@ -43,7 +43,6 @@ public class Experiment extends Method {
 	private Set<Integer> targetSet;
 	private Stack<Move> solution;
 
-	// if the metapropnetstatemachinefactory has finished, update the machines
 	private boolean checkStateMachineStatus() {
 		if (!propNetInitialized && !smthread.isAlive()) {
 			gamer.switchToNewPropnets(smthread.m, machines);
