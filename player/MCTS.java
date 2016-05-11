@@ -12,6 +12,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
 import org.ggp.base.util.gdl.grammar.Gdl;
@@ -150,12 +151,13 @@ public class MCTS extends Method {
 	public Move run(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
-		Log.println("--------------------");
 		if (solution != null && !solution.isEmpty()) {
 			Move move = solution.pop();
 			Log.println("solution move: " + move);
 			if (machine.getLegalMoves(rootstate, role).contains(move)) return move;
 		}
+		Log.println("--------------------");
+		Log.println("threads running: " + Thread.activeCount());
 
 		if (checkStateMachineStatus()) {
 			// reinit state machine
@@ -233,9 +235,6 @@ public class MCTS extends Method {
 		}
 		Log.println("played=" + info(bestChild, root));
 		Log.println("tot time = " + (System.currentTimeMillis() - timestart));
-		for (int i = 0; i < nthread; i++) {
-			threads[i].input.offer(DepthChargeThread.HALT);
-		}
 		return bestChild.move;
 	}
 
@@ -322,7 +321,6 @@ public class MCTS extends Method {
 	}
 
 	private static class DepthChargeThread extends Thread {
-		public static final MTreeNode HALT = new MTreeNode(null, null, null);
 		public static final int MAX_SCORE = 99;
 		public static final int MIN_SCORE = 1;
 
@@ -359,8 +357,10 @@ public class MCTS extends Method {
 		public void run() {
 			while (true) {
 				try {
-					MTreeNode node = input.take();
-					if (node == HALT) return;
+					MTreeNode node = input.poll(
+							timeout - System.currentTimeMillis() + MyPlayer.TIMEOUT_BUFFER,
+							TimeUnit.MILLISECONDS);
+					if (node == null) return;
 					output.offer(simulate(node));
 				} catch (Exception e) {
 					e.printStackTrace();
