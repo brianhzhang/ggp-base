@@ -1,8 +1,10 @@
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
@@ -12,6 +14,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
 import org.ggp.base.util.gdl.grammar.Gdl;
@@ -19,7 +22,6 @@ import org.ggp.base.util.gdl.grammar.GdlConstant;
 import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.components.Proposition;
-import org.ggp.base.util.propnet.architecture.components.Transition;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
@@ -38,10 +40,10 @@ public class Experiment extends Method {
 	private boolean propNetInitialized = false;
 	private MyPlayer gamer;
 	private GdlConstant clockConstant;
-	private Set<Integer> ignoreProps = new HashSet<Integer>();
+	private boolean[] clockProps;
 	private StateMachineCreatorThread smthread;
-	private Set<Integer> targetSet;
 	private Stack<Move> solution;
+	private Map<Role, Set<Move>> useless;
 
 	private boolean checkStateMachineStatus() {
 		if (!propNetInitialized && !smthread.isAlive()) {
@@ -65,6 +67,7 @@ public class Experiment extends Method {
 
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
+		useless = new HashMap<>();
 		clockConstant = null;
 		solution = null;
 
@@ -72,6 +75,9 @@ public class Experiment extends Method {
 		Set<GdlConstant> impossibles = new HashSet<>();
 
 		StateMachine machine = gamer.getStateMachine();
+		for (Role role : machine.findRoles()) {
+			useless.put(role, new HashSet<>());
+		}
 
 		while (System.currentTimeMillis() < timeout && smthread.isAlive()) {
 			Map<GdlConstant, Set<GdlSentence>> possibles = new HashMap<>();
@@ -111,30 +117,33 @@ public class Experiment extends Method {
 		}
 
 		machine = gamer.getStateMachine();
-
+		List<Proposition> bases = smthread.m.props;
+		clockProps = new boolean[bases.size()];
 		if (machine.getRoles().size() > 1) return;
 		if (clockConstant != null) {
 			Log.println("ignoring clock proposition " + clockConstant);
 			Map<GdlSentence, Integer> basemap = new HashMap<>();
-			for (int i = 0; i < smthread.m.props.size(); i++) {
-				basemap.put(smthread.m.props.get(i).getName(), i);
+			for (int i = 0; i < bases.size(); i++) {
+				basemap.put(bases.get(i).getName(), i);
 			}
 			for (GdlSentence g : basemap.keySet()) {
 				if (g.get(0).toSentence().getName().equals(clockConstant)) {
 					int idx = basemap.get(g);
-					ignoreProps.add(idx);
-					targetSet.remove(idx);
+					clockProps[idx] = true;
 				}
 			}
 		}
-		Log.println("single player game: " + targetSet.size() + " target propositions");
+		Log.println("single player game");
 		AStar alg = new AStar();
+		long start = System.currentTimeMillis();
 		try {
 			solution = alg.run(timeout);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-		if (solution != null) Log.println("solution found!");
+		if (solution != null) {
+			Log.println("solution found in " + (System.currentTimeMillis() - start) + " ms");
+		}
 	}
 
 	private boolean sameState(MachineState state1, MachineState state2) {
@@ -150,12 +159,13 @@ public class Experiment extends Method {
 	public Move run(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
-		Log.println("--------------------");
 		if (solution != null && !solution.isEmpty()) {
 			Move move = solution.pop();
 			Log.println("solution move: " + move);
 			if (machine.getLegalMoves(rootstate, role).contains(move)) return move;
 		}
+		Log.println("--------------------");
+		Log.println("threads running: " + Thread.activeCount());
 
 		if (checkStateMachineStatus()) {
 			// reinit state machine
@@ -233,9 +243,6 @@ public class Experiment extends Method {
 		}
 		Log.println("played=" + info(bestChild, root));
 		Log.println("tot time = " + (System.currentTimeMillis() - timestart));
-		for (int i = 0; i < nthread; i++) {
-			threads[i].input.offer(DepthChargeThread.HALT);
-		}
 		return bestChild.move;
 	}
 
@@ -281,17 +288,69 @@ public class Experiment extends Method {
 		}
 	}
 
+	private List<Move> getUsefulMoves(StateMachine machine, Role role, MachineState state) {
+		Set<Move> uselessMoves = useless.get(role);
+		Move uselessMove = null;
+		List<Move> actions = null;
+		try {
+			actions = machine.findLegals(role, state);
+		} catch (MoveDefinitionException e) {
+			e.printStackTrace();
+		}
+		List<Move> output = new ArrayList<>();
+		for (Move move : actions) {
+			if (uselessMoves.contains(move)) {
+				uselessMove = move;
+				continue;
+			}
+			output.add(move);
+		}
+		if (uselessMove != null) output.add(uselessMove);
+		return output;
+	}
+
+	// copied from StateMachine.java
+	protected void crossProductLegalMoves(List<List<Move>> legals, List<List<Move>> crossProduct,
+			LinkedList<Move> partial) {
+		if (partial.size() == legals.size()) {
+			crossProduct.add(new ArrayList<Move>(partial));
+		} else {
+			for (Move move : legals.get(partial.size())) {
+				partial.addLast(move);
+				crossProductLegalMoves(legals, crossProduct, partial);
+				partial.removeLast();
+			}
+		}
+	}
+
+	public List<List<Move>> getUsefulJointMoves(StateMachine machine, MachineState state, Role role,
+			Move move) throws MoveDefinitionException {
+		List<List<Move>> legals = new ArrayList<List<Move>>();
+		for (Role r : machine.getRoles()) {
+			if (r.equals(role)) {
+				List<Move> m = new ArrayList<Move>();
+				m.add(move);
+				legals.add(m);
+			} else {
+				legals.add(getUsefulMoves(machine, r, state));
+			}
+		}
+
+		List<List<Move>> crossProduct = new ArrayList<List<Move>>();
+		crossProductLegalMoves(legals, crossProduct, new LinkedList<Move>());
+
+		return crossProduct;
+	}
+
 	private void expand(StateMachine machine, Role role, MTreeNode node)
 			throws MoveDefinitionException, TransitionDefinitionException {
-		if (node.isMaxNode()) { // max-node
-			List<Move> actions = machine.findLegals(role, node.state);
-			for (Move move : actions) {
+		if (node.isMaxNode()) {
+			for (Move move : getUsefulMoves(machine, role, node.state)) {
 				MTreeNode newnode = new MTreeNode(node.state, move, node);
 				node.children.add(newnode);
 			}
 		} else {
-			List<List<Move>> actions = machine.getLegalJointMoves(node.state, role, node.move);
-			for (List<Move> jmove : actions) {
+			for (List<Move> jmove : getUsefulJointMoves(machine, node.state, role, node.move)) {
 				MachineState newstate = machine.findNext(jmove, node.state);
 				MTreeNode newnode = new MTreeNode(newstate, null, node);
 				node.children.add(newnode);
@@ -322,7 +381,6 @@ public class Experiment extends Method {
 	}
 
 	private static class DepthChargeThread extends Thread {
-		public static final MTreeNode HALT = new MTreeNode(null, null, null);
 		public static final int MAX_SCORE = 99;
 		public static final int MIN_SCORE = 1;
 
@@ -359,8 +417,10 @@ public class Experiment extends Method {
 		public void run() {
 			while (true) {
 				try {
-					MTreeNode node = input.take();
-					if (node == HALT) return;
+					MTreeNode node = input.poll(
+							timeout - System.currentTimeMillis() + MyPlayer.TIMEOUT_BUFFER,
+							TimeUnit.MILLISECONDS);
+					if (node == null) return;
 					output.offer(simulate(node));
 				} catch (Exception e) {
 					e.printStackTrace();
@@ -448,6 +508,20 @@ public class Experiment extends Method {
 		}
 	}
 
+	public void findComponentsBackwards(Collection<Component> current, Set<Component> visited) {
+		for (Component c : current) {
+			findBasesBackwards(c, visited);
+		}
+	}
+
+	public void findBasesBackwards(Component current, Set<Component> visited) {
+		if (visited.contains(current)) return;
+		visited.add(current);
+		for (Component parent : current.getInputs()) {
+			findBasesBackwards(parent, visited);
+		}
+	}
+
 	private class StateMachineCreatorThread extends Thread {
 		private List<Gdl> description;
 		public JustKiddingPropNetStateMachine m;
@@ -456,62 +530,48 @@ public class Experiment extends Method {
 			this.description = description;
 		}
 
-		public void findBases(Component current, Set<Component> visited) {
-			if (current instanceof Transition) return;
-			if (visited.contains(current)) return;
-			visited.add(current);
-			for (Component parent : current.getInputs()) {
-				findBases(parent, visited);
-			}
-		}
-
 		@Override
 		public void run() {
 			m = new JustKiddingPropNetStateMachine();
 			m.initialize(description);
-			Log.println("computing goal similarity heuristic...");
-			Set<Proposition> goalProps = m.p.getGoalPropositions().get(gamer.getRole());
-			Set<GdlSentence> bases = m.p.getBasePropositions().keySet();
-			Set<Proposition> totals = new HashSet<>();
-			targetSet = new HashSet<>();
-			for (Proposition goal : goalProps) {
-				int val = Integer.parseInt(goal.getName().get(1).toString());
-				if (val != MyPlayer.MAX_SCORE) continue;
-				Set<Component> result = new HashSet<>();
-				findBases(goal, result);
-				for (Component c : result) {
-					if (!(c instanceof Proposition)) continue;
-					Proposition sent = (Proposition) c;
-					if (bases.contains(sent.getName())) totals.add(sent);
+			Log.println("pruning irrelevant inputs");
+			Set<Component> reachable = new HashSet<>();
+			findBasesBackwards(m.p.getTerminalProposition(), reachable);
+			Set<Component> goals = new HashSet<>();
+			Map<Role, Set<Proposition>> gprops = m.p.getGoalPropositions();
+			for (Role r : gprops.keySet()) {
+				goals.addAll(gprops.get(r));
+			}
+			Map<GdlSentence, Proposition> inputs = m.p.getInputPropositions();
+			Set<Component> badInputSet = new HashSet<>(inputs.values());
+			findComponentsBackwards(goals, reachable);
+			for (Component comp : reachable) {
+				badInputSet.remove(comp);
+			}
+			int count = 0;
+			for (GdlSentence input : inputs.keySet()) {
+				if (badInputSet.contains(inputs.get(input))) {
+					Role role = Role.create(input.get(0).toString());
+					Move move = Move.create(input.get(1).toString());
+					useless.get(role).add(move);
+					count++;
 				}
 			}
-			for (int i = 0; i < m.props.size(); i++) {
-				Proposition base = m.props.get(i);
-				if (totals.contains(base)) targetSet.add(i);
-			}
+			Log.println("found " + count + " irrelevant inputs");
 			Log.println("propnet ready");
 		}
 	}
 
-	// a namespace for astar-related methods.
+	// a namespace for astar-related methods...or really just a DFS
 	private class AStar {
 		private int compare(MachineState state1, MachineState state2) {
 			boolean[] props1 = ((PropNetMachineState) state1).props;
 			boolean[] props2 = ((PropNetMachineState) state2).props;
 			for (int i = 0; i < props1.length; i++) {
-				if (props1[i] == props2[i] || ignoreProps.contains(i)) continue;
+				if (props1[i] == props2[i] || clockProps[i]) continue;
 				return props1[i] ? 1 : -1;
 			}
 			return 0;
-		}
-
-		private int heuristic(MachineState state) {
-			boolean[] props = ((PropNetMachineState) state).props;
-			int distance = 0;
-			for (int i : targetSet) {
-				if (!props[i]) distance++;
-			}
-			return distance;
 		}
 
 		private class StateInfo {
@@ -561,7 +621,7 @@ public class Experiment extends Method {
 			Map<MachineState, StateInfo> info = new TreeMap<>(this::compare);
 
 			PriorityQueue<PQEntry> pq = new PriorityQueue<>();
-			pq.add(new PQEntry(initial, heuristic(initial)));
+			pq.add(new PQEntry(initial, 0));
 			info.put(initial, new StateInfo(null, null, 0));
 
 			while (!pq.isEmpty()) {
@@ -578,12 +638,12 @@ public class Experiment extends Method {
 					StateInfo vinfo = info.get(v);
 					if (vinfo == null) {
 						info.put(v, new StateInfo(u, move, newDist));
-						pq.add(new PQEntry(v, newDist + heuristic(v)));
+						pq.add(new PQEntry(v, newDist));
 					} else if (!closed.contains(u) && vinfo.distance > newDist) {
 						vinfo.distance = newDist;
 						vinfo.parent = u;
 						vinfo.parentMove = move;
-						pq.add(new PQEntry(v, newDist + heuristic(v)));
+						pq.add(new PQEntry(v, newDist));
 					}
 				}
 			}

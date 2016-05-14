@@ -68,9 +68,12 @@ public class MyPlayer extends StateMachineGamer {
 	private JustKiddingPropNetStateMachine copyMachine(JustKiddingPropNetStateMachine p) {
 		JustKiddingPropNetStateMachine newp = new JustKiddingPropNetStateMachine();
 		newp.comps = new int[p.comps.length][];
+		newp.initcomps = new int[p.comps.length][];
 		for (int i = 0; i < p.comps.length; i++) {
 			newp.comps[i] = p.comps[i].clone();
+			newp.initcomps[i] = p.initcomps[i].clone();
 		}
+
 		newp.structure = p.structure;
 		newp.roles = p.roles;
 		newp.actions = p.actions;
