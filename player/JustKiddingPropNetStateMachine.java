@@ -28,8 +28,8 @@ import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 
 public class JustKiddingPropNetStateMachine extends StateMachine {
 
-	int[][] comps;
-	int[][] initcomps;
+	int[] comps;
+	int[] initcomps;
 	int[][] structure;
 	List<Role> roles;
 	Map<Role, List<Move>> actions;
@@ -81,13 +81,14 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			e.printStackTrace();
 		}
 
+//		List<Component> components = getOrdering(new HashSet<Component>(p.getComponents()));
 		List<Component> components = new ArrayList<Component>(p.getComponents());
 		optimizePropNet(components, p);
 		for (Component c : components) {
 			c.crystalize();
 		}
 		props = new ArrayList<Proposition>();
-		comps = new int[components.size()][2];
+		comps = new int[components.size() * 2];
 		structure = new int[components.size()][];
 		roles = p.getRoles();
 		actions = new HashMap<Role, List<Move>>();
@@ -113,82 +114,82 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		int legal = 0;
 		int goal = 0;
 		//Fill the components array
-		for (int i = 0; i < components.size(); i ++) {
-			if (p.getBasePropositions().values().contains(components.get(i))) {
-				comps[i][0] = 0;
-				comps[i][1] = components.indexOf(components.get(i).getSingleInput());
+		for (int i = 0; i < components.size() * 2; i += 2) {
+			if (p.getBasePropositions().values().contains(components.get(i/2))) {
+				comps[i] = 0;
+				comps[i + 1] = components.indexOf(components.get(i/2).getSingleInput()) * 2;
 				basearr[base] = i;
-				props.add((Proposition) components.get(i));
+				props.add((Proposition) components.get(i/2));
 				base ++;
-			} else if (p.getInputPropositions().values().contains(components.get(i))) {
-				comps[i][0] = 0;
-				comps[i][1] = 0;
+			} else if (p.getInputPropositions().values().contains(components.get(i/2))) {
+				comps[i] = 0;
+				comps[i + 1] = 0;
 				inputarr[input] = i;
 				for (Role r : roles) {
-					if (p.getLegalPropositions().get(r).contains(p.getLegalInputMap().get(components.get(i)))) {
-						inputmap.put(new RoleMove(new Move(((Proposition) components.get(i)).getName().get(1)),
+					if (p.getLegalPropositions().get(r).contains(p.getLegalInputMap().get(components.get(i/2)))) {
+						inputmap.put(new RoleMove(new Move(((Proposition) components.get(i/2)).getName().get(1)),
 								roles.indexOf(r)), input);
 					}
 				}
 				input ++;
-			} else if (components.get(i) instanceof Proposition) {
+			} else if (components.get(i/2) instanceof Proposition) {
 				boolean isView = true;
 				for (Role r : roles) {
-					if (p.getGoalPropositions().get(r).contains(components.get(i))) {
-						comps[i][0] = 0;
-						comps[i][1] = components.indexOf(components.get(i).getSingleInput());
-						goals[goal][0] = components.indexOf(components.get(i).getSingleInput());
+					if (p.getGoalPropositions().get(r).contains(components.get(i/2))) {
+						comps[i] = 0;
+						comps[i + 1] = components.indexOf(components.get(i/2).getSingleInput()) * 2;
+						goals[goal][0] = components.indexOf(components.get(i/2).getSingleInput()) * 2;
 						goals[goal][1] = roles.indexOf(r);
-						goals[goal][2] = getGoalValue((Proposition) components.get(i));
+						goals[goal][2] = getGoalValue((Proposition) components.get(i/2));
 						goal ++;
 						isView = false;
 						break;
 					}
-					if (p.getLegalPropositions().get(r).contains(components.get(i))) {
-						comps[i][0] = 0;
-						comps[i][1] = components.indexOf(components.get(i).getSingleInput());
+					if (p.getLegalPropositions().get(r).contains(components.get(i/2))) {
+						comps[i] = 0;
+						comps[i + 1] = components.indexOf(components.get(i/2).getSingleInput()) * 2;
 						legalarr[legal][0] = i;
 						legalarr[legal][1] = roles.indexOf(r);
-						legals[legal] = new Move(((Proposition) components.get(i)).getName().get(1));
+						legals[legal] = new Move(((Proposition) components.get(i/2)).getName().get(1));
 						legal ++;
 						isView = false;
 						break;
 					}
 				}
-				if (p.getTerminalProposition().equals(components.get(i))) {
-					comps[i][0] = 0x7FFFFFFF;
-					comps[i][1] = components.indexOf(components.get(i).getSingleInput());
+				if (p.getTerminalProposition().equals(components.get(i/2))) {
+					comps[i] = 0x7FFFFFFF;
+					comps[i + 1] = components.indexOf(components.get(i/2).getSingleInput()) * 2;
 					term = i;
-				} else if (p.getInitProposition().equals(components.get(i))) {
-					comps[i][0] = 0;
-					comps[i][1] = -1;
+				} else if (p.getInitProposition().equals(components.get(i/2))) {
+					comps[i] = 0;
+					comps[i + 1] = -1;
 					init = i;
 				} else if (isView) {
-					comps[i][0] = 0x7FFFFFFF;
-					comps[i][1] = -1;
+					comps[i] = 0x7FFFFFFF;
+					comps[i + 1] = -1;
 				}
 			} else { //Component
-				comps[i][0] = getComp(components.get(i));
-				comps[i][1] = -1;
+				comps[i] = getComp(components.get(i/2));
+				comps[i + 1] = -1;
 			}
 
 			//fill the structure array:
-			structure[i] = new int[components.get(i).getOutputs().size()];
-			for (int j = 0; j < structure[i].length; j ++) {
-				structure[i][j] = components.indexOf(components.get(i).getOutputarr()[j]);
+			structure[i/2] = new int[components.get(i/2).getOutputs().size()];
+			for (int j = 0; j < structure[i/2].length; j ++) {
+				structure[i/2][j] = components.indexOf(components.get(i/2).getOutputarr()[j]) * 2;
 			}
 		}
 
 		Set<Component> visited = new HashSet<Component>();
 
 		for (int i = 0; i < basearr.length; i ++) {
-			for (int j = 0; j < structure[basearr[i]].length; j ++) {
-				startPropagate(structure[basearr[i]][j], 0, components, visited);
+			for (int j = 0; j < structure[basearr[i] / 2].length; j ++) {
+				startPropagate(structure[basearr[i] / 2][j], 0, components, visited);
 			}
 		}
 		for (int i = 0; i < inputarr.length; i ++) {
-			for (int j = 0; j < structure[inputarr[i]].length; j ++) {
-				startPropagate(structure[inputarr[i]][j], 0, components, visited);
+			for (int j = 0; j < structure[inputarr[i] / 2].length; j ++) {
+				startPropagate(structure[inputarr[i] / 2][j], 0, components, visited);
 			}
 		}
 		for (Component c : components) {
@@ -197,7 +198,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			}
 		}
 
-		initcomps = copyArr(comps);
+		initcomps = comps.clone();
 	}
 
 	private void optimizePropNet(List<Component> comps, PropNet p) {
@@ -234,6 +235,28 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			}
 		}
 		comps.removeAll(toremove);
+	}
+	
+	private List<Component> getOrdering(Set<Component> comps) {
+		List<Component> order = new ArrayList<Component>();
+		Set<Component> temp = new HashSet<Component>();
+		while (comps.size() > 0) {
+			visit(comps.iterator().next(), order, comps, temp);
+		}
+		return order;
+	}
+	
+	private void visit(Component c, List<Component> order, Set<Component> notmarked, Set<Component> temp) {
+		if (temp.contains(c)) return;
+		if (notmarked.contains(c)) {
+			temp.add(c);
+			for (Component next : c.getOutputs()) {
+				visit(next, order, notmarked, temp);
+			}
+			order.add(0, c);
+			temp.remove(c);
+			notmarked.remove(c);
+		}
 	}
 
 	private int[][] copyArr(int[][] original) {
@@ -283,7 +306,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	public int getGoal(MachineState state, Role role) throws GoalDefinitionException {
 		markbases(((PropNetMachineState)state).props);
 		for (int i = 0; i < goals.length; i ++) {
-			if (((comps[goals[i][0]][0] >> 31) & 1) == 1 && roles.indexOf(role) == goals[i][1]) {
+			if (((comps[goals[i][0]] >> 31) & 1) == 1 && roles.indexOf(role) == goals[i][1]) {
 				return goals[i][2];
 			}
 		}
@@ -293,7 +316,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	@Override
 	public boolean isTerminal(MachineState state) {
 		markbases(((PropNetMachineState)state).props);
-		return ((comps[comps[term][1]][0] >> 31) & 1) == 1;
+		return ((comps[comps[term + 1]] >> 31) & 1) == 1;
 	}
 
 	@Override
@@ -303,18 +326,18 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	@Override
 	public MachineState getInitialState() {
-		comps = copyArr(initcomps);
-		for (int i = 0; i < structure[init].length; i ++) {
-			comps[init][0] = 0xF0000000;
-			propagate(structure[init][i], 1);
+		comps = initcomps.clone();
+		for (int i = 0; i < structure[init/2].length; i ++) {
+			comps[init] = 0xF0000000;
+			propagate(structure[init/2][i], 1);
 		}
 		boolean[] next = new boolean[basearr.length];
 		for (int i = 0; i < basearr.length; i ++) {
-			next[i] = (((comps[comps[basearr[i]][1]][0] >> 31) & 1) == 1);
+			next[i] = (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1);
 		}
-		for (int i = 0; i < structure[init].length; i ++) {
-			comps[init][0] = 0x0;
-			propagate(structure[init][i], -1);
+		for (int i = 0; i < structure[init/2].length; i ++) {
+			comps[init] = 0x0;
+			propagate(structure[init/2][i], -1);
 		}
 		return new PropNetMachineState(next);
 	}
@@ -324,7 +347,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		markbases(((PropNetMachineState)state).props);
 		ArrayList<Move> moves = new ArrayList<Move>();
 		for (int i = 0; i < legals.length; i ++) {
-			if (((comps[comps[legalarr[i][0]][1]][0] >> 31) & 1) == 1 && legalarr[i][1] == roles.indexOf(role)) {
+			if (((comps[comps[legalarr[i][0] + 1]] >> 31) & 1) == 1 && legalarr[i][1] == roles.indexOf(role)) {
 				moves.add(legals[i]);
 			}
 		}
@@ -341,17 +364,17 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		markinputs(inputs);
 		boolean[] next = new boolean[basearr.length];
 		for (int i = 0; i < basearr.length; i ++) {
-			next[i] = (((comps[comps[basearr[i]][1]][0] >> 31) & 1) == 1);
+			next[i] = (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1);
 		}
 		return new PropNetMachineState(next);
 	}
 
 	private void markbases(boolean[] bases) {
 		for (int i = 0; i < bases.length; i ++) {
-			if (bases[i] != (((comps[basearr[i]][0] >> 31) & 1) == 1)) {
-				comps[basearr[i]][0] = bases[i] ? 0xF0000000 : 0x0F000000;
-				for (int j = 0; j < structure[basearr[i]].length; j ++) {
-					propagate(structure[basearr[i]][j], bases[i] ? 1 : -1);
+			if (bases[i] != (((comps[basearr[i]] >> 31) & 1) == 1)) {
+				comps[basearr[i]] = bases[i] ? 0xF0000000 : 0x0F000000;
+				for (int j = 0; j < structure[basearr[i] / 2].length; j ++) {
+					propagate(structure[basearr[i] / 2][j], bases[i] ? 1 : -1);
 				}
 			}
 		}
@@ -359,39 +382,40 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	private void markinputs(boolean[] inputs) {
 		for (int i = 0; i < inputs.length; i ++) {
-			if (inputs[i] != (((comps[inputarr[i]][0] >> 31) & 1) == 1)) {
-				comps[inputarr[i]][0] = inputs[i] ? 0xF0000000 : 0x0F000000;
-				for (int j = 0; j < structure[inputarr[i]].length; j ++) {
-					propagate(structure[inputarr[i]][j], inputs[i] ? 1 : -1);
+			if (inputs[i] != (((comps[inputarr[i]] >> 31) & 1) == 1)) {
+				comps[inputarr[i]] = inputs[i] ? 0xF0000000 : 0x0F000000;
+				for (int j = 0; j < structure[inputarr[i] / 2].length; j ++) {
+					propagate(structure[inputarr[i] / 2][j], inputs[i] ? 1 : -1);
 				}
 			}
 		}
 	}
 
 	private void propagate(int index, int newValue) {
-		if (comps[index][1] == -1) {
-			int old = ((comps[index][0] >> 31) & 1);
-			comps[index][0] += newValue;
-			if (old != ((comps[index][0] >> 31) & 1)) {
-				old = ((comps[index][0] >> 31) & 1) - old;
-				for (int i = 0; i < structure[index].length; i ++) {
-					propagate(structure[index][i], old);
+		if (comps[index + 1] == -1) {
+			int old = ((comps[index] >> 31) & 1);
+			comps[index] += newValue;
+			if (old != ((comps[index] >> 31) & 1)) {
+				old = ((comps[index] >> 31) & 1) - old;
+				for (int i = 0; i < structure[index / 2].length; i ++) {
+					propagate(structure[index / 2][i], old);
 				}
 			}
 		}
 	}
 
+	//real index of the thing * 2 is index.
 	private void startPropagate(int index, int newValue, List<Component> components, Set<Component> visited) {
-		if (comps[index][1] != -1) {
+		if (comps[index + 1] != -1) {
 			return;
 		}
-		int old = ((comps[index][0] >> 31) & 1);
-		comps[index][0] += newValue;
-		if (old != ((comps[index][0] >> 31) & 1) || (newValue == 0 && (old == 0 ||
-				!visited.contains(components.get(index))))) {
-			visited.add(components.get(index));
-			for (int i = 0; i < structure[index].length; i ++) {
-				startPropagate(structure[index][i], ((comps[index][0] >> 31) & 1), components, visited);
+		int old = ((comps[index] >> 31) & 1);
+		comps[index] += newValue;
+		if (old != ((comps[index] >> 31) & 1) || (newValue == 0 && (old == 0 ||
+				!visited.contains(components.get(index/2))))) {
+			visited.add(components.get(index/2));
+			for (int i = 0; i < structure[index / 2].length; i ++) {
+				startPropagate(structure[index / 2][i], ((comps[index] >> 31) & 1), components, visited);
 			}
 		}
 	}
