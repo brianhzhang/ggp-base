@@ -80,26 +80,13 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
-		for (Component c : p.getComponents()) {
+
+		List<Component> components = new ArrayList<Component>(p.getComponents());
+		optimizePropNet(components, p);
+		for (Component c : components) {
 			c.crystalize();
 		}
-
-//		List<Component> thing = new ArrayList<Component>();
-//		thing.add(p.getTerminalProposition());
-//		for (int i = 0; i < 6; i ++) {
-//			List<Component> nextthing = new ArrayList<Component>();
-//			for (Component c : thing) {
-//				nextthing.addAll(c.getInputs());
-//				for (int j = 0; j < i; j ++) {
-//					System.out.print("\t");
-//				}
-//				System.out.println(c);
-//			}
-//			thing = nextthing;
-//		}
-
 		props = new ArrayList<Proposition>();
-		List<Component> components = new ArrayList<Component>(p.getComponents());
 		comps = new int[components.size()][2];
 		structure = new int[components.size()][];
 		roles = p.getRoles();
@@ -193,7 +180,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 
 		Set<Component> visited = new HashSet<Component>();
-		
+
 		for (int i = 0; i < basearr.length; i ++) {
 			for (int j = 0; j < structure[basearr[i]].length; j ++) {
 				startPropagate(structure[basearr[i]][j], 0, components, visited);
@@ -213,6 +200,42 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		initcomps = copyArr(comps);
 	}
 
+	private void optimizePropNet(List<Component> comps, PropNet p) {
+		List<Component> toremove = new ArrayList<Component>();
+		for (Component c : comps) {
+//			if (c instanceof Proposition && !p.getBasePropositions().values().contains(c) &&
+//					!p.getInputPropositions().values().contains(c)) {
+//				boolean thing = true;
+//				for (Role r : p.getRoles()) {
+//					if (p.getLegalPropositions().get(r).contains(c)) {
+//						thing = false;
+//					} else if (p.getGoalPropositions().get(r).contains(c)) {
+//						thing = false;
+//					}
+//				}
+//				if (thing && !c.equals(p.getTerminalProposition()) && !c.equals(p.getInitProposition())) {
+//					for (Component before : c.getInputs()) {
+//						before.getOutputs().addAll(c.getOutputs());
+//						before.removeOutput(c);
+//					}
+//					toremove.add(c);
+//					p.getPropositions().remove(c);
+//				}
+			if (c instanceof Not) {
+				if (c.getInputs().size() == 1 && c.getSingleInput().getOutputs().size() == 1) {
+					if (c.getSingleInput() instanceof And) {
+						((And)c.getSingleInput()).nand = true;
+						toremove.add(c);
+					} else if (c.getSingleInput() instanceof Or) {
+						((Or)c.getSingleInput()).nor = true;
+						toremove.add(c);
+					}
+				}
+			}
+		}
+		comps.removeAll(toremove);
+	}
+
 	private int[][] copyArr(int[][] original) {
 		int[][] result = new int[original.length][2];
 		for (int i = 0; i < original.length; i ++) {
@@ -224,9 +247,9 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	private int getComp(Component c) {
 		if (c instanceof And) {
-			return 0x80000000 - c.getInputs().size();
+			return (((And)c).nand? 0 : 0x80000000) - c.getInputs().size();
 		} else if (c instanceof Or) {
-			return 0x7FFFFFFF;
+			return ((Or)c).nor? 0xFFFFFFFF : 0x7FFFFFFF;
 		} else if (c instanceof Not) {
 			return 0xFFFFFFFF;
 		} else if (c instanceof Transition) {

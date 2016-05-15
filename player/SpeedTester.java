@@ -71,12 +71,13 @@ public class SpeedTester extends StateMachineGamer {
 	@Override
 	public void stateMachineMetaGame(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
-		BetterMetaPropNetStateMachineFactory m = 
-				new BetterMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
+//		BetterMetaPropNetStateMachineFactory m = 
+//				new BetterMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
 //		LolAnotherMetaPropNetStateMachineFactory l = 
 //				new LolAnotherMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
-		StateMachine m1 = m.getNewMachine();
-		StateMachine m2 = new ISwearLastOnePropNetStateMachine();
+		StateMachine m1 = new CachedStateMachine(new ProverStateMachine());
+		StateMachine m2 = new JustKiddingPropNetStateMachine();
+		m1.initialize(((GDLGetter) getStateMachine()).getDescription());
 		m2.initialize(((GDLGetter) getStateMachine()).getDescription());
 		TestThread t1 = new TestThread(m1);
 		TestThread t2 = new TestThread(m2);
