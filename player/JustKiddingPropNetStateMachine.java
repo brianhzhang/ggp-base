@@ -1,5 +1,6 @@
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -41,6 +42,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	Move[] legals;
 	int[][] legalarr;
 	int[][] goals;
+	BitSet lastbases;
+	BitSet lastinputs;
 
 	PropNet p;
 	ArrayList<Proposition> props;
@@ -81,8 +84,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			e.printStackTrace();
 		}
 
-//		List<Component> components = getOrdering(new HashSet<Component>(p.getComponents()));
-		List<Component> components = new ArrayList<Component>(p.getComponents());
+		List<Component> components = getOrdering(new HashSet<Component>(p.getComponents()));
+		//		List<Component> components = new ArrayList<Component>(p.getComponents());
 		optimizePropNet(components, p);
 		for (Component c : components) {
 			c.crystalize();
@@ -180,6 +183,9 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			}
 		}
 
+		lastbases = new BitSet(p.getBasePropositions().values().size());
+		lastinputs = new BitSet(p.getInputPropositions().values().size());
+
 		Set<Component> visited = new HashSet<Component>();
 
 		for (int i = 0; i < basearr.length; i ++) {
@@ -204,24 +210,24 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	private void optimizePropNet(List<Component> comps, PropNet p) {
 		List<Component> toremove = new ArrayList<Component>();
 		for (Component c : comps) {
-//			if (c instanceof Proposition && !p.getBasePropositions().values().contains(c) &&
-//					!p.getInputPropositions().values().contains(c)) {
-//				boolean thing = true;
-//				for (Role r : p.getRoles()) {
-//					if (p.getLegalPropositions().get(r).contains(c)) {
-//						thing = false;
-//					} else if (p.getGoalPropositions().get(r).contains(c)) {
-//						thing = false;
-//					}
-//				}
-//				if (thing && !c.equals(p.getTerminalProposition()) && !c.equals(p.getInitProposition())) {
-//					for (Component before : c.getInputs()) {
-//						before.getOutputs().addAll(c.getOutputs());
-//						before.removeOutput(c);
-//					}
-//					toremove.add(c);
-//					p.getPropositions().remove(c);
-//				}
+			//			if (c instanceof Proposition && !p.getBasePropositions().values().contains(c) &&
+			//					!p.getInputPropositions().values().contains(c)) {
+			//				boolean thing = true;
+			//				for (Role r : p.getRoles()) {
+			//					if (p.getLegalPropositions().get(r).contains(c)) {
+			//						thing = false;
+			//					} else if (p.getGoalPropositions().get(r).contains(c)) {
+			//						thing = false;
+			//					}
+			//				}
+			//				if (thing && !c.equals(p.getTerminalProposition()) && !c.equals(p.getInitProposition())) {
+			//					for (Component before : c.getInputs()) {
+			//						before.getOutputs().addAll(c.getOutputs());
+			//						before.removeOutput(c);
+			//					}
+			//					toremove.add(c);
+			//					p.getPropositions().remove(c);
+			//				}
 			if (c instanceof Not) {
 				if (c.getInputs().size() == 1 && c.getSingleInput().getOutputs().size() == 1) {
 					if (c.getSingleInput() instanceof And) {
@@ -236,7 +242,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 		comps.removeAll(toremove);
 	}
-	
+
 	private List<Component> getOrdering(Set<Component> comps) {
 		List<Component> order = new ArrayList<Component>();
 		Set<Component> temp = new HashSet<Component>();
@@ -245,7 +251,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 		return order;
 	}
-	
+
 	private void visit(Component c, List<Component> order, Set<Component> notmarked, Set<Component> temp) {
 		if (temp.contains(c)) return;
 		if (notmarked.contains(c)) {
@@ -257,15 +263,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			temp.remove(c);
 			notmarked.remove(c);
 		}
-	}
-
-	private int[][] copyArr(int[][] original) {
-		int[][] result = new int[original.length][2];
-		for (int i = 0; i < original.length; i ++) {
-			result[i][0] = original[i][0];
-			result[i][1] = original[i][1];
-		}
-		return result;
 	}
 
 	private int getComp(Component c) {
@@ -304,7 +301,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	@Override
 	public int getGoal(MachineState state, Role role) throws GoalDefinitionException {
-		markbases(((PropNetMachineState)state).props);
+		markbases(((JustKiddingPropNetMachineState)state).props);
 		for (int i = 0; i < goals.length; i ++) {
 			if (((comps[goals[i][0]] >> 31) & 1) == 1 && roles.indexOf(role) == goals[i][1]) {
 				return goals[i][2];
@@ -315,7 +312,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	@Override
 	public boolean isTerminal(MachineState state) {
-		markbases(((PropNetMachineState)state).props);
+		markbases(((JustKiddingPropNetMachineState)state).props);
 		return ((comps[comps[term + 1]] >> 31) & 1) == 1;
 	}
 
@@ -327,24 +324,26 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	@Override
 	public MachineState getInitialState() {
 		comps = initcomps.clone();
+		lastbases = new BitSet(lastbases.length());
+		lastinputs = new BitSet(lastinputs.length());
 		for (int i = 0; i < structure[init/2].length; i ++) {
 			comps[init] = 0xF0000000;
 			propagate(structure[init/2][i], 1);
 		}
-		boolean[] next = new boolean[basearr.length];
+		BitSet next = new BitSet(basearr.length);
 		for (int i = 0; i < basearr.length; i ++) {
-			next[i] = (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1);
+			next.set(i, (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1));
 		}
 		for (int i = 0; i < structure[init/2].length; i ++) {
 			comps[init] = 0x0;
 			propagate(structure[init/2][i], -1);
 		}
-		return new PropNetMachineState(next);
+		return new JustKiddingPropNetMachineState(next);
 	}
 
 	@Override
 	public List<Move> getLegalMoves(MachineState state, Role role) throws MoveDefinitionException {
-		markbases(((PropNetMachineState)state).props);
+		markbases(((JustKiddingPropNetMachineState)state).props);
 		ArrayList<Move> moves = new ArrayList<Move>();
 		for (int i = 0; i < legals.length; i ++) {
 			if (((comps[comps[legalarr[i][0] + 1]] >> 31) & 1) == 1 && legalarr[i][1] == roles.indexOf(role)) {
@@ -356,39 +355,39 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	@Override
 	public MachineState getNextState(MachineState state, List<Move> moves) throws TransitionDefinitionException {
-		markbases(((PropNetMachineState)state).props);
-		boolean[] inputs = new boolean[inputarr.length];
+		markbases(((JustKiddingPropNetMachineState)state).props);
+		BitSet inputs = new BitSet(lastinputs.length());
 		for (int i = 0; i < moves.size(); i ++) {
-			inputs[inputmap.get(new RoleMove(moves.get(i), i))] = true;
+			inputs.set(inputmap.get(new RoleMove(moves.get(i), i)));
 		}
 		markinputs(inputs);
-		boolean[] next = new boolean[basearr.length];
+		BitSet next = new BitSet(lastinputs.length());
 		for (int i = 0; i < basearr.length; i ++) {
-			next[i] = (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1);
+			next.set(i, (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1));
 		}
-		return new PropNetMachineState(next);
+		return new JustKiddingPropNetMachineState(next);
 	}
 
-	private void markbases(boolean[] bases) {
-		for (int i = 0; i < bases.length; i ++) {
-			if (bases[i] != (((comps[basearr[i]] >> 31) & 1) == 1)) {
-				comps[basearr[i]] = bases[i] ? 0xF0000000 : 0x0F000000;
-				for (int j = 0; j < structure[basearr[i] / 2].length; j ++) {
-					propagate(structure[basearr[i] / 2][j], bases[i] ? 1 : -1);
-				}
+	private void markbases(BitSet bases) {
+		lastbases.xor(bases);
+		for (int i = lastbases.nextSetBit(0); i >= 0; i = lastbases.nextSetBit(i+1)) {
+			comps[basearr[i]] = bases.get(i) ? 0xF0000000 : 0x0F000000;
+			for (int j = 0; j < structure[basearr[i] / 2].length; j ++) {
+				propagate(structure[basearr[i] / 2][j], bases.get(i) ? 1 : -1);
 			}
 		}
+		lastbases = (BitSet) bases.clone();
 	}
 
-	private void markinputs(boolean[] inputs) {
-		for (int i = 0; i < inputs.length; i ++) {
-			if (inputs[i] != (((comps[inputarr[i]] >> 31) & 1) == 1)) {
-				comps[inputarr[i]] = inputs[i] ? 0xF0000000 : 0x0F000000;
-				for (int j = 0; j < structure[inputarr[i] / 2].length; j ++) {
-					propagate(structure[inputarr[i] / 2][j], inputs[i] ? 1 : -1);
-				}
+	private void markinputs(BitSet inputs) {
+		lastinputs.xor(inputs);
+		for (int i = lastinputs.nextSetBit(0); i >= 0; i = lastinputs.nextSetBit(i+1)) {
+			comps[inputarr[i]] = inputs.get(i) ? 0xF0000000 : 0x0F000000;
+			for (int j = 0; j < structure[inputarr[i] / 2].length; j ++) {
+				propagate(structure[inputarr[i] / 2][j], inputs.get(i) ? 1 : -1);
 			}
 		}
+		lastinputs = (BitSet) inputs.clone();
 	}
 
 	private void propagate(int index, int newValue) {
@@ -418,5 +417,18 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 				startPropagate(structure[index / 2][i], ((comps[index] >> 31) & 1), components, visited);
 			}
 		}
+	}
+}
+
+class JustKiddingPropNetMachineState extends MachineState {
+	final BitSet props;
+	public JustKiddingPropNetMachineState(BitSet props) {
+		this.props = props;
+	}
+	public JustKiddingPropNetMachineState clone() {
+		return new JustKiddingPropNetMachineState(props);
+	}
+	public boolean equals(Object m) {
+		return props.equals(((JustKiddingPropNetMachineState)m).props);
 	}
 }

@@ -46,18 +46,18 @@ public class TestPlayer extends StateMachineGamer {
 //			System.out.println(c);
 		MachineState propstate = prop.getInitialState();
 		int countB = 0;
-		for (int i = 0; i < ((PropNetMachineState) propstate).props.length; i ++){
-			countB += ((PropNetMachineState) propstate).props[i] ? 1 : -1;
-			countB += ((PropNetMachineState) state).props[i] ? -1 : 1;
+		for (int i = 0; i < ((JustKiddingPropNetMachineState) propstate).props.length(); i ++){
+			countB += ((JustKiddingPropNetMachineState) propstate).props.get(i) ? 1 : 0;
+			countB += ((PropNetMachineState) state).props[i] ? -1 : 0;
 		}
 		if (countB != 0) {
 			System.out.println("Prop1 Initial error.");
-			System.out.println("Prop: " + Arrays.toString(((PropNetMachineState)propstate).props));
+			System.out.println("Prop: " + ((JustKiddingPropNetMachineState)propstate).props);
 			System.out.println("Prover: " + Arrays.toString(((PropNetMachineState)state).props));
 		}
 		while (!prover.isTerminal(state)) {
 			total ++;
-			if (total > 7) break;
+//			if (total > 7) break;
 			List<Move> moves = prover.getRandomJointMove(state);
 			List<Move> legals = prover.getLegalMoves(state, getRole());
 			List<Move> props = prop.getLegalMoves(propstate, getRole());
@@ -77,12 +77,12 @@ public class TestPlayer extends StateMachineGamer {
 			state = prover.getNextState(state, moves);
 			propstate = prop.getNextState(propstate, moves);
 			int count = 0;
-			for (int i = 0; i < ((PropNetMachineState) propstate).props.length; i ++){
-				count += ((PropNetMachineState) propstate).props[i] ? 1 : -1;
-				count += ((PropNetMachineState) state).props[i] ? -1 : 1;
+			for (int i = 0; i < ((JustKiddingPropNetMachineState) propstate).props.length(); i ++){
+				count += ((JustKiddingPropNetMachineState) propstate).props.get(i) ? 1 : 0;
+				count += ((PropNetMachineState) state).props[i] ? -1 : 0;
 			}
 			if (count != 0) {
-				System.out.println("Prop: " + Arrays.toString(((PropNetMachineState)propstate).props));
+				System.out.println("Prop: " + ((JustKiddingPropNetMachineState)propstate).props);
 				System.out.println("Prover: " + Arrays.toString(((PropNetMachineState)state).props));
 			}
 			System.out.println();
