@@ -148,9 +148,7 @@ public class MCTS extends Method {
 
 	private boolean sameState(MachineState state1, MachineState state2) {
 		if (propNetInitialized) {
-			boolean[] props1 = ((PropNetMachineState) state1).props;
-			boolean[] props2 = ((PropNetMachineState) state2).props;
-			return Arrays.equals(props1, props2);
+			return ((JustKiddingPropNetMachineState) state1).equals(((JustKiddingPropNetMachineState) state2));
 		}
 		return state1.equals(state2);
 	}

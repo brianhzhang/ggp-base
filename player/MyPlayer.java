@@ -3,6 +3,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 
 import org.ggp.base.apps.player.config.ConfigPanel;
@@ -82,6 +83,8 @@ public class MyPlayer extends StateMachineGamer {
 		newp.goals = p.goals;
 		newp.p = p.p;
 		newp.props = p.props;
+		newp.lastbases = new BitSet(p.basearr.length);
+		newp.lastinputs = new BitSet(p.inputarr.length);
 		return newp;
 	}
 
