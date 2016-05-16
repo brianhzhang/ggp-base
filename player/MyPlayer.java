@@ -3,7 +3,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.BitSet;
 import java.util.List;
 
 import org.ggp.base.apps.player.config.ConfigPanel;
@@ -36,7 +35,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int MCTS = 6;
 
 	public static final int N_OPTIONS = 10;
-	public static final int TIMEOUT_BUFFER = 3000; // time for network
+	public static final int TIMEOUT_BUFFER = 2500; // time for network
 	// communication in ms
 	public static final int N_THREADS = 4;
 
@@ -83,8 +82,6 @@ public class MyPlayer extends StateMachineGamer {
 		newp.goals = p.goals;
 		newp.p = p.p;
 		newp.props = p.props;
-		newp.lastbases = new BitSet(p.basearr.length);
-		newp.lastinputs = new BitSet(p.inputarr.length);
 		return newp;
 	}
 

@@ -1,6 +1,5 @@
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.BitSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -42,8 +41,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	Move[] legals;
 	int[][] legalarr;
 	int[][] goals;
-	BitSet lastbases;
-	BitSet lastinputs;
 
 	PropNet p;
 	ArrayList<Proposition> props;
@@ -52,14 +49,14 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		private static final long serialVersionUID = 1L;
 		Move m;
 		int role;
+
 		RoleMove(Move m, int role) {
 			this.m = m;
 			this.role = role;
 		}
 
 		@Override
-		public boolean equals(Object o)
-		{
+		public boolean equals(Object o) {
 			if ((o != null) && (o instanceof RoleMove)) {
 				RoleMove move = (RoleMove) o;
 				return move.m.equals(m) && move.role == role;
@@ -69,8 +66,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 
 		@Override
-		public int hashCode()
-		{
+		public int hashCode() {
 			return m.hashCode() + role;
 		}
 	}
@@ -84,8 +80,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			e.printStackTrace();
 		}
 
-		List<Component> components = getOrdering(new HashSet<Component>(p.getComponents()));
-		//		List<Component> components = new ArrayList<Component>(p.getComponents());
+		// List<Component> components = getOrdering(new HashSet<Component>(p.getComponents()));
+		List<Component> components = new ArrayList<Component>(p.getComponents());
 		optimizePropNet(components, p);
 		for (Component c : components) {
 			c.crystalize();
@@ -116,54 +112,60 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		int input = 0;
 		int legal = 0;
 		int goal = 0;
-		//Fill the components array
+		// Fill the components array
 		for (int i = 0; i < components.size() * 2; i += 2) {
-			if (p.getBasePropositions().values().contains(components.get(i/2))) {
+			if (p.getBasePropositions().values().contains(components.get(i / 2))) {
 				comps[i] = 0;
-				comps[i + 1] = components.indexOf(components.get(i/2).getSingleInput()) * 2;
+				comps[i + 1] = components.indexOf(components.get(i / 2).getSingleInput()) * 2;
 				basearr[base] = i;
-				props.add((Proposition) components.get(i/2));
-				base ++;
-			} else if (p.getInputPropositions().values().contains(components.get(i/2))) {
+				props.add((Proposition) components.get(i / 2));
+				base++;
+			} else if (p.getInputPropositions().values().contains(components.get(i / 2))) {
 				comps[i] = 0;
 				comps[i + 1] = 0;
 				inputarr[input] = i;
 				for (Role r : roles) {
-					if (p.getLegalPropositions().get(r).contains(p.getLegalInputMap().get(components.get(i/2)))) {
-						inputmap.put(new RoleMove(new Move(((Proposition) components.get(i/2)).getName().get(1)),
+					if (p.getLegalPropositions().get(r)
+							.contains(p.getLegalInputMap().get(components.get(i / 2)))) {
+						inputmap.put(new RoleMove(
+								new Move(((Proposition) components.get(i / 2)).getName().get(1)),
 								roles.indexOf(r)), input);
 					}
 				}
-				input ++;
-			} else if (components.get(i/2) instanceof Proposition) {
+				input++;
+			} else if (components.get(i / 2) instanceof Proposition) {
 				boolean isView = true;
 				for (Role r : roles) {
-					if (p.getGoalPropositions().get(r).contains(components.get(i/2))) {
+					if (p.getGoalPropositions().get(r).contains(components.get(i / 2))) {
 						comps[i] = 0;
-						comps[i + 1] = components.indexOf(components.get(i/2).getSingleInput()) * 2;
-						goals[goal][0] = components.indexOf(components.get(i/2).getSingleInput()) * 2;
+						comps[i + 1] = components.indexOf(components.get(i / 2).getSingleInput())
+								* 2;
+						goals[goal][0] = components.indexOf(components.get(i / 2).getSingleInput())
+								* 2;
 						goals[goal][1] = roles.indexOf(r);
-						goals[goal][2] = getGoalValue((Proposition) components.get(i/2));
-						goal ++;
+						goals[goal][2] = getGoalValue((Proposition) components.get(i / 2));
+						goal++;
 						isView = false;
 						break;
 					}
-					if (p.getLegalPropositions().get(r).contains(components.get(i/2))) {
+					if (p.getLegalPropositions().get(r).contains(components.get(i / 2))) {
 						comps[i] = 0;
-						comps[i + 1] = components.indexOf(components.get(i/2).getSingleInput()) * 2;
+						comps[i + 1] = components.indexOf(components.get(i / 2).getSingleInput())
+								* 2;
 						legalarr[legal][0] = i;
 						legalarr[legal][1] = roles.indexOf(r);
-						legals[legal] = new Move(((Proposition) components.get(i/2)).getName().get(1));
-						legal ++;
+						legals[legal] = new Move(
+								((Proposition) components.get(i / 2)).getName().get(1));
+						legal++;
 						isView = false;
 						break;
 					}
 				}
-				if (p.getTerminalProposition().equals(components.get(i/2))) {
+				if (p.getTerminalProposition().equals(components.get(i / 2))) {
 					comps[i] = 0x7FFFFFFF;
-					comps[i + 1] = components.indexOf(components.get(i/2).getSingleInput()) * 2;
+					comps[i + 1] = components.indexOf(components.get(i / 2).getSingleInput()) * 2;
 					term = i;
-				} else if (p.getInitProposition().equals(components.get(i/2))) {
+				} else if (p.getInitProposition().equals(components.get(i / 2))) {
 					comps[i] = 0;
 					comps[i + 1] = -1;
 					init = i;
@@ -171,30 +173,28 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 					comps[i] = 0x7FFFFFFF;
 					comps[i + 1] = -1;
 				}
-			} else { //Component
-				comps[i] = getComp(components.get(i/2));
+			} else { // Component
+				comps[i] = getComp(components.get(i / 2));
 				comps[i + 1] = -1;
 			}
 
-			//fill the structure array:
-			structure[i/2] = new int[components.get(i/2).getOutputs().size()];
-			for (int j = 0; j < structure[i/2].length; j ++) {
-				structure[i/2][j] = components.indexOf(components.get(i/2).getOutputarr()[j]) * 2;
+			// fill the structure array:
+			structure[i / 2] = new int[components.get(i / 2).getOutputs().size()];
+			for (int j = 0; j < structure[i / 2].length; j++) {
+				structure[i / 2][j] = components.indexOf(components.get(i / 2).getOutputarr()[j])
+						* 2;
 			}
 		}
-
-		lastbases = new BitSet(p.getBasePropositions().values().size());
-		lastinputs = new BitSet(p.getInputPropositions().values().size());
 
 		Set<Component> visited = new HashSet<Component>();
 
-		for (int i = 0; i < basearr.length; i ++) {
-			for (int j = 0; j < structure[basearr[i] / 2].length; j ++) {
+		for (int i = 0; i < basearr.length; i++) {
+			for (int j = 0; j < structure[basearr[i] / 2].length; j++) {
 				startPropagate(structure[basearr[i] / 2][j], 0, components, visited);
 			}
 		}
-		for (int i = 0; i < inputarr.length; i ++) {
-			for (int j = 0; j < structure[inputarr[i] / 2].length; j ++) {
+		for (int i = 0; i < inputarr.length; i++) {
+			for (int j = 0; j < structure[inputarr[i] / 2].length; j++) {
 				startPropagate(structure[inputarr[i] / 2][j], 0, components, visited);
 			}
 		}
@@ -210,31 +210,32 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	private void optimizePropNet(List<Component> comps, PropNet p) {
 		List<Component> toremove = new ArrayList<Component>();
 		for (Component c : comps) {
-			//			if (c instanceof Proposition && !p.getBasePropositions().values().contains(c) &&
-			//					!p.getInputPropositions().values().contains(c)) {
-			//				boolean thing = true;
-			//				for (Role r : p.getRoles()) {
-			//					if (p.getLegalPropositions().get(r).contains(c)) {
-			//						thing = false;
-			//					} else if (p.getGoalPropositions().get(r).contains(c)) {
-			//						thing = false;
-			//					}
-			//				}
-			//				if (thing && !c.equals(p.getTerminalProposition()) && !c.equals(p.getInitProposition())) {
-			//					for (Component before : c.getInputs()) {
-			//						before.getOutputs().addAll(c.getOutputs());
-			//						before.removeOutput(c);
-			//					}
-			//					toremove.add(c);
-			//					p.getPropositions().remove(c);
-			//				}
+			// if (c instanceof Proposition && !p.getBasePropositions().values().contains(c) &&
+			// !p.getInputPropositions().values().contains(c)) {
+			// boolean thing = true;
+			// for (Role r : p.getRoles()) {
+			// if (p.getLegalPropositions().get(r).contains(c)) {
+			// thing = false;
+			// } else if (p.getGoalPropositions().get(r).contains(c)) {
+			// thing = false;
+			// }
+			// }
+			// if (thing && !c.equals(p.getTerminalProposition()) &&
+			// !c.equals(p.getInitProposition())) {
+			// for (Component before : c.getInputs()) {
+			// before.getOutputs().addAll(c.getOutputs());
+			// before.removeOutput(c);
+			// }
+			// toremove.add(c);
+			// p.getPropositions().remove(c);
+			// }
 			if (c instanceof Not) {
 				if (c.getInputs().size() == 1 && c.getSingleInput().getOutputs().size() == 1) {
 					if (c.getSingleInput() instanceof And) {
-						((And)c.getSingleInput()).nand = true;
+						((And) c.getSingleInput()).nand = true;
 						toremove.add(c);
 					} else if (c.getSingleInput() instanceof Or) {
-						((Or)c.getSingleInput()).nor = true;
+						((Or) c.getSingleInput()).nor = true;
 						toremove.add(c);
 					}
 				}
@@ -252,7 +253,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		return order;
 	}
 
-	private void visit(Component c, List<Component> order, Set<Component> notmarked, Set<Component> temp) {
+	private void visit(Component c, List<Component> order, Set<Component> notmarked,
+			Set<Component> temp) {
 		if (temp.contains(c)) return;
 		if (notmarked.contains(c)) {
 			temp.add(c);
@@ -265,11 +267,20 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 	}
 
+	private int[][] copyArr(int[][] original) {
+		int[][] result = new int[original.length][2];
+		for (int i = 0; i < original.length; i++) {
+			result[i][0] = original[i][0];
+			result[i][1] = original[i][1];
+		}
+		return result;
+	}
+
 	private int getComp(Component c) {
 		if (c instanceof And) {
-			return (((And)c).nand? 0 : 0x80000000) - c.getInputs().size();
+			return (((And) c).nand ? 0 : 0x80000000) - c.getInputs().size();
 		} else if (c instanceof Or) {
-			return ((Or)c).nor? 0xFFFFFFFF : 0x7FFFFFFF;
+			return ((Or) c).nor ? 0xFFFFFFFF : 0x7FFFFFFF;
 		} else if (c instanceof Not) {
 			return 0xFFFFFFFF;
 		} else if (c instanceof Transition) {
@@ -301,8 +312,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	@Override
 	public int getGoal(MachineState state, Role role) throws GoalDefinitionException {
-		markbases(((JustKiddingPropNetMachineState)state).props);
-		for (int i = 0; i < goals.length; i ++) {
+		markbases(((PropNetMachineState) state).props);
+		for (int i = 0; i < goals.length; i++) {
 			if (((comps[goals[i][0]] >> 31) & 1) == 1 && roles.indexOf(role) == goals[i][1]) {
 				return goals[i][2];
 			}
@@ -312,7 +323,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	@Override
 	public boolean isTerminal(MachineState state) {
-		markbases(((JustKiddingPropNetMachineState)state).props);
+		markbases(((PropNetMachineState) state).props);
 		return ((comps[comps[term + 1]] >> 31) & 1) == 1;
 	}
 
@@ -324,29 +335,28 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	@Override
 	public MachineState getInitialState() {
 		comps = initcomps.clone();
-		lastbases = new BitSet(lastbases.length());
-		lastinputs = new BitSet(lastinputs.length());
-		for (int i = 0; i < structure[init/2].length; i ++) {
+		for (int i = 0; i < structure[init / 2].length; i++) {
 			comps[init] = 0xF0000000;
-			propagate(structure[init/2][i], 1);
+			propagate(structure[init / 2][i], 1);
 		}
-		BitSet next = new BitSet(basearr.length);
-		for (int i = 0; i < basearr.length; i ++) {
-			next.set(i, (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1));
+		boolean[] next = new boolean[basearr.length];
+		for (int i = 0; i < basearr.length; i++) {
+			next[i] = (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1);
 		}
-		for (int i = 0; i < structure[init/2].length; i ++) {
+		for (int i = 0; i < structure[init / 2].length; i++) {
 			comps[init] = 0x0;
-			propagate(structure[init/2][i], -1);
+			propagate(structure[init / 2][i], -1);
 		}
-		return new JustKiddingPropNetMachineState(next);
+		return new PropNetMachineState(next);
 	}
 
 	@Override
 	public List<Move> getLegalMoves(MachineState state, Role role) throws MoveDefinitionException {
-		markbases(((JustKiddingPropNetMachineState)state).props);
+		markbases(((PropNetMachineState) state).props);
 		ArrayList<Move> moves = new ArrayList<Move>();
-		for (int i = 0; i < legals.length; i ++) {
-			if (((comps[comps[legalarr[i][0] + 1]] >> 31) & 1) == 1 && legalarr[i][1] == roles.indexOf(role)) {
+		for (int i = 0; i < legals.length; i++) {
+			if (((comps[comps[legalarr[i][0] + 1]] >> 31) & 1) == 1
+					&& legalarr[i][1] == roles.indexOf(role)) {
 				moves.add(legals[i]);
 			}
 		}
@@ -354,40 +364,42 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	}
 
 	@Override
-	public MachineState getNextState(MachineState state, List<Move> moves) throws TransitionDefinitionException {
-		markbases(((JustKiddingPropNetMachineState)state).props);
-		BitSet inputs = new BitSet(lastinputs.length());
-		for (int i = 0; i < moves.size(); i ++) {
-			inputs.set(inputmap.get(new RoleMove(moves.get(i), i)));
+	public MachineState getNextState(MachineState state, List<Move> moves)
+			throws TransitionDefinitionException {
+		markbases(((PropNetMachineState) state).props);
+		boolean[] inputs = new boolean[inputarr.length];
+		for (int i = 0; i < moves.size(); i++) {
+			if (moves.get(i) == null) continue;
+			inputs[inputmap.get(new RoleMove(moves.get(i), i))] = true;
 		}
 		markinputs(inputs);
-		BitSet next = new BitSet(lastinputs.length());
-		for (int i = 0; i < basearr.length; i ++) {
-			next.set(i, (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1));
+		boolean[] next = new boolean[basearr.length];
+		for (int i = 0; i < basearr.length; i++) {
+			next[i] = (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1);
 		}
-		return new JustKiddingPropNetMachineState(next);
+		return new PropNetMachineState(next);
 	}
 
-	private void markbases(BitSet bases) {
-		lastbases.xor(bases);
-		for (int i = lastbases.nextSetBit(0); i >= 0; i = lastbases.nextSetBit(i+1)) {
-			comps[basearr[i]] = bases.get(i) ? 0xF0000000 : 0x0F000000;
-			for (int j = 0; j < structure[basearr[i] / 2].length; j ++) {
-				propagate(structure[basearr[i] / 2][j], bases.get(i) ? 1 : -1);
+	private void markbases(boolean[] bases) {
+		for (int i = 0; i < bases.length; i++) {
+			if (bases[i] != (((comps[basearr[i]] >> 31) & 1) == 1)) {
+				comps[basearr[i]] = bases[i] ? 0xF0000000 : 0x0F000000;
+				for (int j = 0; j < structure[basearr[i] / 2].length; j++) {
+					propagate(structure[basearr[i] / 2][j], bases[i] ? 1 : -1);
+				}
 			}
 		}
-		lastbases = (BitSet) bases.clone();
 	}
 
-	private void markinputs(BitSet inputs) {
-		lastinputs.xor(inputs);
-		for (int i = lastinputs.nextSetBit(0); i >= 0; i = lastinputs.nextSetBit(i+1)) {
-			comps[inputarr[i]] = inputs.get(i) ? 0xF0000000 : 0x0F000000;
-			for (int j = 0; j < structure[inputarr[i] / 2].length; j ++) {
-				propagate(structure[inputarr[i] / 2][j], inputs.get(i) ? 1 : -1);
+	private void markinputs(boolean[] inputs) {
+		for (int i = 0; i < inputs.length; i++) {
+			if (inputs[i] != (((comps[inputarr[i]] >> 31) & 1) == 1)) {
+				comps[inputarr[i]] = inputs[i] ? 0xF0000000 : 0x0F000000;
+				for (int j = 0; j < structure[inputarr[i] / 2].length; j++) {
+					propagate(structure[inputarr[i] / 2][j], inputs[i] ? 1 : -1);
+				}
 			}
 		}
-		lastinputs = (BitSet) inputs.clone();
 	}
 
 	private void propagate(int index, int newValue) {
@@ -396,39 +408,28 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			comps[index] += newValue;
 			if (old != ((comps[index] >> 31) & 1)) {
 				old = ((comps[index] >> 31) & 1) - old;
-				for (int i = 0; i < structure[index / 2].length; i ++) {
+				for (int i = 0; i < structure[index / 2].length; i++) {
 					propagate(structure[index / 2][i], old);
 				}
 			}
 		}
 	}
 
-	//real index of the thing * 2 is index.
-	private void startPropagate(int index, int newValue, List<Component> components, Set<Component> visited) {
+	// real index of the thing * 2 is index.
+	private void startPropagate(int index, int newValue, List<Component> components,
+			Set<Component> visited) {
 		if (comps[index + 1] != -1) {
 			return;
 		}
 		int old = ((comps[index] >> 31) & 1);
 		comps[index] += newValue;
-		if (old != ((comps[index] >> 31) & 1) || (newValue == 0 && (old == 0 ||
-				!visited.contains(components.get(index/2))))) {
-			visited.add(components.get(index/2));
-			for (int i = 0; i < structure[index / 2].length; i ++) {
-				startPropagate(structure[index / 2][i], ((comps[index] >> 31) & 1), components, visited);
+		if (old != ((comps[index] >> 31) & 1)
+				|| (newValue == 0 && (old == 0 || !visited.contains(components.get(index / 2))))) {
+			visited.add(components.get(index / 2));
+			for (int i = 0; i < structure[index / 2].length; i++) {
+				startPropagate(structure[index / 2][i], ((comps[index] >> 31) & 1), components,
+						visited);
 			}
 		}
-	}
-}
-
-class JustKiddingPropNetMachineState extends MachineState {
-	final BitSet props;
-	public JustKiddingPropNetMachineState(BitSet props) {
-		this.props = props;
-	}
-	public JustKiddingPropNetMachineState clone() {
-		return new JustKiddingPropNetMachineState(props);
-	}
-	public boolean equals(Object m) {
-		return props.equals(((JustKiddingPropNetMachineState)m).props);
 	}
 }

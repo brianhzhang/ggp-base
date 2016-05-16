@@ -1,7 +1,6 @@
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -29,21 +28,24 @@ import org.ggp.base.util.statemachine.StateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
+import org.ggp.base.util.statemachine.implementation.prover.query.ProverQueryBuilder;
 
 public class Experiment extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	private static final double CFACTOR = 1.0;
-	private List<MTreeNode> cache = new ArrayList<>();
-	private List<MTreeNode> fastCache = new ArrayList<>();
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
 	private MyPlayer gamer;
-	private GdlConstant clockConstant;
-	private boolean[] clockProps;
+
 	private StateMachineCreatorThread smthread;
+
+	// communication between metagame threads
 	private Stack<Move> solution;
 	private Map<Role, Set<Move>> useless;
+	private Set<Component> reachableBases;
+	private Map<Proposition, Proposition> legalToInputMap;
+	private int nUsefulRoles;
 
 	private boolean checkStateMachineStatus() {
 		if (!propNetInitialized && !smthread.isAlive()) {
@@ -61,14 +63,13 @@ public class Experiment extends Method {
 			machines[i] = gamer.getStateMachine();
 			machines[i].initialize(description);
 		}
-		smthread = new StateMachineCreatorThread(description);
+		smthread = new StateMachineCreatorThread(gamer.getRole(), description);
 		smthread.start();
 	}
 
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
 		useless = new HashMap<>();
-		clockConstant = null;
 		solution = null;
 
 		Set<GdlConstant> all = new HashSet<>();
@@ -106,21 +107,22 @@ public class Experiment extends Method {
 			}
 		}
 
-		all.removeAll(impossibles);
-		if (all.size() == 0) Log.println("no clock");
-		else if (all.size() > 1) Log.println("too many possible clocks: " + all);
-		else Log.println("the clock is " + (clockConstant = all.iterator().next()));
-
 		if (!checkStateMachineStatus()) {
-			Log.println("Still building propnet...");
+			Log.println("still building propnet...");
 			return;
 		}
 
+		if (nUsefulRoles != 1) return;
+		Log.println("single player game. starting solver");
 		machine = gamer.getStateMachine();
 		List<Proposition> bases = smthread.m.props;
-		clockProps = new boolean[bases.size()];
-		if (machine.getRoles().size() > 1) return;
-		if (clockConstant != null) {
+
+		boolean[] ignoreProps = new boolean[bases.size()];
+		all.removeAll(impossibles);
+		if (all.size() == 0) Log.println("no clock");
+		else if (all.size() > 1) Log.println("too many possible clocks: " + all);
+		else {
+			GdlConstant clockConstant = all.iterator().next();
 			Log.println("ignoring clock proposition " + clockConstant);
 			Map<GdlSentence, Integer> basemap = new HashMap<>();
 			for (int i = 0; i < bases.size(); i++) {
@@ -129,12 +131,22 @@ public class Experiment extends Method {
 			for (GdlSentence g : basemap.keySet()) {
 				if (g.get(0).toSentence().getName().equals(clockConstant)) {
 					int idx = basemap.get(g);
-					clockProps[idx] = true;
+					ignoreProps[idx] = true;
 				}
 			}
 		}
-		Log.println("single player game");
-		AStar alg = new AStar();
+
+		int nignored = 0;
+		for (int i = 0; i < bases.size(); i++) {
+			if (!smthread.reachable.contains(bases.get(i))) {
+				ignoreProps[i] = true;
+				nignored++;
+			}
+		}
+
+		Log.println("ignoring " + nignored + " additional irrelevant props");
+
+		AStar alg = new AStar(ignoreProps);
 		long start = System.currentTimeMillis();
 		try {
 			solution = alg.run(timeout);
@@ -143,10 +155,12 @@ public class Experiment extends Method {
 		}
 		if (solution != null) {
 			Log.println("solution found in " + (System.currentTimeMillis() - start) + " ms");
+		} else {
+			Log.println("solver failed to find solution");
 		}
 	}
 
-	private boolean sameState(MachineState state1, MachineState state2) {
+	public boolean sameState(MachineState state1, MachineState state2) {
 		if (propNetInitialized) {
 			boolean[] props1 = ((PropNetMachineState) state1).props;
 			boolean[] props2 = ((PropNetMachineState) state2).props;
@@ -162,17 +176,35 @@ public class Experiment extends Method {
 		if (solution != null && !solution.isEmpty()) {
 			Move move = solution.pop();
 			Log.println("solution move: " + move);
-			if (machine.getLegalMoves(rootstate, role).contains(move)) return move;
+			if (moves.contains(move)) return move;
+			else { // solver went awry
+				Log.println("solver error: move " + move + " is illegal");
+				solution = null;
+			}
 		}
-		Log.println("--------------------");
-		Log.println("threads running: " + Thread.activeCount());
 
+		Log.println("--------------------");
+		// we don't cache anyway. might as well...
+		if (moves.size() == 1) {
+			Log.println("one legal move: " + moves.get(0));
+			return moves.get(0);
+		}
+		Log.println("threads running: " + Thread.activeCount());
 		if (checkStateMachineStatus()) {
 			// reinit state machine
 			machine = gamer.getStateMachine();
 			rootstate = gamer.getCurrentState();
-			cache.clear();
-			fastCache.clear();
+		}
+		reachableBases = null;
+		if (propNetInitialized) {
+			reachableBases = new HashSet<>();
+			Map<GdlSentence, Proposition> propMap = smthread.m.p.getInputPropositions();
+			for (Move move : moves) {
+				findComponentsForwards(propMap.get(ProverQueryBuilder.toDoes(role, move)),
+						reachableBases);
+			}
+			reachableBases.retainAll(smthread.m.props);
+			Log.printf("%d of %d props relevant\n", reachableBases.size(), smthread.m.props.size());
 		}
 
 		long timestart = System.currentTimeMillis();
@@ -182,20 +214,10 @@ public class Experiment extends Method {
 		Log.println("depth charge threads: " + nthread);
 
 		// set up tree
-		MTreeNode root = null;
-		for (MTreeNode node : cache) {
-			if (sameState(node.state, rootstate)) {
-				Log.printf("cache retrieval: nodes=%d depth=%d\n", node.visits, node.depth);
-				root = node;
-				break;
-			}
-		}
-		cache.clear();
-		if (root == null) {
-			root = new MTreeNode(rootstate, null, null);
-			expand(machine, role, root);
-		}
-		root.parent = null;
+
+		MTreeNode root = new MTreeNode(rootstate);
+		expand(machine, role, root);
+
 		DepthChargeThread[] threads = new DepthChargeThread[nthread];
 		BlockingQueue<MTreeNode> input = new ArrayBlockingQueue<>(nthread);
 		BlockingQueue<DCOut> output = new ArrayBlockingQueue<>(nthread);
@@ -227,6 +249,8 @@ public class Experiment extends Method {
 			e.printStackTrace();
 		}
 		MTreeNode bestChild = null;
+		sanitizeMoves(role, root, moves);
+		sanitizeMoves(role, ft.root, moves);
 		for (MTreeNode child : root.children) {
 			MTreeNode fastChild = ft.searchFor(child);
 			if (fastChild != null) {
@@ -238,12 +262,30 @@ public class Experiment extends Method {
 				bestChild = child;
 			Log.println("move=" + info(child, child));
 		}
-		for (MTreeNode child : bestChild.children) {
-			cache.add(child);
-		}
 		Log.println("played=" + info(bestChild, root));
 		Log.println("tot time = " + (System.currentTimeMillis() - timestart));
+		Log.print("expected line: ");
+		while (!root.children.isEmpty()) {
+			MTreeNode next = null;
+			for (MTreeNode child : root.children) {
+				if (next == null || child.depth > next.depth) next = child;
+			}
+			root = next;
+			if (root.jmove != null) Log.print(" " + root.jmove);
+		}
+		Log.println("");
 		return bestChild.move;
+	}
+
+	private void sanitizeMoves(Role role, MTreeNode root, Collection<Move> legal) {
+		for (MTreeNode child : root.children) {
+			if (child.move == null) {
+				Set<Move> uselessMoves = useless.get(role);
+				uselessMoves.retainAll(legal);
+				if (uselessMoves.size() > 0) child.move = uselessMoves.iterator().next();
+				else continue;
+			}
+		}
 	}
 
 	private double score(MTreeNode node, int sgn) {
@@ -288,36 +330,47 @@ public class Experiment extends Method {
 		}
 	}
 
+	private boolean hasNoEffect(Role role, Move move) {
+		if (!propNetInitialized) return false;
+		return !findAnyComponentForwards(
+				smthread.m.p.getInputPropositions().get(ProverQueryBuilder.toDoes(role, move)),
+				new HashSet<>(), reachableBases);
+	}
+
 	private List<Move> getUsefulMoves(StateMachine machine, Role role, MachineState state) {
-		Set<Move> uselessMoves = useless.get(role);
-		Move uselessMove = null;
 		List<Move> actions = null;
 		try {
 			actions = machine.findLegals(role, state);
 		} catch (MoveDefinitionException e) {
 			e.printStackTrace();
 		}
+		if (!propNetInitialized) return actions;
+		Set<Move> uselessMoves = useless.get(role);
+
 		List<Move> output = new ArrayList<>();
+		boolean hasUseless = false;
 		for (Move move : actions) {
-			if (uselessMoves.contains(move)) {
-				uselessMove = move;
+			if (uselessMoves.contains(move) || hasNoEffect(role, move)) {
+				hasUseless = true;
 				continue;
 			}
 			output.add(move);
 		}
-		if (uselessMove != null) output.add(uselessMove);
+		if (hasUseless) {
+			output.add(null);
+		}
 		return output;
 	}
 
 	// copied from StateMachine.java
-	protected void crossProductLegalMoves(List<List<Move>> legals, List<List<Move>> crossProduct,
+	protected void crossProductMoves(List<List<Move>> legals, List<List<Move>> crossProduct,
 			LinkedList<Move> partial) {
 		if (partial.size() == legals.size()) {
 			crossProduct.add(new ArrayList<Move>(partial));
 		} else {
 			for (Move move : legals.get(partial.size())) {
 				partial.addLast(move);
-				crossProductLegalMoves(legals, crossProduct, partial);
+				crossProductMoves(legals, crossProduct, partial);
 				partial.removeLast();
 			}
 		}
@@ -337,7 +390,7 @@ public class Experiment extends Method {
 		}
 
 		List<List<Move>> crossProduct = new ArrayList<List<Move>>();
-		crossProductLegalMoves(legals, crossProduct, new LinkedList<Move>());
+		crossProductMoves(legals, crossProduct, new LinkedList<Move>());
 
 		return crossProduct;
 	}
@@ -352,11 +405,10 @@ public class Experiment extends Method {
 		} else {
 			for (List<Move> jmove : getUsefulJointMoves(machine, node.state, role, node.move)) {
 				MachineState newstate = machine.findNext(jmove, node.state);
-				MTreeNode newnode = new MTreeNode(newstate, null, node);
+				MTreeNode newnode = new MTreeNode(newstate, jmove, node);
 				node.children.add(newnode);
 			}
 		}
-		Collections.shuffle(node.children);
 	}
 
 	private void backpropogate(MTreeNode node, double eval, int depth, boolean proven) {
@@ -443,12 +495,27 @@ public class Experiment extends Method {
 
 		public MachineState state;
 		public Move move; // null if max-node; non-null if min-node
+		public List<Move> jmove;
 		public int depth = 0;
+		public boolean isMaxNode;
+
+		public MTreeNode(MachineState state) {
+			this.state = state;
+			isMaxNode = true;
+		}
+
+		public MTreeNode(MachineState state, List<Move> jmove, MTreeNode parent) {
+			this.parent = parent;
+			this.jmove = jmove;
+			this.state = state;
+			isMaxNode = true;
+		}
 
 		public MTreeNode(MachineState state, Move move, MTreeNode parent) {
 			this.parent = parent;
 			this.move = move;
 			this.state = state;
+			isMaxNode = false;
 		}
 
 		public boolean setBounds() {
@@ -482,7 +549,7 @@ public class Experiment extends Method {
 		}
 
 		public boolean isMaxNode() {
-			return move == null;
+			return isMaxNode;
 		}
 
 		public double utility() {
@@ -508,25 +575,49 @@ public class Experiment extends Method {
 		}
 	}
 
-	public void findComponentsBackwards(Collection<Component> current, Set<Component> visited) {
+	private void findComponentsBackwards(Collection<Component> current, Set<Component> visited) {
 		for (Component c : current) {
-			findBasesBackwards(c, visited);
+			findComponentsBackwards(c, visited);
 		}
 	}
 
-	public void findBasesBackwards(Component current, Set<Component> visited) {
+	private void findComponentsBackwards(Component current, Set<Component> visited) {
 		if (visited.contains(current)) return;
 		visited.add(current);
 		for (Component parent : current.getInputs()) {
-			findBasesBackwards(parent, visited);
+			findComponentsBackwards(parent, visited);
+		}
+	}
+
+	private boolean findAnyComponentForwards(Component current, Set<Component> visited,
+			Set<Component> target) {
+		if (target.contains(current)) return true;
+		if (visited.contains(current)) return false;
+		visited.add(current);
+		// if (legalToInputMap.containsKey(current)) current = legalToInputMap.get(current);
+		for (Component next : current.getOutputs()) {
+			if (findAnyComponentForwards(next, visited, target)) return true;
+		}
+		return false;
+	}
+
+	private void findComponentsForwards(Component current, Set<Component> visited) {
+		if (visited.contains(current)) return;
+		visited.add(current);
+		if (legalToInputMap.containsKey(current)) current = legalToInputMap.get(current);
+		for (Component next : current.getOutputs()) {
+			findComponentsForwards(next, visited);
 		}
 	}
 
 	private class StateMachineCreatorThread extends Thread {
 		private List<Gdl> description;
+		private Role role;
 		public JustKiddingPropNetStateMachine m;
+		public Set<Component> reachable;
 
-		public StateMachineCreatorThread(List<Gdl> description) {
+		public StateMachineCreatorThread(Role role, List<Gdl> description) {
+			this.role = role;
 			this.description = description;
 		}
 
@@ -535,14 +626,16 @@ public class Experiment extends Method {
 			m = new JustKiddingPropNetStateMachine();
 			m.initialize(description);
 			Log.println("pruning irrelevant inputs");
-			Set<Component> reachable = new HashSet<>();
-			findBasesBackwards(m.p.getTerminalProposition(), reachable);
+			reachable = new HashSet<>();
+			findComponentsBackwards(m.p.getTerminalProposition(), reachable);
 			Set<Component> goals = new HashSet<>();
-			Map<Role, Set<Proposition>> gprops = m.p.getGoalPropositions();
-			for (Role r : gprops.keySet()) {
-				goals.addAll(gprops.get(r));
-			}
+			goals.addAll(m.p.getGoalPropositions().get(role));
 			Map<GdlSentence, Proposition> inputs = m.p.getInputPropositions();
+			Collection<Proposition> values = inputs.values();
+			legalToInputMap = new HashMap<>(smthread.m.p.getLegalInputMap());
+			for (Proposition value : values) {
+				legalToInputMap.remove(value);
+			}
 			Set<Component> badInputSet = new HashSet<>(inputs.values());
 			findComponentsBackwards(goals, reachable);
 			for (Component comp : reachable) {
@@ -557,6 +650,15 @@ public class Experiment extends Method {
 					count++;
 				}
 			}
+			Map<Role, Set<Proposition>> nLegals = m.p.getLegalPropositions();
+			nUsefulRoles = nLegals.size();
+			for (Role role : useless.keySet()) {
+				if (useless.get(role).size() == nLegals.get(role).size()) {
+					Log.println("role " + role + " is irrelevant");
+					nUsefulRoles--;
+				}
+			}
+			if (nUsefulRoles == 0) Log.println("this is a 0-player game...");
 			Log.println("found " + count + " irrelevant inputs");
 			Log.println("propnet ready");
 		}
@@ -564,11 +666,17 @@ public class Experiment extends Method {
 
 	// a namespace for astar-related methods...or really just a DFS
 	private class AStar {
+		boolean[] ignoreProps;
+
+		public AStar(boolean[] ignoreProps) {
+			this.ignoreProps = ignoreProps;
+		}
+
 		private int compare(MachineState state1, MachineState state2) {
 			boolean[] props1 = ((PropNetMachineState) state1).props;
 			boolean[] props2 = ((PropNetMachineState) state2).props;
 			for (int i = 0; i < props1.length; i++) {
-				if (props1[i] == props2[i] || clockProps[i]) continue;
+				if (props1[i] == props2[i] || ignoreProps[i]) continue;
 				return props1[i] ? 1 : -1;
 			}
 			return 0;
@@ -623,18 +731,25 @@ public class Experiment extends Method {
 			PriorityQueue<PQEntry> pq = new PriorityQueue<>();
 			pq.add(new PQEntry(initial, 0));
 			info.put(initial, new StateInfo(null, null, 0));
+			int best_reward = 0;
+			Stack<Move> best = null;
 
 			while (!pq.isEmpty()) {
 				if (System.currentTimeMillis() > timeout) return null;
 				MachineState u = pq.poll().state;
 				if (closed.contains(u)) continue;
 				closed.add(u);
-				if (machine.isTerminal(u) && machine.findReward(role, u) == MyPlayer.MAX_SCORE) {
-					return reconstruct(info, u);
+				if (machine.isTerminal(u)) {
+					int reward = machine.findReward(role, u);
+					if (reward > best_reward) {
+						best = reconstruct(info, u);
+						best_reward = reward;
+						if (best_reward == MyPlayer.MAX_SCORE) return best;
+					}
 				}
 				int newDist = info.get(u).distance + 1;
 				for (Move move : machine.getLegalMoves(u, role)) {
-					MachineState v = machine.getNextState(u, Arrays.asList(new Move[] { move }));
+					MachineState v = machine.getRandomNextState(u, role, move);
 					StateInfo vinfo = info.get(v);
 					if (vinfo == null) {
 						info.put(v, new StateInfo(u, move, newDist));
@@ -647,7 +762,8 @@ public class Experiment extends Method {
 					}
 				}
 			}
-			return null; // failure
+			Log.println("best solution has value " + best_reward);
+			return best;
 		}
 	}
 
@@ -677,20 +793,8 @@ public class Experiment extends Method {
 
 		public void run_() throws MoveDefinitionException, TransitionDefinitionException,
 				GoalDefinitionException {
-			root = null;
-			for (MTreeNode node : fastCache) {
-				if (sameState(node.state, rootstate)) {
-					Log.printf("fast cache: nodes=%d depth=%d\n", node.visits, node.depth);
-					root = node;
-					break;
-				}
-			}
-			fastCache.clear();
-			if (root == null) {
-				root = new MTreeNode(rootstate, null, null);
-				expand(machine, role, root);
-			}
-			root.parent = null;
+			root = new MTreeNode(rootstate);
+			expand(machine, role, root);
 			while (System.currentTimeMillis() < timeout && !kill) {
 				if (root.isProven()) break;
 				MTreeNode node = select(root);
@@ -699,11 +803,6 @@ public class Experiment extends Method {
 					backpropogate(node, machine.findReward(role, node.state), 0, true);
 				} else {
 					backpropogate(node, 50, 0, false);
-				}
-			}
-			for (MTreeNode child : root.children) {
-				for (MTreeNode next : child.children) {
-					fastCache.add(next);
 				}
 			}
 			Log.printf("fastresult: bound=(%.0f, %.0f) visits=%d depth=%d\n", root.lower,

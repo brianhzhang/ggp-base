@@ -1,6 +1,5 @@
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.BitSet;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -149,7 +148,9 @@ public class MCTS extends Method {
 
 	private boolean sameState(MachineState state1, MachineState state2) {
 		if (propNetInitialized) {
-			return ((JustKiddingPropNetMachineState) state1).equals(((JustKiddingPropNetMachineState) state2));
+			boolean[] props1 = ((PropNetMachineState) state1).props;
+			boolean[] props2 = ((PropNetMachineState) state2).props;
+			return Arrays.equals(props1, props2);
 		}
 		return state1.equals(state2);
 	}
@@ -564,11 +565,11 @@ public class MCTS extends Method {
 	// a namespace for astar-related methods...or really just a DFS
 	private class AStar {
 		private int compare(MachineState state1, MachineState state2) {
-			BitSet props1 = ((JustKiddingPropNetMachineState) state1).props;
-			BitSet props2 = ((JustKiddingPropNetMachineState) state2).props;
-			for (int i = 0; i < props1.length(); i++) {
-				if (props1.get(i) == props2.get(i) || clockProps[i]) continue;
-				return props1.get(i) ? 1 : -1;
+			boolean[] props1 = ((PropNetMachineState) state1).props;
+			boolean[] props2 = ((PropNetMachineState) state2).props;
+			for (int i = 0; i < props1.length; i++) {
+				if (props1[i] == props2[i] || clockProps[i]) continue;
+				return props1[i] ? 1 : -1;
 			}
 			return 0;
 		}
