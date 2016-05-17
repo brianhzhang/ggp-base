@@ -13,6 +13,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
@@ -20,6 +21,8 @@ import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.gdl.grammar.GdlConstant;
 import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
+import org.ggp.base.util.propnet.architecture.PropNet;
+import org.ggp.base.util.propnet.architecture.components.Or;
 import org.ggp.base.util.propnet.architecture.components.Proposition;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
@@ -36,20 +39,21 @@ public class Experiment extends Method {
 	private static final double CFACTOR = 1.0;
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
-	private MyPlayer gamer;
+	private MyPlayer myplayer;
 
 	private StateMachineCreatorThread smthread;
 
 	// communication between metagame threads
 	private Stack<Move> solution;
 	private Map<Role, Set<Move>> useless;
-	private Set<Component> reachableBases;
+	private Map<Role, Move> noops;
 	private Map<Proposition, Proposition> legalToInputMap;
+	private Map<Proposition, Proposition> inputToLegalMap;
 	private int nUsefulRoles;
 
 	private boolean checkStateMachineStatus() {
 		if (!propNetInitialized && !smthread.isAlive()) {
-			gamer.switchToNewPropnets(smthread.m, machines);
+			myplayer.switchToNewPropnets(smthread.m, machines);
 			Log.println("propnets initialized");
 			return propNetInitialized = true;
 		}
@@ -57,7 +61,7 @@ public class Experiment extends Method {
 	}
 
 	public Experiment(MyPlayer gamer, List<Gdl> description) {
-		this.gamer = gamer;
+		this.myplayer = gamer;
 		machines = new StateMachine[MyPlayer.N_THREADS];
 		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
 			machines[i] = gamer.getStateMachine();
@@ -70,6 +74,7 @@ public class Experiment extends Method {
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
 		useless = new HashMap<>();
+		noops = new HashMap<>();
 		solution = null;
 
 		Set<GdlConstant> all = new HashSet<>();
@@ -80,6 +85,7 @@ public class Experiment extends Method {
 			useless.put(role, new HashSet<>());
 		}
 
+		// find clock
 		while (System.currentTimeMillis() < timeout && smthread.isAlive()) {
 			Map<GdlConstant, Set<GdlSentence>> possibles = new HashMap<>();
 			MachineState state = machine.getInitialState();
@@ -112,6 +118,10 @@ public class Experiment extends Method {
 			return;
 		}
 
+		for (Role r : machine.getRoles()) {
+			Log.println("noop for role " + r + " is " + noops.get(r));
+		}
+
 		if (nUsefulRoles != 1) return;
 		Log.println("single player game. starting solver");
 		machine = gamer.getStateMachine();
@@ -136,9 +146,17 @@ public class Experiment extends Method {
 			}
 		}
 
+		PropNet propnet = smthread.m.p;
+		class IgnoreList {
+			private boolean[] ignore = ignoreProps.clone();
+		}
+
+		List<IgnoreList> factors = new ArrayList<>();
+		Set<Component> reachable = new HashSet<>(smthread.reachable);
+
 		int nignored = 0;
 		for (int i = 0; i < bases.size(); i++) {
-			if (!smthread.reachable.contains(bases.get(i))) {
+			if (!reachable.contains(bases.get(i))) {
 				ignoreProps[i] = true;
 				nignored++;
 			}
@@ -146,13 +164,75 @@ public class Experiment extends Method {
 
 		Log.println("ignoring " + nignored + " additional irrelevant props");
 
-		AStar alg = new AStar(ignoreProps);
-		long start = System.currentTimeMillis();
-		try {
-			solution = alg.run(timeout);
-		} catch (Exception e) {
-			e.printStackTrace();
+		factors.add(new IgnoreList());
+
+		Component terminalGate = propnet.getTerminalProposition();
+		while (terminalGate.getInputs().size() == 1) {
+			terminalGate = terminalGate.getSingleInput();
 		}
+		if (terminalGate instanceof Or) {
+			for (Component factor : terminalGate.getInputs()) {
+				Set<Component> thisReachable = new HashSet<>();
+				findComponentsBackwards(factor, thisReachable);
+				IgnoreList ignore = new IgnoreList();
+				int nprops = 0;
+				for (int i = 0; i < bases.size(); i++) {
+					if (!thisReachable.contains(bases.get(i))) {
+						ignore.ignore[i] = true;
+					} else nprops++;
+				}
+				if (Arrays.equals(ignore.ignore, ignoreProps)) continue;
+				Log.println("found factor with " + nprops + " bases");
+				factors.add(ignore);
+			}
+		}
+
+		BlockingQueue<Solver> returns = new LinkedBlockingQueue<>();
+		Solver[] solvers = new Solver[factors.size()];
+		for (int i = 0; i < factors.size(); i++) {
+			solvers[i] = new Solver(myplayer.copyMachine((JustKiddingPropNetStateMachine) machine),
+					timeout, factors.get(i).ignore, returns, i);
+			solvers[i].start();
+		}
+
+		long start = System.currentTimeMillis();
+		solution = null;
+
+		int best_reward = 0;
+		boolean proven = true;
+
+		for (int i = 0; i < factors.size(); i++) {
+			try {
+				Solver solver = returns.take();
+				if (solver.best == null) { // timeout
+					Log.println(solver + " found no solution");
+					continue;
+				}
+				Log.println(solver + " found solution with score " + solver.best_reward);
+				if (solver.best_reward > best_reward) {
+					best_reward = solver.best_reward;
+					solution = solver.best;
+					// if (best_reward == MyPlayer.MAX_SCORE) break;
+				}
+
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+
+		if (best_reward < MyPlayer.MAX_SCORE && !proven) solution = null;
+
+		for (int i = 0; i < factors.size(); i++) {
+			if (solvers[i].isAlive()) {
+				solvers[i].kill = true;
+				try {
+					solvers[i].join();
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+
 		if (solution != null) {
 			Log.println("solution found in " + (System.currentTimeMillis() - start) + " ms");
 		} else {
@@ -192,12 +272,16 @@ public class Experiment extends Method {
 		Log.println("threads running: " + Thread.activeCount());
 		if (checkStateMachineStatus()) {
 			// reinit state machine
-			machine = gamer.getStateMachine();
-			rootstate = gamer.getCurrentState();
+			machine = myplayer.getStateMachine();
+			rootstate = myplayer.getCurrentState();
 		}
-		reachableBases = null;
+		Map<Role, Set<Move>> oldUseless = null;
 		if (propNetInitialized) {
-			reachableBases = new HashSet<>();
+			oldUseless = new HashMap<>();
+			for (Role r : machine.findRoles()) {
+				oldUseless.put(r, new HashSet<>(useless.get(r)));
+			}
+			Set<Component> reachableBases = new HashSet<>();
 			Map<GdlSentence, Proposition> propMap = smthread.m.p.getInputPropositions();
 			for (Move move : moves) {
 				findComponentsForwards(propMap.get(ProverQueryBuilder.toDoes(role, move)),
@@ -205,6 +289,17 @@ public class Experiment extends Method {
 			}
 			reachableBases.retainAll(smthread.m.props);
 			Log.printf("%d of %d props relevant\n", reachableBases.size(), smthread.m.props.size());
+			int i = 0;
+			for (Role r : machine.findRoles()) {
+				for (Move action : machine.findActions(r)) {
+					if (!findAnyComponentForwards(propMap.get(ProverQueryBuilder.toDoes(r, action)),
+							new HashSet<>(), reachableBases)) {
+						useless.get(r).add(action);
+						i++;
+					}
+				}
+			}
+			Log.println("found " + i + " locally irrelevant inputs");
 		}
 
 		long timestart = System.currentTimeMillis();
@@ -220,19 +315,24 @@ public class Experiment extends Method {
 
 		DepthChargeThread[] threads = new DepthChargeThread[nthread];
 		BlockingQueue<MTreeNode> input = new ArrayBlockingQueue<>(nthread);
-		BlockingQueue<DCOut> output = new ArrayBlockingQueue<>(nthread);
+		BlockingQueue<DCOut> output = new LinkedBlockingQueue<>();
 		for (int i = 0; i < nthread; i++) {
 			threads[i] = new DepthChargeThread(machines[i], role, timeout, input, output);
 			threads[i].start();
 		}
 		FastThread ft = new FastThread(timeout, machines[nthread], role, rootstate);
 		ft.start();
+		int expandTime = 0;
 		while (System.currentTimeMillis() < timeout && !root.isProven()) {
 			MTreeNode node = select(root);
 			if (machine.isTerminal(node.state)) {
 				backpropogate(node, machine.findReward(role, node.state), 0, true);
 			} else {
-				if (node.children.isEmpty()) expand(machine, role, node);
+				if (node.children.isEmpty()) {
+					long start = System.currentTimeMillis();
+					expand(machine, role, node);
+					expandTime += System.currentTimeMillis() - start;
+				}
 				input.offer(node);
 				while (true) {
 					DCOut out = output.poll();
@@ -263,23 +363,31 @@ public class Experiment extends Method {
 			Log.println("move=" + info(child, child));
 		}
 		Log.println("played=" + info(bestChild, root));
-		Log.println("tot time = " + (System.currentTimeMillis() - timestart));
+		Log.printf("time=%d expandtime=%d\n", (System.currentTimeMillis() - timestart), expandTime);
 		Log.print("expected line: ");
+		int root_nmoves = root.children.size();
+		int root_nopp = 0;
 		while (!root.children.isEmpty()) {
 			MTreeNode next = null;
 			for (MTreeNode child : root.children) {
 				if (next == null || child.depth > next.depth) next = child;
 			}
 			root = next;
-			if (root.jmove != null) Log.print(" " + root.jmove);
+			if (root.jmove != null) {
+				Log.printf(" %s (%d/%d)", root.jmove, root_nmoves, root_nopp);
+				root_nmoves = root.children.size();
+			} else {
+				root_nopp = root.children.size();
+			}
 		}
 		Log.println("");
+		if (oldUseless != null) useless = oldUseless;
 		return bestChild.move;
 	}
 
 	private void sanitizeMoves(Role role, MTreeNode root, Collection<Move> legal) {
 		for (MTreeNode child : root.children) {
-			if (child.move == null) {
+			if (!legal.contains(child.move)) {
 				Set<Move> uselessMoves = useless.get(role);
 				uselessMoves.retainAll(legal);
 				if (uselessMoves.size() > 0) child.move = uselessMoves.iterator().next();
@@ -330,13 +438,6 @@ public class Experiment extends Method {
 		}
 	}
 
-	private boolean hasNoEffect(Role role, Move move) {
-		if (!propNetInitialized) return false;
-		return !findAnyComponentForwards(
-				smthread.m.p.getInputPropositions().get(ProverQueryBuilder.toDoes(role, move)),
-				new HashSet<>(), reachableBases);
-	}
-
 	private List<Move> getUsefulMoves(StateMachine machine, Role role, MachineState state) {
 		List<Move> actions = null;
 		try {
@@ -348,16 +449,16 @@ public class Experiment extends Method {
 		Set<Move> uselessMoves = useless.get(role);
 
 		List<Move> output = new ArrayList<>();
-		boolean hasUseless = false;
+		Move uselessMove = null;
 		for (Move move : actions) {
-			if (uselessMoves.contains(move) || hasNoEffect(role, move)) {
-				hasUseless = true;
+			if (uselessMoves.contains(move)) {
+				uselessMove = move;
 				continue;
 			}
 			output.add(move);
 		}
-		if (hasUseless) {
-			output.add(null);
+		if (uselessMove != null) {
+			output.add(noops.getOrDefault(role, uselessMove));
 		}
 		return output;
 	}
@@ -584,6 +685,7 @@ public class Experiment extends Method {
 	private void findComponentsBackwards(Component current, Set<Component> visited) {
 		if (visited.contains(current)) return;
 		visited.add(current);
+		if (inputToLegalMap.containsKey(current)) current = inputToLegalMap.get(current);
 		for (Component parent : current.getInputs()) {
 			findComponentsBackwards(parent, visited);
 		}
@@ -594,7 +696,6 @@ public class Experiment extends Method {
 		if (target.contains(current)) return true;
 		if (visited.contains(current)) return false;
 		visited.add(current);
-		// if (legalToInputMap.containsKey(current)) current = legalToInputMap.get(current);
 		for (Component next : current.getOutputs()) {
 			if (findAnyComponentForwards(next, visited, target)) return true;
 		}
@@ -621,33 +722,49 @@ public class Experiment extends Method {
 			this.description = description;
 		}
 
+		private int howUseful(Role role, Move move) {
+			Set<Component> out = new HashSet<>();
+			findComponentsForwards(
+					m.p.getInputPropositions().get(ProverQueryBuilder.toDoes(role, move)), out);
+			return out.size();
+		}
+
 		@Override
 		public void run() {
 			m = new JustKiddingPropNetStateMachine();
 			m.initialize(description);
-			Log.println("pruning irrelevant inputs");
+			Log.println("propnet created. processing...");
+
+			// make two-way input maps
+			Map<GdlSentence, Proposition> inputs = m.p.getInputPropositions();
+			Collection<Proposition> values = inputs.values();
+			legalToInputMap = new HashMap<>(m.p.getLegalInputMap());
+			inputToLegalMap = new HashMap<>(m.p.getLegalInputMap());
+			for (Proposition value : values) {
+				legalToInputMap.remove(value);
+				inputToLegalMap.remove(inputToLegalMap.get(value));
+			}
+
 			reachable = new HashSet<>();
 			findComponentsBackwards(m.p.getTerminalProposition(), reachable);
 			Set<Component> goals = new HashSet<>();
 			goals.addAll(m.p.getGoalPropositions().get(role));
-			Map<GdlSentence, Proposition> inputs = m.p.getInputPropositions();
-			Collection<Proposition> values = inputs.values();
-			legalToInputMap = new HashMap<>(smthread.m.p.getLegalInputMap());
-			for (Proposition value : values) {
-				legalToInputMap.remove(value);
-			}
 			Set<Component> badInputSet = new HashSet<>(inputs.values());
 			findComponentsBackwards(goals, reachable);
 			for (Component comp : reachable) {
 				badInputSet.remove(comp);
 			}
 			int count = 0;
+
 			for (GdlSentence input : inputs.keySet()) {
 				if (badInputSet.contains(inputs.get(input))) {
 					Role role = Role.create(input.get(0).toString());
 					Move move = Move.create(input.get(1).toString());
 					useless.get(role).add(move);
 					count++;
+					if (!noops.containsKey(role)
+							|| howUseful(role, noops.get(role)) > howUseful(role, move))
+						noops.put(role, move);
 				}
 			}
 			Map<Role, Set<Proposition>> nLegals = m.p.getLegalPropositions();
@@ -665,11 +782,30 @@ public class Experiment extends Method {
 	}
 
 	// a namespace for astar-related methods...or really just a DFS
-	private class AStar {
-		boolean[] ignoreProps;
+	private class Solver extends Thread {
 
-		public AStar(boolean[] ignoreProps) {
+		private boolean[] ignoreProps;
+		private BlockingQueue<Solver> out;
+		private long timeout;
+		private int id;
+		private StateMachine machine;
+
+		public boolean kill = false;
+		public int best_reward;
+		public Stack<Move> best;
+
+		@Override
+		public String toString() {
+			return "solver-" + id;
+		}
+
+		public Solver(StateMachine machine, long timeout, boolean[] ignoreProps,
+				BlockingQueue<Solver> out, int id) {
+			this.machine = machine;
+			this.timeout = timeout;
 			this.ignoreProps = ignoreProps;
+			this.out = out;
+			this.id = id;
 		}
 
 		private int compare(MachineState state1, MachineState state2) {
@@ -719,11 +855,20 @@ public class Experiment extends Method {
 			return stack;
 		}
 
+		@Override
+		public void run() {
+			try {
+				solve();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+			out.add(this);
+		}
+
 		// psuedocode from Wikipedia on A*
-		public Stack<Move> run(long timeout) throws GoalDefinitionException,
-				MoveDefinitionException, TransitionDefinitionException {
-			StateMachine machine = gamer.getStateMachine();
-			Role role = gamer.getRole();
+		public void solve() throws GoalDefinitionException, MoveDefinitionException,
+				TransitionDefinitionException {
+			Role role = myplayer.getRole();
 			MachineState initial = machine.getInitialState();
 			Set<MachineState> closed = new TreeSet<>(this::compare);
 			Map<MachineState, StateInfo> info = new TreeMap<>(this::compare);
@@ -731,11 +876,14 @@ public class Experiment extends Method {
 			PriorityQueue<PQEntry> pq = new PriorityQueue<>();
 			pq.add(new PQEntry(initial, 0));
 			info.put(initial, new StateInfo(null, null, 0));
-			int best_reward = 0;
-			Stack<Move> best = null;
+			best_reward = 0;
+			best = null;
 
 			while (!pq.isEmpty()) {
-				if (System.currentTimeMillis() > timeout) return null;
+				if (System.currentTimeMillis() > timeout || kill) {
+					best = null;
+					return;
+				}
 				MachineState u = pq.poll().state;
 				if (closed.contains(u)) continue;
 				closed.add(u);
@@ -744,7 +892,7 @@ public class Experiment extends Method {
 					if (reward > best_reward) {
 						best = reconstruct(info, u);
 						best_reward = reward;
-						if (best_reward == MyPlayer.MAX_SCORE) return best;
+						if (best_reward == MyPlayer.MAX_SCORE) return;
 					}
 				}
 				int newDist = info.get(u).distance + 1;
@@ -762,8 +910,6 @@ public class Experiment extends Method {
 					}
 				}
 			}
-			Log.println("best solution has value " + best_reward);
-			return best;
 		}
 	}
 

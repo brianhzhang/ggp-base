@@ -65,7 +65,7 @@ public class MyPlayer extends StateMachineGamer {
 		return new GDLGetter();
 	}
 
-	private JustKiddingPropNetStateMachine copyMachine(JustKiddingPropNetStateMachine p) {
+	public JustKiddingPropNetStateMachine copyMachine(JustKiddingPropNetStateMachine p) {
 		JustKiddingPropNetStateMachine newp = new JustKiddingPropNetStateMachine();
 		newp.comps = p.comps.clone();
 		newp.initcomps = p.initcomps.clone();
