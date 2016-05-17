@@ -75,7 +75,7 @@ public class SpeedTester extends StateMachineGamer {
 //				new BetterMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
 //		LolAnotherMetaPropNetStateMachineFactory l = 
 //				new LolAnotherMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
-		StateMachine m1 = new CachedStateMachine(new ProverStateMachine());
+		StateMachine m1 = new YeahWasntTheLastOnePropNetStateMachine();
 		StateMachine m2 = new JustKiddingPropNetStateMachine();
 		m1.initialize(((GDLGetter) getStateMachine()).getDescription());
 		m2.initialize(((GDLGetter) getStateMachine()).getDescription());

@@ -27,7 +27,7 @@ import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 
-public class JustKiddingPropNetStateMachine extends StateMachine {
+public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 
 	int[] comps;
 	int[] initcomps;
@@ -301,7 +301,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		markbases((PropNetMachineState) state);
 		boolean[] inputs = new boolean[inputarr.length];
 		for (int i = 0; i < moves.size(); i++) {
-			// if (moves.get(i) == null) continue;
+			if (moves.get(i) == null) continue;
 			inputs[inputmap.get(new RoleMove(moves.get(i), i))] = true;
 		}
 		markinputs(inputs);
