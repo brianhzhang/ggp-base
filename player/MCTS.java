@@ -212,7 +212,7 @@ public class MCTS extends Method {
 				if (solver.best_reward > best_reward) {
 					best_reward = solver.best_reward;
 					solution = solver.best;
-					// if (best_reward == MyPlayer.MAX_SCORE) break;
+					if (best_reward == MyPlayer.MAX_SCORE) break;
 				}
 
 			} catch (InterruptedException e) {
