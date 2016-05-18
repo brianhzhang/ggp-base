@@ -47,6 +47,7 @@ public class MCTS extends Method {
 	private Stack<Move> solution;
 	private Map<Role, Set<Move>> useless;
 	private Map<Role, Move> noops;
+	private List<Role> opponents;
 	private Map<Proposition, Proposition> legalToInputMap;
 	private Map<Proposition, Proposition> inputToLegalMap;
 	private int nUsefulRoles;
@@ -76,12 +77,14 @@ public class MCTS extends Method {
 		useless = new HashMap<>();
 		noops = new HashMap<>();
 		solution = null;
+		opponents = new ArrayList<>();
 
 		Set<GdlConstant> all = new HashSet<>();
 		Set<GdlConstant> impossibles = new HashSet<>();
 
 		StateMachine machine = gamer.getStateMachine();
 		for (Role role : machine.findRoles()) {
+			if (!role.equals(gamer.getRole())) opponents.add(role);
 			useless.put(role, new HashSet<>());
 		}
 
@@ -249,6 +252,22 @@ public class MCTS extends Method {
 		return state1.equals(state2);
 	}
 
+	private static final double OUR_WEIGHT = 2.0 / 3.0;
+
+	private int findReward(StateMachine machine, Role role, MachineState state) {
+		try {
+			if (opponents.size() == 0) return machine.findReward(role, state);
+			double reward = OUR_WEIGHT * machine.findReward(role, state);
+			double oppWeight = (1 - OUR_WEIGHT) / opponents.size();
+			for (Role opp : opponents) {
+				reward += (MyPlayer.MAX_SCORE - machine.findReward(opp, state)) * oppWeight;
+			}
+			return (int) Math.round(reward);
+		} catch (GoalDefinitionException e) {
+			return 0;
+		}
+	}
+
 	@Override
 	public Move run(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
@@ -326,7 +345,7 @@ public class MCTS extends Method {
 		while (System.currentTimeMillis() < timeout && !root.isProven()) {
 			MTreeNode node = select(root);
 			if (machine.isTerminal(node.state)) {
-				backpropogate(node, machine.findReward(role, node.state), 0, true);
+				backpropogate(node, findReward(machine, role, node.state), 0, true);
 			} else {
 				if (node.children.isEmpty()) {
 					long start = System.currentTimeMillis();
@@ -533,9 +552,10 @@ public class MCTS extends Method {
 		return;
 	}
 
-	private static class DepthChargeThread extends Thread {
-		public static final int MAX_SCORE = 99;
-		public static final int MIN_SCORE = 1;
+	private static final int DC_MAX = 99;
+	private static final int DC_MIN = 1;
+
+	private class DepthChargeThread extends Thread {
 
 		private StateMachine machine;
 		private Role role;
@@ -557,12 +577,12 @@ public class MCTS extends Method {
 			MachineState state = node.state;
 			if (node.move != null) state = machine.getRandomNextState(state, role, node.move);
 			while (!machine.isTerminal(state)) {
-				if (System.currentTimeMillis() > timeout) return new DCOut(node, MCTS.FAIL);
+				if (System.currentTimeMillis() > timeout) return new DCOut(node, FAIL);
 				state = machine.getRandomNextState(state);
 			}
-			double score = machine.findReward(role, state);
-			if (score < MIN_SCORE) score = MIN_SCORE;
-			if (score > MAX_SCORE) score = MAX_SCORE;
+			double score = findReward(machine, role, state);
+			if (score < DC_MIN) score = DC_MIN;
+			if (score > DC_MAX) score = DC_MAX;
 			return new DCOut(node, score);
 		}
 
@@ -693,9 +713,11 @@ public class MCTS extends Method {
 
 	private boolean findAnyComponentForwards(Component current, Set<Component> visited,
 			Set<Component> target) {
+		if (current == null) return false;
 		if (target.contains(current)) return true;
 		if (visited.contains(current)) return false;
 		visited.add(current);
+
 		for (Component next : current.getOutputs()) {
 			if (findAnyComponentForwards(next, visited, target)) return true;
 		}
@@ -703,6 +725,7 @@ public class MCTS extends Method {
 	}
 
 	private void findComponentsForwards(Component current, Set<Component> visited) {
+		if (current == null) return;
 		if (visited.contains(current)) return;
 		visited.add(current);
 		if (legalToInputMap.containsKey(current)) current = legalToInputMap.get(current);
@@ -888,7 +911,7 @@ public class MCTS extends Method {
 				if (closed.contains(u)) continue;
 				closed.add(u);
 				if (machine.isTerminal(u)) {
-					int reward = machine.findReward(role, u);
+					int reward = findReward(machine, role, u);
 					if (reward > best_reward) {
 						best = reconstruct(info, u);
 						best_reward = reward;
@@ -946,7 +969,7 @@ public class MCTS extends Method {
 				MTreeNode node = select(root);
 				expand(machine, role, node);
 				if (machine.isTerminal(node.state)) {
-					backpropogate(node, machine.findReward(role, node.state), 0, true);
+					backpropogate(node, findReward(machine, role, node.state), 0, true);
 				} else {
 					backpropogate(node, 50, 0, false);
 				}
