@@ -301,7 +301,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		markbases((PropNetMachineState) state);
 		boolean[] inputs = new boolean[inputarr.length];
 		for (int i = 0; i < moves.size(); i++) {
-			// if (moves.get(i) == null) continue;
+			if (moves.get(i) == null) continue;
 			inputs[inputmap.get(new RoleMove(moves.get(i), i))] = true;
 		}
 		markinputs(inputs);

@@ -51,6 +51,7 @@ public class Experiment extends Method {
 	private Map<Proposition, Proposition> legalToInputMap;
 	private Map<Proposition, Proposition> inputToLegalMap;
 	private int nUsefulRoles;
+	private boolean[] ignoreProps;
 
 	private boolean checkStateMachineStatus() {
 		if (!propNetInitialized && !smthread.isAlive()) {
@@ -167,27 +168,38 @@ public class Experiment extends Method {
 
 		Log.println("ignoring " + nignored + " additional irrelevant props");
 
-		factors.add(new IgnoreList());
-
 		Component terminalGate = propnet.getTerminalProposition();
 		while (terminalGate.getInputs().size() == 1) {
 			terminalGate = terminalGate.getSingleInput();
 		}
+		Set<Component> fullReachable = new HashSet<>();
 		if (terminalGate instanceof Or) {
 			for (Component factor : terminalGate.getInputs()) {
 				Set<Component> thisReachable = new HashSet<>();
 				findComponentsBackwards(factor, thisReachable);
 				IgnoreList ignore = new IgnoreList();
-				int nprops = 0;
 				for (int i = 0; i < bases.size(); i++) {
 					if (!thisReachable.contains(bases.get(i))) {
 						ignore.ignore[i] = true;
-					} else nprops++;
+					}
 				}
-				if (Arrays.equals(ignore.ignore, ignoreProps)) continue;
-				Log.println("found factor with " + nprops + " bases");
+				Set<Component> intersect = new HashSet<>(thisReachable);
+				intersect.retainAll(fullReachable);
+				if (!intersect.isEmpty()) {
+					factors.clear();
+					break; // not actually factorable
+				}
+				fullReachable.addAll(thisReachable);
+				fullReachable.retainAll(smthread.m.props);
 				factors.add(ignore);
 			}
+		}
+
+		if (factors.isEmpty()) {
+			Log.println("unfactorable game");
+			factors.add(new IgnoreList());
+		} else {
+			Log.println("found " + factors.size() + " factors");
 		}
 
 		BlockingQueue<Solver> returns = new LinkedBlockingQueue<>();
@@ -209,6 +221,7 @@ public class Experiment extends Method {
 				Solver solver = returns.take();
 				if (solver.best == null) { // timeout
 					Log.println(solver + " found no solution");
+					proven = false;
 					continue;
 				}
 				Log.println(solver + " found solution with score " + solver.best_reward);
@@ -252,7 +265,7 @@ public class Experiment extends Method {
 		return state1.equals(state2);
 	}
 
-	private static final double OUR_WEIGHT = 2.0 / 3.0;
+	private static final double OUR_WEIGHT = 2. / 3;
 
 	private int findReward(StateMachine machine, Role role, MachineState state) {
 		try {
@@ -295,6 +308,7 @@ public class Experiment extends Method {
 			rootstate = myplayer.getCurrentState();
 		}
 		Map<Role, Set<Move>> oldUseless = null;
+		ignoreProps = null;
 		if (propNetInitialized) {
 			oldUseless = new HashMap<>();
 			for (Role r : machine.findRoles()) {
@@ -306,19 +320,32 @@ public class Experiment extends Method {
 				findComponentsForwards(propMap.get(ProverQueryBuilder.toDoes(role, move)),
 						reachableBases);
 			}
-			reachableBases.retainAll(smthread.m.props);
-			Log.printf("%d of %d props relevant\n", reachableBases.size(), smthread.m.props.size());
-			int i = 0;
+			List<Proposition> bases = smthread.m.props;
+			reachableBases.retainAll(bases);
+			Log.printf("%d of %d props relevant\n", reachableBases.size(), bases.size());
+			int count = 0;
+			Set<Component> ignore = new HashSet<>();
 			for (Role r : machine.findRoles()) {
 				for (Move action : machine.findActions(r)) {
-					if (!findAnyComponentForwards(propMap.get(ProverQueryBuilder.toDoes(r, action)),
-							new HashSet<>(), reachableBases)) {
+					Component does = propMap.get(ProverQueryBuilder.toDoes(r, action));
+					findComponentsForwards(does, ignore);
+					if (!findAnyComponentForwards(does, new HashSet<>(), reachableBases)) {
 						useless.get(r).add(action);
-						i++;
+						count++;
 					}
 				}
 			}
-			Log.println("found " + i + " locally irrelevant inputs");
+			ignore.removeAll(reachableBases);
+			ignoreProps = new boolean[bases.size()];
+			Log.println("found " + count + " locally irrelevant inputs");
+			count = 0;
+			for (int i = 0; i < bases.size(); i++) {
+				if (ignore.contains(bases.get(i))) {
+					count++;
+					ignoreProps[i] = true;
+				}
+			}
+			Log.println("found " + count + " constant propositions");
 		}
 
 		long timestart = System.currentTimeMillis();
@@ -389,7 +416,7 @@ public class Experiment extends Method {
 		while (!root.children.isEmpty()) {
 			MTreeNode next = null;
 			for (MTreeNode child : root.children) {
-				if (next == null || child.depth > next.depth) next = child;
+				if (next == null || child.visits > next.visits) next = child;
 			}
 			root = next;
 			if (root.jmove != null) {
@@ -410,7 +437,7 @@ public class Experiment extends Method {
 				Set<Move> uselessMoves = useless.get(role);
 				uselessMoves.retainAll(legal);
 				if (uselessMoves.size() > 0) child.move = uselessMoves.iterator().next();
-				else continue;
+				else root.children.remove(child);
 			}
 		}
 	}
@@ -477,7 +504,7 @@ public class Experiment extends Method {
 			output.add(move);
 		}
 		if (uselessMove != null) {
-			output.add(noops.getOrDefault(role, uselessMove));
+			output.add(null);
 		}
 		return output;
 	}
@@ -525,6 +552,13 @@ public class Experiment extends Method {
 		} else {
 			for (List<Move> jmove : getUsefulJointMoves(machine, node.state, role, node.move)) {
 				MachineState newstate = machine.findNext(jmove, node.state);
+				if (propNetInitialized) {
+					PropNetMachineState oldstate = (PropNetMachineState) node.state;
+					PropNetMachineState newpstate = (PropNetMachineState) newstate;
+					for (int i = 0; i < ignoreProps.length; i++) {
+						if (ignoreProps[i]) newpstate.props[i] = oldstate.props[i];
+					}
+				}
 				MTreeNode newnode = new MTreeNode(newstate, jmove, node);
 				node.children.add(newnode);
 			}
@@ -577,7 +611,7 @@ public class Experiment extends Method {
 			MachineState state = node.state;
 			if (node.move != null) state = machine.getRandomNextState(state, role, node.move);
 			while (!machine.isTerminal(state)) {
-				if (System.currentTimeMillis() > timeout) return new DCOut(node, MCTS.FAIL);
+				if (System.currentTimeMillis() > timeout) return new DCOut(node, FAIL);
 				state = machine.getRandomNextState(state);
 			}
 			double score = findReward(machine, role, state);
