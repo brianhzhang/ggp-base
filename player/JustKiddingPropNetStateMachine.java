@@ -150,10 +150,9 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 						break;
 					}
 					if (p.getLegalPropositions().get(r).contains(components.get(i / 2))) {
-						comps[i] = 0;
-						comps[i + 1] = components.indexOf(components.get(i / 2).getSingleInput())
-								* 2;
-						legalarr[legal][0] = i;
+						comps[i] = 0x7FFFFFFF;
+						comps[i + 1] = -1;
+						legalarr[legal][0] = components.indexOf(components.get(i / 2).getSingleInput()) * 2;
 						legalarr[legal][1] = roles.indexOf(r);
 						legals[legal] = new Move(
 								((Proposition) components.get(i / 2)).getName().get(1));
@@ -287,7 +286,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		markbases((PropNetMachineState) state);
 		ArrayList<Move> moves = new ArrayList<Move>();
 		for (int i = 0; i < legals.length; i++) {
-			if (((comps[comps[legalarr[i][0] + 1]] >> 31) & 1) == 1
+			if (((comps[legalarr[i][0]] >> 31) & 1) == 1
 					&& legalarr[i][1] == roles.indexOf(role)) {
 				moves.add(legals[i]);
 			}
@@ -301,7 +300,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		markbases((PropNetMachineState) state);
 		boolean[] inputs = new boolean[inputarr.length];
 		for (int i = 0; i < moves.size(); i++) {
-			if (moves.get(i) == null) continue;
+			// if (moves.get(i) == null) continue;
 			inputs[inputmap.get(new RoleMove(moves.get(i), i))] = true;
 		}
 		markinputs(inputs);
