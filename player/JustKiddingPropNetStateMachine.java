@@ -43,7 +43,9 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	int[][] legalarr;
 	int[][] goals;
 	PropNetMachineState last;
+	int[] legaltoinput;
 	Random rgen = new Random();
+	long x = System.nanoTime();
 
 	PropNet p;
 	ArrayList<Proposition> props;
@@ -84,6 +86,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 
 		List<Component> components = new ArrayList<Component>(p.getComponents());
+		List<Component> legaltoinputhelper = new ArrayList<Component>();
 		for (Component c : components) {
 			c.crystalize();
 		}
@@ -152,6 +155,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 					if (p.getLegalPropositions().get(r).contains(components.get(i / 2))) {
 						comps[i] = 0x7FFFFFFF;
 						comps[i + 1] = -1;
+						legaltoinputhelper.add(p.getLegalInputMap().get(components.get(i/2)));
 						legalarr[legal][0] = components.indexOf(components.get(i / 2).getSingleInput()) * 2;
 						legalarr[legal][1] = roles.indexOf(r);
 						legals[legal] = new Move(
@@ -185,6 +189,17 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 						* 2;
 			}
 		}
+		
+		legaltoinput = new int[input];
+		for (int i = 0; i < legaltoinputhelper.size(); i ++) {
+			for (int j = 0; j < inputarr.length; j ++) {
+				if (components.get(inputarr[j] / 2) == legaltoinputhelper.get(i)) {
+					legaltoinput[i] = j;
+					break;
+				}
+			}
+		}
+		//TODO ODDODO
 
 		Set<Component> visited = new HashSet<Component>();
 
@@ -200,7 +215,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 		for (Component c : components) {
 			if (c instanceof Constant) {
-				startPropagate(components.indexOf(c), 0, components, visited);
+				startPropagate(components.indexOf(c) * 2, 0, components, visited);
 			}
 		}
 
@@ -209,9 +224,9 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	private int getComp(Component c) {
 		if (c instanceof And) {
-			return (((And) c).nand ? 0 : 0x80000000) - c.getInputs().size();
+			return 0x80000000 - c.getInputs().size();
 		} else if (c instanceof Or) {
-			return ((Or) c).nor ? 0xFFFFFFFF : 0x7FFFFFFF;
+			return 0x7FFFFFFF;
 		} else if (c instanceof Not) {
 			return 0xFFFFFFFF;
 		} else if (c instanceof Transition) {
@@ -364,5 +379,71 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 						visited);
 			}
 		}
+	}
+	
+	/* ########################################################################################## */
+	
+	public int[] internalDC(PropNetMachineState state) {
+		while (!isTerminal(state)) {
+			state = internalRandomNextState();
+		}
+		
+		//Get all of the goals for the terminal state.
+		int[] goals = new int[roles.size()];
+		for (int i = 0; i < goals.length; i ++) {
+			goals[i] = internalGoal(i);
+		}
+		return goals;
+	}
+	
+	private int internalGoal(int role) {
+		for (int i = 0; i < goals.length; i++) {
+			if (((comps[goals[i][0]] >> 31) & 1) == 1 && role == goals[i][1]) {
+				return goals[i][2];
+			}
+		}
+		return -1;
+	}
+	
+	private PropNetMachineState internalRandomNextState() {
+		int[] moves = internalRandomJoint();
+		return internalNextState(moves);
+	}
+	
+	public int[] internalRandomJoint() {
+		int[] moves = new int[roles.size()];
+		int[] counts = new int[roles.size()];
+		int[] indicies = new int[roles.size()];
+		for (int i = 0; i < legals.length; i++) {
+			if (((comps[legalarr[i][0]] >> 31) & 1) == 1) {
+				counts[legalarr[i][1]] ++;
+				int random = (int) randomLong(counts[legalarr[i][1]]);
+				if (random == 0) indicies[legalarr[i][1]] = i;
+			}
+		}
+		for (int i = 0; i < indicies.length; i ++) {
+			moves[i] = legaltoinput[indicies[i]];
+		}
+		return moves;
+	}
+	
+	public PropNetMachineState internalNextState(int[] moves) {
+		boolean[] inputs = new boolean[inputarr.length];
+		for (int i = 0; i < moves.length; i++) {
+			inputs[moves[i]] = true;
+		}
+		markinputs(inputs);
+		boolean[] next = new boolean[basearr.length];
+		for (int i = 0; i < basearr.length; i++) {
+			next[i] = (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1);
+		}
+		return new PropNetMachineState(next);
+	}
+	
+	public long randomLong(int max) {
+		  x ^= (x << 21);
+		  x ^= (x >>> 35);
+		  x ^= (x << 4);
+		  return x % max;
 	}
 }

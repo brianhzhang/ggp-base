@@ -25,27 +25,49 @@ public class SpeedTester extends StateMachineGamer {
 		StateMachine m;
 		int ncharges;
 		int nsteps;
+		boolean internal;
+		long goals;
 
-		public TestThread(StateMachine m) {
+		public TestThread(StateMachine m, boolean internal) {
 			this.m = m;
 			stop = false;
 			ncharges = 0;
 			nsteps = 0;
+			this.internal = internal;
 		}
 		
 		public void run() {
-			while (!stop) {
-				MachineState state = m.getInitialState();
-				while (!m.isTerminal(state)) {
-					try {
-						state = m.getRandomNextState(state);
-					} catch (MoveDefinitionException | TransitionDefinitionException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
+			MachineState init = m.getInitialState();
+			if (!internal){
+				while (!stop) {
+					MachineState state = init;
+					while (!m.isTerminal(state)) {
+						try {
+							state = m.getRandomNextState(state);
+						} catch (MoveDefinitionException | TransitionDefinitionException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+						nsteps ++;
 					}
-					nsteps ++;
+					for (int i = 0; i < m.getRoles().size(); i ++) {
+						try {
+							goals += m.getGoal(state, m.getRoles().get(i));
+						} catch (GoalDefinitionException e) {
+							e.printStackTrace();
+						}
+					}
+					ncharges ++;
 				}
-				ncharges ++;
+			} else {
+				while (!stop) {
+					MachineState state = init;
+					int[] g = ((JustKiddingPropNetStateMachine)m).internalDC((PropNetMachineState) state);
+					for (int i = 0; i < g.length; i ++) {
+						goals += g[i];
+					}
+					ncharges ++;
+				}
 			}
 			System.out.println("Done!");
 		}
@@ -61,6 +83,10 @@ public class SpeedTester extends StateMachineGamer {
 		public int getSteps() {
 			return nsteps;
 		}
+		
+		public long goals() {
+			return goals;
+		}
 	}
 	
 	@Override
@@ -75,12 +101,12 @@ public class SpeedTester extends StateMachineGamer {
 //				new BetterMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
 //		LolAnotherMetaPropNetStateMachineFactory l = 
 //				new LolAnotherMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
-		StateMachine m1 = new YeahWasntTheLastOnePropNetStateMachine();
+		StateMachine m1 = new JustKiddingPropNetStateMachine();
 		StateMachine m2 = new JustKiddingPropNetStateMachine();
 		m1.initialize(((GDLGetter) getStateMachine()).getDescription());
 		m2.initialize(((GDLGetter) getStateMachine()).getDescription());
-		TestThread t1 = new TestThread(m1);
-		TestThread t2 = new TestThread(m2);
+		TestThread t1 = new TestThread(m1, true);
+		TestThread t2 = new TestThread(m2, false);
 		t1.start();
 		t2.start();
 		long start = System.currentTimeMillis();
@@ -101,9 +127,11 @@ public class SpeedTester extends StateMachineGamer {
 		}
 		System.out.println("Seconds elapsed: " + 1.0 * (System.currentTimeMillis() - start)/1000);
 		System.out.println("Machine 1 depth charges: " + t1.getNum());
-		System.out.println("Steps: " + t1.getSteps());
+		System.out.println("Average Step Counter: " + (1.0 * t1.getSteps() / t1.getNum()));
+		System.out.println("Average Aggregate Goals: " + (1.0 * t1.goals() / t1.getNum()));
 		System.out.println("Machine 2 depth charges: " + t2.getNum());
-		System.out.println("Steps: " + t2.getSteps());
+		System.out.println("Average Step Counter: " + (1.0 * t2.getSteps() / t2.getNum()));
+		System.out.println("Average Aggregate Goals: " + (1.0 * t2.goals() / t2.getNum()));
 	}
 
 	@Override
