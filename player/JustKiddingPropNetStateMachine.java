@@ -155,8 +155,9 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 					if (p.getLegalPropositions().get(r).contains(components.get(i / 2))) {
 						comps[i] = 0x7FFFFFFF;
 						comps[i + 1] = -1;
-						legaltoinputhelper.add(p.getLegalInputMap().get(components.get(i/2)));
-						legalarr[legal][0] = components.indexOf(components.get(i / 2).getSingleInput()) * 2;
+						legaltoinputhelper.add(p.getLegalInputMap().get(components.get(i / 2)));
+						legalarr[legal][0] = components
+								.indexOf(components.get(i / 2).getSingleInput()) * 2;
 						legalarr[legal][1] = roles.indexOf(r);
 						legals[legal] = new Move(
 								((Proposition) components.get(i / 2)).getName().get(1));
@@ -189,16 +190,16 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 						* 2;
 			}
 		}
-		
-//		legaltoinput = new int[input];
-//		for (int i = 0; i < legaltoinputhelper.size(); i ++) {
-//			for (int j = 0; j < inputarr.length; j ++) {
-//				if (components.get(inputarr[j] / 2) == legaltoinputhelper.get(i)) {
-//					legaltoinput[i] = j;
-//					break;
-//				}
-//			}
-//		}
+
+		legaltoinput = new int[input];
+		for (int i = 0; i < legaltoinputhelper.size(); i++) {
+			for (int j = 0; j < inputarr.length; j++) {
+				if (components.get(inputarr[j] / 2) == legaltoinputhelper.get(i)) {
+					legaltoinput[i] = j;
+					break;
+				}
+			}
+		}
 
 		Set<Component> visited = new HashSet<Component>();
 
@@ -300,8 +301,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		markbases((PropNetMachineState) state);
 		ArrayList<Move> moves = new ArrayList<Move>();
 		for (int i = 0; i < legals.length; i++) {
-			if (((comps[legalarr[i][0]] >> 31) & 1) == 1
-					&& legalarr[i][1] == roles.indexOf(role)) {
+			if (((comps[legalarr[i][0]] >> 31) & 1) == 1 && legalarr[i][1] == roles.indexOf(role)) {
 				moves.add(legals[i]);
 			}
 		}
@@ -314,7 +314,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		markbases((PropNetMachineState) state);
 		boolean[] inputs = new boolean[inputarr.length];
 		for (int i = 0; i < moves.size(); i++) {
-			 if (moves.get(i) == null) continue;
+			if (moves.get(i) == null) continue;
 			inputs[inputmap.get(new RoleMove(moves.get(i), i))] = true;
 		}
 		markinputs(inputs);
@@ -379,10 +379,11 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			}
 		}
 	}
-	
+
 	/* ########################################################################################## */
-	
+
 	public int[] internalDC(PropNetMachineState MS) {
+		last = null;
 		int[] moves = new int[roles.size()];
 		int[] counts = new int[roles.size()];
 		int[] indicies = new int[roles.size()];
@@ -390,15 +391,15 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		while (!internalTerminal(state)) {
 			internalRandomNextState(moves, counts, indicies, state);
 		}
-		
-		//Get all of the goals for the terminal state.
+
+		// Get all of the goals for the terminal state.
 		int[] goals = new int[roles.size()];
-		for (int i = 0; i < goals.length; i ++) {
+		for (int i = 0; i < goals.length; i++) {
 			goals[i] = internalGoal(i);
 		}
 		return goals;
 	}
-	
+
 	private int internalGoal(int role) {
 		for (int i = 0; i < goals.length; i++) {
 			if (((comps[goals[i][0]] >> 31) & 1) == 1 && role == goals[i][1]) {
@@ -407,30 +408,31 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 		return -1;
 	}
-	
-	private void internalRandomNextState(int[] moves, int[] counts, int[] indicies, boolean[] state) {
+
+	private void internalRandomNextState(int[] moves, int[] counts, int[] indicies,
+			boolean[] state) {
 		internalRandomJoint(moves, counts, indicies);
 		internalNextState(moves, state);
 	}
-	
+
 	public int[] internalRandomJoint(int[] moves, int[] counts, int[] indicies) {
-		for (int i = 0; i < moves.length; i ++) {
+		for (int i = 0; i < moves.length; i++) {
 			counts[i] = 0;
 			indicies[i] = 0;
 		}
 		for (int i = 0; i < legals.length; i++) {
 			if (((comps[legalarr[i][0]] >> 31) & 1) == 1) {
-				counts[legalarr[i][1]] ++;
+				counts[legalarr[i][1]]++;
 				int random = (int) randomLong(counts[legalarr[i][1]]);
 				if (random == 0) indicies[legalarr[i][1]] = i;
 			}
 		}
-		for (int i = 0; i < indicies.length; i ++) {
+		for (int i = 0; i < indicies.length; i++) {
 			moves[i] = legaltoinput[indicies[i]];
 		}
 		return moves;
 	}
-	
+
 	public boolean[] internalNextState(int[] moves, boolean[] state) {
 		boolean[] inputs = new boolean[inputarr.length];
 		for (int i = 0; i < moves.length; i++) {
@@ -442,12 +444,12 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 		return state;
 	}
-	
+
 	public boolean internalTerminal(boolean[] state) {
 		internalMarkbases(state);
 		return ((comps[comps[term + 1]] >> 31) & 1) == 1;
 	}
-	
+
 	private void internalMarkbases(boolean[] bases) {
 		for (int i = 0; i < bases.length; i++) {
 			if (bases[i] != (((comps[basearr[i]] >> 31) & 1) == 1)) {
@@ -458,11 +460,11 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			}
 		}
 	}
-	
+
 	public long randomLong(int max) {
-		  x ^= (x << 21);
-		  x ^= (x >>> 35);
-		  x ^= (x << 4);
-		  return x % max;
+		x ^= (x << 21);
+		x ^= (x >>> 35);
+		x ^= (x << 4);
+		return x % max;
 	}
 }

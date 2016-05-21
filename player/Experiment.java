@@ -53,6 +53,16 @@ public class Experiment extends Method {
 	private int nUsefulRoles;
 	private boolean[] ignoreProps;
 
+	// for timeout control
+	private List<MachineState> nextPossibles;
+	private int nBehindServer;
+
+	// for weighted depth charge results
+	private static final double OUR_WEIGHT = 2. / 3;
+	private double oppWeight;
+	private Role[] roles;
+	private int ourRoleIndex = -1;
+
 	private boolean checkStateMachineStatus() {
 		if (!propNetInitialized && !smthread.isAlive()) {
 			myplayer.switchToNewPropnets(smthread.m, machines);
@@ -79,15 +89,22 @@ public class Experiment extends Method {
 		noops = new HashMap<>();
 		solution = null;
 		opponents = new ArrayList<>();
+		nextPossibles = null;
+		nBehindServer = 1;
 
 		Set<GdlConstant> all = new HashSet<>();
 		Set<GdlConstant> impossibles = new HashSet<>();
 
 		StateMachine machine = gamer.getStateMachine();
-		for (Role role : machine.findRoles()) {
+		roles = machine.findRoles().toArray(new Role[0]);
+		for (int i = 0; i < roles.length; i++) {
+			Role role = roles[i];
 			if (!role.equals(gamer.getRole())) opponents.add(role);
+			else ourRoleIndex = i;
 			useless.put(role, new HashSet<>());
 		}
+		Log.println("roles: " + Arrays.toString(roles) + " | our role: " + ourRoleIndex);
+		oppWeight = opponents.size() == 0 ? 0 : (1 - OUR_WEIGHT) / opponents.size();
 
 		// find clock
 		while (System.currentTimeMillis() < timeout && smthread.isAlive()) {
@@ -265,13 +282,26 @@ public class Experiment extends Method {
 		return state1.equals(state2);
 	}
 
-	private static final double OUR_WEIGHT = 2. / 3;
+	public boolean contains(List<MachineState> states, MachineState target) {
+		for (MachineState state : states) {
+			if (sameState(state, target)) return true;
+		}
+		return false;
+	}
+
+	private int findReward(int[] rewards) {
+		double reward = OUR_WEIGHT * rewards[ourRoleIndex];
+		for (int i = 0; i < roles.length; i++) {
+			if (i == ourRoleIndex) continue;
+			reward += (MyPlayer.MAX_SCORE - rewards[i]) * oppWeight;
+		}
+		return (int) Math.round(reward);
+	}
 
 	private int findReward(StateMachine machine, Role role, MachineState state) {
 		try {
 			if (opponents.size() == 0) return machine.findReward(role, state);
 			double reward = OUR_WEIGHT * machine.findReward(role, state);
-			double oppWeight = (1 - OUR_WEIGHT) / opponents.size();
 			for (Role opp : opponents) {
 				reward += (MyPlayer.MAX_SCORE - machine.findReward(opp, state)) * oppWeight;
 			}
@@ -285,6 +315,14 @@ public class Experiment extends Method {
 	public Move run(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
+		Move move = run_(machine, rootstate, role, moves, timeout);
+		nextPossibles = machine.getNextStates(rootstate, role).get(move);
+		return move;
+	}
+
+	public Move run_(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
+			long timeout) throws GoalDefinitionException, MoveDefinitionException,
+					TransitionDefinitionException {
 		if (solution != null && !solution.isEmpty()) {
 			Move move = solution.pop();
 			Log.println("solution move: " + move);
@@ -296,6 +334,14 @@ public class Experiment extends Method {
 		}
 
 		Log.println("--------------------");
+
+		if (nextPossibles != null && !contains(nextPossibles, rootstate)) {
+			nBehindServer++;
+			long newclock = (timeout - System.currentTimeMillis()) / nBehindServer;
+			Log.println("move transmission error. shortening play clock to " + newclock);
+			timeout = System.currentTimeMillis() + newclock;
+		} else nBehindServer = 1;
+
 		// we don't cache anyway. might as well...
 		if (moves.size() == 1) {
 			Log.println("one legal move: " + moves.get(0));
@@ -432,14 +478,16 @@ public class Experiment extends Method {
 	}
 
 	private void sanitizeMoves(Role role, MTreeNode root, Collection<Move> legal) {
+		MTreeNode remove = null;
 		for (MTreeNode child : root.children) {
 			if (!legal.contains(child.move)) {
 				Set<Move> uselessMoves = useless.get(role);
 				uselessMoves.retainAll(legal);
 				if (uselessMoves.size() > 0) child.move = uselessMoves.iterator().next();
-				else root.children.remove(child);
+				else remove = child;
 			}
 		}
+		if (remove != null) root.children.remove(remove);
 	}
 
 	private double score(MTreeNode node, int sgn) {
@@ -610,11 +658,17 @@ public class Experiment extends Method {
 				TransitionDefinitionException, GoalDefinitionException {
 			MachineState state = node.state;
 			if (node.move != null) state = machine.getRandomNextState(state, role, node.move);
-			while (!machine.isTerminal(state)) {
-				if (System.currentTimeMillis() > timeout) return new DCOut(node, FAIL);
-				state = machine.getRandomNextState(state);
+			double score;
+			if (propNetInitialized) {
+				JustKiddingPropNetStateMachine pnsm = (JustKiddingPropNetStateMachine) machine;
+				score = findReward(pnsm.internalDC((PropNetMachineState) state));
+			} else {
+				while (!machine.isTerminal(state)) {
+					if (System.currentTimeMillis() > timeout) return new DCOut(node, FAIL);
+					state = machine.getRandomNextState(state);
+				}
+				score = findReward(machine, role, state);
 			}
-			double score = findReward(machine, role, state);
 			if (score < DC_MIN) score = DC_MIN;
 			if (score > DC_MAX) score = DC_MAX;
 			return new DCOut(node, score);
