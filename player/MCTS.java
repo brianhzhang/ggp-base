@@ -315,14 +315,6 @@ public class MCTS extends Method {
 	public Move run(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
-		Move move = run_(machine, rootstate, role, moves, timeout);
-		nextPossibles = machine.getNextStates(rootstate, role).get(move);
-		return move;
-	}
-
-	public Move run_(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
-			long timeout) throws GoalDefinitionException, MoveDefinitionException,
-					TransitionDefinitionException {
 		if (solution != null && !solution.isEmpty()) {
 			Move move = solution.pop();
 			Log.println("solution move: " + move);
@@ -342,17 +334,27 @@ public class MCTS extends Method {
 			timeout = System.currentTimeMillis() + newclock;
 		} else nBehindServer = 1;
 
+		if (checkStateMachineStatus()) {
+			// reinit state machine
+			machine = myplayer.getStateMachine();
+			rootstate = myplayer.getCurrentState();
+		}
+
+		Move move = run_(machine, rootstate, role, moves, timeout);
+		nextPossibles = machine.getNextStates(rootstate, role).get(move);
+		return move;
+	}
+
+	public Move run_(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
+			long timeout) throws GoalDefinitionException, MoveDefinitionException,
+					TransitionDefinitionException {
+
 		// we don't cache anyway. might as well...
 		if (moves.size() == 1) {
 			Log.println("one legal move: " + moves.get(0));
 			return moves.get(0);
 		}
 		Log.println("threads running: " + Thread.activeCount());
-		if (checkStateMachineStatus()) {
-			// reinit state machine
-			machine = myplayer.getStateMachine();
-			rootstate = myplayer.getCurrentState();
-		}
 		Map<Role, Set<Move>> oldUseless = null;
 		ignoreProps = null;
 		if (propNetInitialized) {
