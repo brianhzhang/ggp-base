@@ -82,6 +82,7 @@ public class MyPlayer extends StateMachineGamer {
 		newp.goals = p.goals;
 		newp.p = p.p;
 		newp.props = p.props;
+		newp.legaltoinput = p.legaltoinput;
 		return newp;
 	}
 

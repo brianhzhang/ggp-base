@@ -190,16 +190,15 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			}
 		}
 		
-		legaltoinput = new int[input];
-		for (int i = 0; i < legaltoinputhelper.size(); i ++) {
-			for (int j = 0; j < inputarr.length; j ++) {
-				if (components.get(inputarr[j] / 2) == legaltoinputhelper.get(i)) {
-					legaltoinput[i] = j;
-					break;
-				}
-			}
-		}
-		//TODO ODDODO
+//		legaltoinput = new int[input];
+//		for (int i = 0; i < legaltoinputhelper.size(); i ++) {
+//			for (int j = 0; j < inputarr.length; j ++) {
+//				if (components.get(inputarr[j] / 2) == legaltoinputhelper.get(i)) {
+//					legaltoinput[i] = j;
+//					break;
+//				}
+//			}
+//		}
 
 		Set<Component> visited = new HashSet<Component>();
 
@@ -383,9 +382,13 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	
 	/* ########################################################################################## */
 	
-	public int[] internalDC(PropNetMachineState state) {
-		while (!isTerminal(state)) {
-			state = internalRandomNextState();
+	public int[] internalDC(PropNetMachineState MS) {
+		int[] moves = new int[roles.size()];
+		int[] counts = new int[roles.size()];
+		int[] indicies = new int[roles.size()];
+		boolean[] state = MS.props.clone();
+		while (!internalTerminal(state)) {
+			internalRandomNextState(moves, counts, indicies, state);
 		}
 		
 		//Get all of the goals for the terminal state.
@@ -405,15 +408,16 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		return -1;
 	}
 	
-	private PropNetMachineState internalRandomNextState() {
-		int[] moves = internalRandomJoint();
-		return internalNextState(moves);
+	private void internalRandomNextState(int[] moves, int[] counts, int[] indicies, boolean[] state) {
+		internalRandomJoint(moves, counts, indicies);
+		internalNextState(moves, state);
 	}
 	
-	public int[] internalRandomJoint() {
-		int[] moves = new int[roles.size()];
-		int[] counts = new int[roles.size()];
-		int[] indicies = new int[roles.size()];
+	public int[] internalRandomJoint(int[] moves, int[] counts, int[] indicies) {
+		for (int i = 0; i < moves.length; i ++) {
+			counts[i] = 0;
+			indicies[i] = 0;
+		}
 		for (int i = 0; i < legals.length; i++) {
 			if (((comps[legalarr[i][0]] >> 31) & 1) == 1) {
 				counts[legalarr[i][1]] ++;
@@ -427,17 +431,32 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		return moves;
 	}
 	
-	public PropNetMachineState internalNextState(int[] moves) {
+	public boolean[] internalNextState(int[] moves, boolean[] state) {
 		boolean[] inputs = new boolean[inputarr.length];
 		for (int i = 0; i < moves.length; i++) {
 			inputs[moves[i]] = true;
 		}
 		markinputs(inputs);
-		boolean[] next = new boolean[basearr.length];
 		for (int i = 0; i < basearr.length; i++) {
-			next[i] = (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1);
+			state[i] = (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1);
 		}
-		return new PropNetMachineState(next);
+		return state;
+	}
+	
+	public boolean internalTerminal(boolean[] state) {
+		internalMarkbases(state);
+		return ((comps[comps[term + 1]] >> 31) & 1) == 1;
+	}
+	
+	private void internalMarkbases(boolean[] bases) {
+		for (int i = 0; i < bases.length; i++) {
+			if (bases[i] != (((comps[basearr[i]] >> 31) & 1) == 1)) {
+				comps[basearr[i]] = bases[i] ? 0xF0000000 : 0x0F000000;
+				for (int j = 0; j < structure[basearr[i] / 2].length; j++) {
+					propagate(structure[basearr[i] / 2][j], bases[i] ? 1 : -1);
+				}
+			}
+		}
 	}
 	
 	public long randomLong(int max) {
