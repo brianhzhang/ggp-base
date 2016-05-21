@@ -191,7 +191,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			}
 		}
 
-		legaltoinput = new int[input];
+		legaltoinput = new int[legal];
 		for (int i = 0; i < legaltoinputhelper.size(); i++) {
 			for (int j = 0; j < inputarr.length; j++) {
 				if (components.get(inputarr[j] / 2) == legaltoinputhelper.get(i)) {
@@ -388,8 +388,9 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		int[] counts = new int[roles.size()];
 		int[] indicies = new int[roles.size()];
 		boolean[] state = MS.props.clone();
+		boolean[] inputs = new boolean[inputarr.length];
 		while (!internalTerminal(state)) {
-			internalRandomNextState(moves, counts, indicies, state);
+			internalRandomNextState(moves, counts, indicies, state, inputs);
 		}
 
 		// Get all of the goals for the terminal state.
@@ -409,10 +410,12 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		return -1;
 	}
 
-	private void internalRandomNextState(int[] moves, int[] counts, int[] indicies,
-			boolean[] state) {
+	private void internalRandomNextState(int[] moves, int[] counts, int[] indicies, boolean[] state, boolean[] inputs) {
+		for (int i = 0; i < moves.length; i ++) {
+			inputs[moves[i]] = false;
+		}
 		internalRandomJoint(moves, counts, indicies);
-		internalNextState(moves, state);
+		internalNextState(moves, state, inputs);
 	}
 
 	public int[] internalRandomJoint(int[] moves, int[] counts, int[] indicies) {
@@ -433,8 +436,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		return moves;
 	}
 
-	public boolean[] internalNextState(int[] moves, boolean[] state) {
-		boolean[] inputs = new boolean[inputarr.length];
+	public boolean[] internalNextState(int[] moves, boolean[] state, boolean[] inputs) {
 		for (int i = 0; i < moves.length; i++) {
 			inputs[moves[i]] = true;
 		}
