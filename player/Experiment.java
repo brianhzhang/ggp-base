@@ -36,6 +36,7 @@ import org.ggp.base.util.statemachine.implementation.prover.query.ProverQueryBui
 public class Experiment extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
+	private static final boolean USE_MULTIPLAYER_FACTORING = true;
 	private static final double CFACTOR = 1.0;
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
@@ -315,14 +316,6 @@ public class Experiment extends Method {
 	public Move run(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
-		Move move = run_(machine, rootstate, role, moves, timeout);
-		nextPossibles = machine.getNextStates(rootstate, role).get(move);
-		return move;
-	}
-
-	public Move run_(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
-			long timeout) throws GoalDefinitionException, MoveDefinitionException,
-					TransitionDefinitionException {
 		if (solution != null && !solution.isEmpty()) {
 			Move move = solution.pop();
 			Log.println("solution move: " + move);
@@ -342,17 +335,35 @@ public class Experiment extends Method {
 			timeout = System.currentTimeMillis() + newclock;
 		} else nBehindServer = 1;
 
+		if (checkStateMachineStatus()) {
+			// reinit state machine
+			machine = myplayer.getStateMachine();
+			rootstate = myplayer.getCurrentState();
+		}
+
+		Move move = run_(machine, rootstate, role, moves, timeout);
+
+		long start = System.currentTimeMillis();
+		nextPossibles = new ArrayList<>();
+		List<List<Move>> jmoves = machine.getLegalJointMoves(rootstate, role, move);
+		for (List<Move> jmove : jmoves) {
+			nextPossibles.add(machine.getNextState(rootstate, jmove));
+		}
+		Log.println("time to enumerate next states: " + (System.currentTimeMillis() - start));
+
+		return move;
+	}
+
+	public Move run_(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
+			long timeout) throws GoalDefinitionException, MoveDefinitionException,
+					TransitionDefinitionException {
+
 		// we don't cache anyway. might as well...
 		if (moves.size() == 1) {
 			Log.println("one legal move: " + moves.get(0));
 			return moves.get(0);
 		}
 		Log.println("threads running: " + Thread.activeCount());
-		if (checkStateMachineStatus()) {
-			// reinit state machine
-			machine = myplayer.getStateMachine();
-			rootstate = myplayer.getCurrentState();
-		}
 		Map<Role, Set<Move>> oldUseless = null;
 		ignoreProps = null;
 		if (propNetInitialized) {
@@ -539,7 +550,7 @@ public class Experiment extends Method {
 		} catch (MoveDefinitionException e) {
 			e.printStackTrace();
 		}
-		if (!propNetInitialized) return actions;
+		if (!propNetInitialized || !USE_MULTIPLAYER_FACTORING) return actions;
 		Set<Move> uselessMoves = useless.get(role);
 
 		List<Move> output = new ArrayList<>();

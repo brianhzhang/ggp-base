@@ -36,6 +36,7 @@ import org.ggp.base.util.statemachine.implementation.prover.query.ProverQueryBui
 public class MCTS extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
+	private static final boolean USE_MULTIPLAYER_FACTORING = true;
 	private static final double CFACTOR = 1.0;
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
@@ -146,6 +147,10 @@ public class MCTS extends Method {
 		if (nUsefulRoles != 1) return;
 		Log.println("single player game. starting solver");
 		machine = gamer.getStateMachine();
+
+		SatSolver satsolver = new SatSolver(machine, gamer.getRole(), timeout);
+		satsolver.start();
+
 		List<Proposition> bases = smthread.m.props;
 
 		boolean[] ignoreProps = new boolean[bases.size()];
@@ -267,9 +272,23 @@ public class MCTS extends Method {
 		}
 
 		if (solution != null) {
-			Log.println("solution found in " + (System.currentTimeMillis() - start) + " ms");
+			Log.println("A* solver: complete in " + (System.currentTimeMillis() - start) + " ms");
 		} else {
-			Log.println("solver failed to find solution");
+			Log.println("A* solver: failed to find solution");
+		}
+
+		try {
+			satsolver.join();
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+
+		if (solution == null && satsolver.output != null) {
+			Log.println("recovered sat solution");
+			solution = new Stack<>();
+			for (int i = satsolver.output.size() - 1; i >= 0; i--) {
+				solution.push(satsolver.output.get(i));
+			}
 		}
 	}
 
@@ -341,7 +360,15 @@ public class MCTS extends Method {
 		}
 
 		Move move = run_(machine, rootstate, role, moves, timeout);
-		nextPossibles = machine.getNextStates(rootstate, role).get(move);
+
+		long start = System.currentTimeMillis();
+		nextPossibles = new ArrayList<>();
+		List<List<Move>> jmoves = machine.getLegalJointMoves(rootstate, role, move);
+		for (List<Move> jmove : jmoves) {
+			nextPossibles.add(machine.getNextState(rootstate, jmove));
+		}
+		Log.println("time to enumerate next states: " + (System.currentTimeMillis() - start));
+
 		return move;
 	}
 
@@ -541,7 +568,7 @@ public class MCTS extends Method {
 		} catch (MoveDefinitionException e) {
 			e.printStackTrace();
 		}
-		if (!propNetInitialized) return actions;
+		if (!propNetInitialized || !USE_MULTIPLAYER_FACTORING) return actions;
 		Set<Move> uselessMoves = useless.get(role);
 
 		List<Move> output = new ArrayList<>();
