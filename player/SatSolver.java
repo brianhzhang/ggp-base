@@ -142,11 +142,6 @@ public class SatSolver extends Thread {
 					}
 					Set<Component> otherMoves = new HashSet<>(ourInputs);
 					otherMoves.removeAll(ors);
-					// TODO
-					// Log.println(ands);
-					// Log.println(ors);
-					// Log.println(otherMoves);
-					// printInputs(comp, "");
 					for (Component move : otherMoves) {
 						andvec.push(-compMap.get(move));
 					}
@@ -204,7 +199,6 @@ public class SatSolver extends Thread {
 					int key1 = compMap.get(does);
 					int key2 = compMap.get(legalInputMap.get(legal));
 					if (key1 == key2) continue;
-					// TODO Log.println(parseLabel(does) + " => not " + parseLabel(legal));
 					VecInt vec = new VecInt(2);
 					vec.push(key1);
 					vec.push(key2);
