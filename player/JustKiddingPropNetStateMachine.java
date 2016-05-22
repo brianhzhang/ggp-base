@@ -78,6 +78,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	@Override
 	public void initialize(List<Gdl> description) {
+		long start = System.currentTimeMillis();
 		p = null;
 		try {
 			p = OptimizingPropNetFactory.create(description);
@@ -90,6 +91,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		for (Component c : components) {
 			c.crystalize();
 		}
+		
 		props = new ArrayList<Proposition>();
 		comps = new int[components.size() * 2];
 		structure = new int[components.size()][];
@@ -111,7 +113,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		for (Role r : roles) {
 			actions.put(r, propToMoves(p.getLegalPropositions().get(r)));
 		}
-
+		
 		int base = 0;
 		int input = 0;
 		int legal = 0;
@@ -141,11 +143,9 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 				boolean isView = true;
 				for (Role r : roles) {
 					if (p.getGoalPropositions().get(r).contains(components.get(i / 2))) {
-						comps[i] = 0;
-						comps[i + 1] = components.indexOf(components.get(i / 2).getSingleInput())
-								* 2;
-						goals[goal][0] = components.indexOf(components.get(i / 2).getSingleInput())
-								* 2;
+						comps[i] = 0x7FFFFFFF;
+						comps[i + 1] = -1;
+						goals[goal][0] = components.indexOf(components.get(i / 2).getSingleInput()) * 2;
 						goals[goal][1] = roles.indexOf(r);
 						goals[goal][2] = getGoalValue((Proposition) components.get(i / 2));
 						goal++;
@@ -156,11 +156,9 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 						comps[i] = 0x7FFFFFFF;
 						comps[i + 1] = -1;
 						legaltoinputhelper.add(p.getLegalInputMap().get(components.get(i / 2)));
-						legalarr[legal][0] = components
-								.indexOf(components.get(i / 2).getSingleInput()) * 2;
+						legalarr[legal][0] = components.indexOf(components.get(i / 2).getSingleInput()) * 2;
 						legalarr[legal][1] = roles.indexOf(r);
-						legals[legal] = new Move(
-								((Proposition) components.get(i / 2)).getName().get(1));
+						legals[legal] = new Move(((Proposition) components.get(i / 2)).getName().get(1));
 						legal++;
 						isView = false;
 						break;
@@ -186,8 +184,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			// fill the structure array:
 			structure[i / 2] = new int[components.get(i / 2).getOutputs().size()];
 			for (int j = 0; j < structure[i / 2].length; j++) {
-				structure[i / 2][j] = components.indexOf(components.get(i / 2).getOutputarr()[j])
-						* 2;
+				structure[i / 2][j] = components.indexOf(components.get(i / 2).getOutputarr()[j]) * 2;
 			}
 		}
 
@@ -200,7 +197,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 				}
 			}
 		}
-
+		
 		Set<Component> visited = new HashSet<Component>();
 
 		for (int i = 0; i < basearr.length; i++) {
@@ -370,8 +367,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 		int old = ((comps[index] >> 31) & 1);
 		comps[index] += newValue;
-		if (old != ((comps[index] >> 31) & 1)
-				|| (newValue == 0 && (old == 0 || !visited.contains(components.get(index / 2))))) {
+		if (old != ((comps[index] >> 31) & 1) ||
+				(newValue == 0 && (!visited.contains(components.get(index / 2))))) {
 			visited.add(components.get(index / 2));
 			for (int i = 0; i < structure[index / 2].length; i++) {
 				startPropagate(structure[index / 2][i], ((comps[index] >> 31) & 1), components,
