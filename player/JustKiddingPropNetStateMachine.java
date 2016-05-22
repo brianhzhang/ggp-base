@@ -367,7 +367,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 		int old = ((comps[index] >> 31) & 1);
 		comps[index] += newValue;
-		if (old != ((comps[index] >> 31) & 1) || !visited.contains(components.get(index / 2))) {
+		if (old != ((comps[index] >> 31) & 1) ||
+				(newValue == 0 && (!visited.contains(components.get(index / 2))))) {
 			visited.add(components.get(index / 2));
 			for (int i = 0; i < structure[index / 2].length; i++) {
 				startPropagate(structure[index / 2][i], ((comps[index] >> 31) & 1), components,
