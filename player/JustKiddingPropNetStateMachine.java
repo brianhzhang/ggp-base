@@ -143,8 +143,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 				boolean isView = true;
 				for (Role r : roles) {
 					if (p.getGoalPropositions().get(r).contains(components.get(i / 2))) {
-						comps[i] = 0;
-						comps[i + 1] = components.indexOf(components.get(i / 2).getSingleInput()) * 2;
+						comps[i] = 0x7FFFFFFF;
+						comps[i + 1] = -1;
 						goals[goal][0] = components.indexOf(components.get(i / 2).getSingleInput()) * 2;
 						goals[goal][1] = roles.indexOf(r);
 						goals[goal][2] = getGoalValue((Proposition) components.get(i / 2));
