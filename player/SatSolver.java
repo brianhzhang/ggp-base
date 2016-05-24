@@ -1,10 +1,11 @@
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Stack;
+import java.util.concurrent.BlockingQueue;
 
 import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
@@ -29,17 +30,28 @@ import org.sat4j.specs.ContradictionException;
 import org.sat4j.specs.TimeoutException;
 import org.sat4j.tools.GateTranslator;
 
-public class SatSolver extends Thread {
+abstract class Solver extends Thread {
+	public boolean kill = false;
+	public int best_reward;
+	public Stack<Move> best;
+}
+
+public class SatSolver extends Solver {
 	private JustKiddingPropNetStateMachine machine;
 	private Role role;
 	private long timeout;
+	private BlockingQueue<Solver> out;
 
-	public List<Move> output = null;
-
-	public SatSolver(StateMachine machine, Role role, long timeout) {
+	public SatSolver(BlockingQueue<Solver> out, StateMachine machine, Role role, long timeout) {
+		this.out = out;
 		this.machine = (JustKiddingPropNetStateMachine) machine;
 		this.role = role;
 		this.timeout = timeout;
+	}
+
+	@Override
+	public String toString() {
+		return "sat solver";
 	}
 
 	@Override
@@ -49,6 +61,7 @@ public class SatSolver extends Thread {
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
+		out.add(this);
 	}
 
 	public void solve_() throws ContradictionException, TimeoutException, MoveDefinitionException,
@@ -117,7 +130,7 @@ public class SatSolver extends Thread {
 		}
 
 		for (Component comp : p.getComponents()) {
-			if (System.currentTimeMillis() > timeout) {
+			if (System.currentTimeMillis() > timeout || kill) {
 				Log.println("sat: timeout");
 				return;
 			}
@@ -190,7 +203,7 @@ public class SatSolver extends Thread {
 		}
 		Log.println("sat: propnet translated");
 		for (Component does : ourInputs) {
-			if (System.currentTimeMillis() > timeout) {
+			if (System.currentTimeMillis() > timeout || kill) {
 				Log.println("sat: timeout");
 				return;
 			}
@@ -222,16 +235,20 @@ public class SatSolver extends Thread {
 		}
 		Log.println("sat: found possible solution");
 		Set<Proposition> winMoves = toProps(model, compList, ourInputs);
-		output = new ArrayList<>();
-		if (checkSolution(winMoves)) {
+		List<Move> output = new ArrayList<>();
+		if (checkSolution(winMoves, output)) {
 			Log.println("sat: solution verified. time: " + (System.currentTimeMillis() - start));
+			best_reward = MyPlayer.MAX_SCORE;
+			best = new Stack<>();
+			for (int i = output.size() - 1; i >= 0; i--) {
+				best.push(output.get(i));
+			}
 		} else {
-			output = null;
 			Log.println("sat: solution was incorrect");
 		}
 	}
 
-	private boolean checkSolution(Set<Proposition> moves)
+	private boolean checkSolution(Set<Proposition> moves, List<Move> output)
 			throws GoalDefinitionException, MoveDefinitionException, TransitionDefinitionException {
 		MachineState state = machine.getInitialState();
 		for (Proposition pmove : moves) {
@@ -319,41 +336,5 @@ public class SatSolver extends Thread {
 			if (!(((Proposition) in).getName().getName().toString().equals("does"))) return false;
 		}
 		return true;
-	}
-
-	private String parseLabel(Component c) {
-		String comp = c.toString();
-		int start = comp.indexOf("label=\"") + 7;
-		int end = comp.indexOf("\"", start);
-		return comp.substring(start, end);
-	}
-
-	private void printInputs(Component comp, String indent) {
-		if (comp instanceof Transition) return;
-		Log.println(indent + parseLabel(comp));// + " " + isAllDoes(comp));
-		for (Component in : comp.getInputs()) {
-			// in = sanitize(in);
-			printInputs(in, indent + "  ");
-		}
-	}
-
-	private static void test() throws ContradictionException, TimeoutException {
-		GateTranslator translate = new GateTranslator(SolverFactory.instance().defaultSolver());
-		VecInt solution = new VecInt(1);
-		solution.push(1);
-		translate.addClause(solution);
-		translate.xor(1, 2, 3);
-		VecInt assume = new VecInt(1);
-		translate.not(2, -3);
-		int[] model = translate.findModel();
-		System.out.println(Arrays.toString(model));
-	}
-
-	public static void main(String[] args) {
-		try {
-			test();
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
 	}
 }

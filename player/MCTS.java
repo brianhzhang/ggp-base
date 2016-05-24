@@ -148,9 +148,6 @@ public class MCTS extends Method {
 		Log.println("single player game. starting solver");
 		machine = gamer.getStateMachine();
 
-		SatSolver satsolver = new SatSolver(machine, gamer.getRole(), timeout);
-		satsolver.start();
-
 		List<Proposition> bases = smthread.m.props;
 
 		boolean[] ignoreProps = new boolean[bases.size()];
@@ -224,13 +221,19 @@ public class MCTS extends Method {
 			Log.println("found " + factors.size() + " factors");
 		}
 
+		int n_factor = factors.size();
+
 		BlockingQueue<Solver> returns = new LinkedBlockingQueue<>();
-		Solver[] solvers = new Solver[factors.size()];
-		for (int i = 0; i < factors.size(); i++) {
-			solvers[i] = new Solver(myplayer.copyMachine((JustKiddingPropNetStateMachine) machine),
-					timeout, factors.get(i).ignore, returns, i);
+
+		Solver[] solvers = new Solver[1 + n_factor];
+		for (int i = 0; i < n_factor; i++) {
+			solvers[i] = new DFSSolver(
+					myplayer.copyMachine((JustKiddingPropNetStateMachine) machine), timeout,
+					factors.get(i).ignore, returns, i);
 			solvers[i].start();
 		}
+		solvers[n_factor] = new SatSolver(returns, machine, gamer.getRole(), timeout);
+		solvers[n_factor].start();
 
 		long start = System.currentTimeMillis();
 		solution = null;
@@ -238,12 +241,12 @@ public class MCTS extends Method {
 		int best_reward = 0;
 		boolean proven = true;
 
-		for (int i = 0; i < factors.size(); i++) {
+		for (int i = 0; i < solvers.length; i++) {
 			try {
 				Solver solver = returns.take();
 				if (solver.best == null) { // timeout
 					Log.println(solver + " found no solution");
-					proven = false;
+					if (solver instanceof DFSSolver) proven = false;
 					continue;
 				}
 				Log.println(solver + " found solution with score " + solver.best_reward);
@@ -260,7 +263,7 @@ public class MCTS extends Method {
 
 		if (best_reward < MyPlayer.MAX_SCORE && !proven) solution = null;
 
-		for (int i = 0; i < factors.size(); i++) {
+		for (int i = 0; i < solvers.length; i++) {
 			if (solvers[i].isAlive()) {
 				solvers[i].kill = true;
 				try {
@@ -272,23 +275,9 @@ public class MCTS extends Method {
 		}
 
 		if (solution != null) {
-			Log.println("A* solver: complete in " + (System.currentTimeMillis() - start) + " ms");
+			Log.println("solver: complete in " + (System.currentTimeMillis() - start) + " ms");
 		} else {
-			Log.println("A* solver: failed to find solution");
-		}
-
-		try {
-			satsolver.join();
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		}
-
-		if (solution == null && satsolver.output != null) {
-			Log.println("recovered sat solution");
-			solution = new Stack<>();
-			for (int i = satsolver.output.size() - 1; i >= 0; i--) {
-				solution.push(satsolver.output.get(i));
-			}
+			Log.println("solver: failed to find solution");
 		}
 	}
 
@@ -478,9 +467,7 @@ public class MCTS extends Method {
 				child.lower = Math.max(child.lower, fastChild.lower);
 				child.upper = Math.min(child.upper, fastChild.upper);
 			}
-			if (bestChild == null || child.utility() > bestChild.utility()
-					|| (child.utility() == bestChild.utility() && child.visits > bestChild.visits))
-				bestChild = child;
+			if (child.compareTo(bestChild) > 0) bestChild = child;
 			Log.println("move=" + info(child, child));
 		}
 		Log.println("played=" + info(bestChild, root));
@@ -663,9 +650,6 @@ public class MCTS extends Method {
 		return;
 	}
 
-	private static final int DC_MAX = 99;
-	private static final int DC_MIN = 1;
-
 	private class DepthChargeThread extends Thread {
 
 		private StateMachine machine;
@@ -698,8 +682,6 @@ public class MCTS extends Method {
 				}
 				score = findReward(machine, role, state);
 			}
-			if (score < DC_MIN) score = DC_MIN;
-			if (score > DC_MAX) score = DC_MAX;
 			return new DCOut(node, score);
 		}
 
@@ -719,7 +701,7 @@ public class MCTS extends Method {
 		}
 	}
 
-	private static class MTreeNode {
+	private static class MTreeNode implements Comparable<MTreeNode> {
 		// prior: sum squares = 10000 so that stdev != 0
 		public int visits = 0;
 		public double sum_utility = 0;
@@ -754,6 +736,16 @@ public class MCTS extends Method {
 			this.move = move;
 			this.state = state;
 			isMaxNode = false;
+		}
+
+		public int compareTo(MTreeNode other) {
+			if (other == null) return 1;
+			int cmp = Double.compare(utility(), other.utility());
+			if (cmp != 0) return cmp;
+			cmp = Double.compare(lower, other.lower);
+			if (cmp != 0) return cmp;
+			cmp = Double.compare(upper, other.upper);
+			return Double.compare(visits, other.visits);
 		}
 
 		public boolean setBounds() {
@@ -922,7 +914,7 @@ public class MCTS extends Method {
 	}
 
 	// a namespace for astar-related methods...or really just a DFS
-	private class Solver extends Thread {
+	private class DFSSolver extends Solver {
 
 		private boolean[] ignoreProps;
 		private BlockingQueue<Solver> out;
@@ -930,16 +922,12 @@ public class MCTS extends Method {
 		private int id;
 		private StateMachine machine;
 
-		public boolean kill = false;
-		public int best_reward;
-		public Stack<Move> best;
-
 		@Override
 		public String toString() {
 			return "solver-" + id;
 		}
 
-		public Solver(StateMachine machine, long timeout, boolean[] ignoreProps,
+		public DFSSolver(StateMachine machine, long timeout, boolean[] ignoreProps,
 				BlockingQueue<Solver> out, int id) {
 			this.machine = machine;
 			this.timeout = timeout;
@@ -1028,7 +1016,7 @@ public class MCTS extends Method {
 				if (closed.contains(u)) continue;
 				closed.add(u);
 				if (machine.isTerminal(u)) {
-					int reward = findReward(machine, role, u);
+					int reward = machine.findReward(role, u);
 					if (reward > best_reward) {
 						best = reconstruct(info, u);
 						best_reward = reward;
