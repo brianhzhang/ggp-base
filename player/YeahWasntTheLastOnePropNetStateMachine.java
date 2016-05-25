@@ -43,7 +43,10 @@ public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 	int[][] legalarr;
 	int[][] goals;
 	PropNetMachineState last;
+	int[] legaltoinput;
 	Random rgen = new Random();
+	long x = System.nanoTime();
+	static boolean defined;
 
 	PropNet p;
 	ArrayList<Proposition> props;
@@ -73,9 +76,23 @@ public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 			return m.hashCode() + role;
 		}
 	}
+	
+	public YeahWasntTheLastOnePropNetStateMachine() {
+		if (defined) {
+			initInternalDC();
+		}
+	}
+	
+	public YeahWasntTheLastOnePropNetStateMachine(boolean init) {
+		defined = init;
+		if (defined) {
+			initInternalDC();
+		}
+	}
 
 	@Override
 	public void initialize(List<Gdl> description) {
+		long start = System.currentTimeMillis();
 		p = null;
 		try {
 			p = OptimizingPropNetFactory.create(description);
@@ -83,10 +100,14 @@ public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 			e.printStackTrace();
 		}
 
-		List<Component> components = new ArrayList<Component>(p.getComponents());
+		List<Component> components = getOrdering(new ArrayList<Component>(p.getComponents()),
+				new HashSet<Proposition>(p.getBasePropositions().values()),
+				new HashSet<Proposition>(p.getInputPropositions().values()));
+		List<Component> legaltoinputhelper = new ArrayList<Component>();
 		for (Component c : components) {
 			c.crystalize();
 		}
+		
 		props = new ArrayList<Proposition>();
 		comps = new int[components.size() * 2];
 		structure = new int[components.size()][];
@@ -108,7 +129,7 @@ public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 		for (Role r : roles) {
 			actions.put(r, propToMoves(p.getLegalPropositions().get(r)));
 		}
-
+		
 		int base = 0;
 		int input = 0;
 		int legal = 0;
@@ -138,11 +159,9 @@ public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 				boolean isView = true;
 				for (Role r : roles) {
 					if (p.getGoalPropositions().get(r).contains(components.get(i / 2))) {
-						comps[i] = 0;
-						comps[i + 1] = components.indexOf(components.get(i / 2).getSingleInput())
-								* 2;
-						goals[goal][0] = components.indexOf(components.get(i / 2).getSingleInput())
-								* 2;
+						comps[i] = 0x7FFFFFFF;
+						comps[i + 1] = -1;
+						goals[goal][0] = components.indexOf(components.get(i / 2).getSingleInput()) * 2;
 						goals[goal][1] = roles.indexOf(r);
 						goals[goal][2] = getGoalValue((Proposition) components.get(i / 2));
 						goal++;
@@ -150,13 +169,12 @@ public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 						break;
 					}
 					if (p.getLegalPropositions().get(r).contains(components.get(i / 2))) {
-						comps[i] = 0;
-						comps[i + 1] = components.indexOf(components.get(i / 2).getSingleInput())
-								* 2;
-						legalarr[legal][0] = i;
+						comps[i] = 0x7FFFFFFF;
+						comps[i + 1] = -1;
+						legaltoinputhelper.add(p.getLegalInputMap().get(components.get(i / 2)));
+						legalarr[legal][0] = components.indexOf(components.get(i / 2).getSingleInput()) * 2;
 						legalarr[legal][1] = roles.indexOf(r);
-						legals[legal] = new Move(
-								((Proposition) components.get(i / 2)).getName().get(1));
+						legals[legal] = new Move(((Proposition) components.get(i / 2)).getName().get(1));
 						legal++;
 						isView = false;
 						break;
@@ -182,11 +200,20 @@ public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 			// fill the structure array:
 			structure[i / 2] = new int[components.get(i / 2).getOutputs().size()];
 			for (int j = 0; j < structure[i / 2].length; j++) {
-				structure[i / 2][j] = components.indexOf(components.get(i / 2).getOutputarr()[j])
-						* 2;
+				structure[i / 2][j] = components.indexOf(components.get(i / 2).getOutputarr()[j]) * 2;
 			}
 		}
 
+		legaltoinput = new int[legal];
+		for (int i = 0; i < legaltoinputhelper.size(); i++) {
+			for (int j = 0; j < inputarr.length; j++) {
+				if (components.get(inputarr[j] / 2) == legaltoinputhelper.get(i)) {
+					legaltoinput[i] = j;
+					break;
+				}
+			}
+		}
+		
 		Set<Component> visited = new HashSet<Component>();
 
 		for (int i = 0; i < basearr.length; i++) {
@@ -201,18 +228,37 @@ public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 		}
 		for (Component c : components) {
 			if (c instanceof Constant) {
-				startPropagate(components.indexOf(c), 0, components, visited);
+				startPropagate(components.indexOf(c) * 2, 0, components, visited);
 			}
 		}
 
 		initcomps = comps.clone();
+		initInternalDC();
+	}
+	
+	private List<Component> getOrdering(List<Component> comps, Set<Proposition> bases, Set<Proposition> inputs) {
+		List<Component> order = new ArrayList<Component>();
+		int index = 0;
+		for (Component c : comps) {
+			if (bases.contains(c)) {
+				order.add(0, c);
+				index ++;
+			}
+			else if (inputs.contains(c)) {
+				order.add(index, c);
+			}
+			else {
+				order.add(c);
+			}
+		}
+		return order;
 	}
 
 	private int getComp(Component c) {
 		if (c instanceof And) {
-			return (((And) c).nand ? 0 : 0x80000000) - c.getInputs().size();
+			return 0x80000000 - c.getInputs().size();
 		} else if (c instanceof Or) {
-			return ((Or) c).nor ? 0xFFFFFFFF : 0x7FFFFFFF;
+			return 0x7FFFFFFF;
 		} else if (c instanceof Not) {
 			return 0xFFFFFFFF;
 		} else if (c instanceof Transition) {
@@ -287,8 +333,7 @@ public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 		markbases((PropNetMachineState) state);
 		ArrayList<Move> moves = new ArrayList<Move>();
 		for (int i = 0; i < legals.length; i++) {
-			if (((comps[comps[legalarr[i][0] + 1]] >> 31) & 1) == 1
-					&& legalarr[i][1] == roles.indexOf(role)) {
+			if (((comps[legalarr[i][0]] >> 31) & 1) == 1 && legalarr[i][1] == roles.indexOf(role)) {
 				moves.add(legals[i]);
 			}
 		}
@@ -357,13 +402,111 @@ public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 		}
 		int old = ((comps[index] >> 31) & 1);
 		comps[index] += newValue;
-		if (old != ((comps[index] >> 31) & 1)
-				|| (newValue == 0 && (old == 0 || !visited.contains(components.get(index / 2))))) {
+		if (old != ((comps[index] >> 31) & 1) ||
+				(newValue == 0 && (!visited.contains(components.get(index / 2))))) {
 			visited.add(components.get(index / 2));
 			for (int i = 0; i < structure[index / 2].length; i++) {
 				startPropagate(structure[index / 2][i], ((comps[index] >> 31) & 1), components,
 						visited);
 			}
 		}
+	}
+
+	/* ########################################################################################## */
+
+	int[] moves;
+	int[] counts;
+	int[] indicies;
+	boolean[] inputs;
+	
+	public void initInternalDC() {
+		moves = new int[roles.size()];
+		counts = new int[roles.size()];
+		indicies = new int[roles.size()];
+		inputs = new boolean[inputarr.length];
+	}
+	
+	public int[] internalDC(PropNetMachineState MS) {
+		boolean[] state = MS.props.clone();
+		last = null;
+		while (!internalTerminal(state)) {
+			internalRandomNextState(moves, counts, indicies, state, inputs);
+		}
+
+		// Get all of the goals for the terminal state.
+		int[] goals = new int[roles.size()];
+		for (int i = 0; i < goals.length; i++) {
+			goals[i] = internalGoal(i);
+		}
+		return goals;
+	}
+
+	private int internalGoal(int role) {
+		for (int i = 0; i < goals.length; i++) {
+			if (((comps[goals[i][0]] >> 31) & 1) == 1 && role == goals[i][1]) {
+				return goals[i][2];
+			}
+		}
+		return -1;
+	}
+
+	private void internalRandomNextState(int[] moves, int[] counts, int[] indicies, boolean[] state, boolean[] inputs) {
+		for (int i = 0; i < moves.length; i ++) {
+			inputs[moves[i]] = false;
+		}
+		internalRandomJoint(moves, counts, indicies);
+		internalNextState(moves, state, inputs);
+	}
+
+	public int[] internalRandomJoint(int[] moves, int[] counts, int[] indicies) {
+		for (int i = 0; i < moves.length; i++) {
+			counts[i] = 0;
+			indicies[i] = 0;
+		}
+		for (int i = 0; i < legals.length; i++) {
+			if (((comps[legalarr[i][0]] >> 31) & 1) == 1) {
+				counts[legalarr[i][1]]++;
+				int random = (int) randomLong(counts[legalarr[i][1]]);
+				if (random == 0) indicies[legalarr[i][1]] = i;
+			}
+		}
+		for (int i = 0; i < indicies.length; i++) {
+			moves[i] = legaltoinput[indicies[i]];
+		}
+		return moves;
+	}
+
+	public boolean[] internalNextState(int[] moves, boolean[] state, boolean[] inputs) {
+		for (int i = 0; i < moves.length; i++) {
+			inputs[moves[i]] = true;
+		}
+		markinputs(inputs);
+		for (int i = 0; i < basearr.length; i++) {
+			state[i] = (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1);
+		}
+		return state;
+	}
+
+	public boolean internalTerminal(boolean[] state) {
+		internalMarkbases(state);
+		return ((comps[comps[term + 1]] >> 31) & 1) == 1;
+	}
+
+	private void internalMarkbases(boolean[] bases) {
+		for (int i = 0; i < bases.length; i++) {
+			if (bases[i] != (((comps[basearr[i]] >> 31) & 1) == 1)) {
+				comps[basearr[i]] = bases[i] ? 0xF0000000 : 0x0F000000;
+				for (int j = 0; j < structure[basearr[i] / 2].length; j++) {
+					propagate(structure[basearr[i] / 2][j], bases[i] ? 1 : -1);
+				}
+			}
+		}
+	}
+
+	public long randomLong(int max) {
+		x ^= (x << 21);
+		x ^= (x >>> 35);
+		x ^= (x << 4);
+		return x % max;
 	}
 }

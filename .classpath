@@ -21,5 +21,6 @@
 	<classpathentry kind="lib" path="lib/javassist/javassist.jar"/>
 	<classpathentry kind="lib" path="lib/reflections/reflections-0.9.9-RC1.jar"/>
 	<classpathentry kind="lib" path="lib/Htmlparser/htmlparser-1.4.jar"/>
+	<classpathentry kind="lib" path="org.sat4j.core.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

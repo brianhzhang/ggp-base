@@ -36,7 +36,7 @@ public class TestPlayer extends StateMachineGamer {
 //		LolAnotherMetaPropNetStateMachineFactory facb =
 //				new LolAnotherMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
 		prover = new ProverStateMachine();
-		prop = new JustKiddingPropNetStateMachine();
+		prop = new JustKiddingPropNetStateMachine(false);
 		prover.initialize(((GDLGetter) getStateMachine()).getDescription());
 		prop.initialize(((GDLGetter) getStateMachine()).getDescription());
 		int total = 0;

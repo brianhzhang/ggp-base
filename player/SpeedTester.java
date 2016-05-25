@@ -60,13 +60,25 @@ public class SpeedTester extends StateMachineGamer {
 					ncharges ++;
 				}
 			} else {
-				while (!stop) {
-					MachineState state = init;
-					int[] g = ((JustKiddingPropNetStateMachine)m).internalDC((PropNetMachineState) state);
-					for (int i = 0; i < g.length; i ++) {
-						goals += g[i];
+				if (m instanceof JustKiddingPropNetStateMachine) {
+					while (!stop) {
+						MachineState state = init;
+						int[] g = ((JustKiddingPropNetStateMachine)m).internalDC((PropNetMachineState) state);
+						for (int i = 0; i < g.length; i ++) {
+							goals += g[i];
+						}
+						ncharges ++;
 					}
-					ncharges ++;
+				}
+				else if (m instanceof YeahWasntTheLastOnePropNetStateMachine) {
+					while (!stop) {
+						MachineState state = init;
+						int[] g = ((YeahWasntTheLastOnePropNetStateMachine)m).internalDC((PropNetMachineState) state);
+						for (int i = 0; i < g.length; i ++) {
+							goals += g[i];
+						}
+						ncharges ++;
+					}
 				}
 			}
 			System.out.println("Done!");
@@ -101,12 +113,12 @@ public class SpeedTester extends StateMachineGamer {
 //				new BetterMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
 //		LolAnotherMetaPropNetStateMachineFactory l = 
 //				new LolAnotherMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
-		StateMachine m1 = new JustKiddingPropNetStateMachine();
-		StateMachine m2 = new JustKiddingPropNetStateMachine();
+		StateMachine m1 = new JustKiddingPropNetStateMachine(false);
+		StateMachine m2 = new YeahWasntTheLastOnePropNetStateMachine(false);
 		m1.initialize(((GDLGetter) getStateMachine()).getDescription());
 		m2.initialize(((GDLGetter) getStateMachine()).getDescription());
 		TestThread t1 = new TestThread(m1, true);
-		TestThread t2 = new TestThread(m2, false);
+		TestThread t2 = new TestThread(m2, true);
 		t1.start();
 		t2.start();
 		long start = System.currentTimeMillis();

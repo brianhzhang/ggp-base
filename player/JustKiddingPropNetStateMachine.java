@@ -46,6 +46,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	int[] legaltoinput;
 	Random rgen = new Random();
 	long x = System.nanoTime();
+	static boolean defined;
 
 	PropNet p;
 	ArrayList<Proposition> props;
@@ -75,6 +76,19 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			return m.hashCode() + role;
 		}
 	}
+	
+	public JustKiddingPropNetStateMachine() {
+		if (defined) {
+			initInternalDC();
+		}
+	}
+	
+	public JustKiddingPropNetStateMachine(boolean init) {
+		defined = init;
+		if (defined) {
+			initInternalDC();
+		}
+	}
 
 	@Override
 	public void initialize(List<Gdl> description) {
@@ -86,7 +100,9 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			e.printStackTrace();
 		}
 
-		List<Component> components = new ArrayList<Component>(p.getComponents());
+		List<Component> components = getOrdering(new ArrayList<Component>(p.getComponents()),
+				new HashSet<Proposition>(p.getBasePropositions().values()),
+				new HashSet<Proposition>(p.getInputPropositions().values()));
 		List<Component> legaltoinputhelper = new ArrayList<Component>();
 		for (Component c : components) {
 			c.crystalize();
@@ -217,6 +233,25 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 
 		initcomps = comps.clone();
+		initInternalDC();
+	}
+	
+	private List<Component> getOrdering(List<Component> comps, Set<Proposition> bases, Set<Proposition> inputs) {
+		List<Component> order = new ArrayList<Component>();
+		int index = 0;
+		for (Component c : comps) {
+			if (bases.contains(c)) {
+				order.add(0, c);
+				index ++;
+			}
+			else if (inputs.contains(c)) {
+				order.add(index, c);
+			}
+			else {
+				order.add(c);
+			}
+		}
+		return order;
 	}
 
 	private int getComp(Component c) {
@@ -379,13 +414,21 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	/* ########################################################################################## */
 
+	int[] moves;
+	int[] counts;
+	int[] indicies;
+	boolean[] inputs;
+	
+	public void initInternalDC() {
+		moves = new int[roles.size()];
+		counts = new int[roles.size()];
+		indicies = new int[roles.size()];
+		inputs = new boolean[inputarr.length];
+	}
+	
 	public int[] internalDC(PropNetMachineState MS) {
-		last = null;
-		int[] moves = new int[roles.size()];
-		int[] counts = new int[roles.size()];
-		int[] indicies = new int[roles.size()];
 		boolean[] state = MS.props.clone();
-		boolean[] inputs = new boolean[inputarr.length];
+		last = null;
 		while (!internalTerminal(state)) {
 			internalRandomNextState(moves, counts, indicies, state, inputs);
 		}

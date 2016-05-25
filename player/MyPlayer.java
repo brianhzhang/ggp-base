@@ -189,7 +189,7 @@ public class MyPlayer extends StateMachineGamer {
 
 	@Override
 	public String getName() {
-		return "Brian and Jeff'); DROP TABLE TEAMS; --";
+		return "DTT";//"Brian and Jeff'); DROP TABLE TEAMS; --";
 	}
 }
 

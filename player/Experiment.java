@@ -869,7 +869,7 @@ public class Experiment extends Method {
 
 		@Override
 		public void run() {
-			m = new JustKiddingPropNetStateMachine();
+			m = new JustKiddingPropNetStateMachine(false);
 			m.initialize(description);
 			Log.println("propnet created. processing...");
 
