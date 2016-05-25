@@ -1,9 +1,9 @@
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
@@ -62,6 +62,7 @@ public class Experiment extends Method {
 	private static final double OUR_WEIGHT = 2. / 3;
 	private double oppWeight;
 	private Role[] roles;
+	private Role[] rolesWithUsFirst;
 	private int ourRoleIndex = -1;
 
 	private boolean checkStateMachineStatus() {
@@ -104,6 +105,10 @@ public class Experiment extends Method {
 			else ourRoleIndex = i;
 			useless.put(role, new HashSet<>());
 		}
+		rolesWithUsFirst = roles.clone();
+		rolesWithUsFirst[0] = roles[ourRoleIndex];
+		rolesWithUsFirst[ourRoleIndex] = roles[0];
+
 		Log.println("roles: " + Arrays.toString(roles) + " | our role: " + ourRoleIndex);
 		oppWeight = opponents.size() == 0 ? 0 : (1 - OUR_WEIGHT) / opponents.size();
 
@@ -147,6 +152,7 @@ public class Experiment extends Method {
 		if (nUsefulRoles != 1) return;
 		Log.println("single player game. starting solver");
 		machine = gamer.getStateMachine();
+
 		List<Proposition> bases = smthread.m.props;
 
 		boolean[] ignoreProps = new boolean[bases.size()];
@@ -220,13 +226,19 @@ public class Experiment extends Method {
 			Log.println("found " + factors.size() + " factors");
 		}
 
+		int n_factor = factors.size();
+
 		BlockingQueue<Solver> returns = new LinkedBlockingQueue<>();
-		Solver[] solvers = new Solver[factors.size()];
-		for (int i = 0; i < factors.size(); i++) {
-			solvers[i] = new Solver(myplayer.copyMachine((JustKiddingPropNetStateMachine) machine),
-					timeout, factors.get(i).ignore, returns, i);
+
+		Solver[] solvers = new Solver[1 + n_factor];
+		for (int i = 0; i < n_factor; i++) {
+			solvers[i] = new DFSSolver(
+					myplayer.copyMachine((JustKiddingPropNetStateMachine) machine), timeout,
+					factors.get(i).ignore, returns, i);
 			solvers[i].start();
 		}
+		solvers[n_factor] = new SatSolver(returns, machine, gamer.getRole(), timeout);
+		solvers[n_factor].start();
 
 		long start = System.currentTimeMillis();
 		solution = null;
@@ -234,12 +246,12 @@ public class Experiment extends Method {
 		int best_reward = 0;
 		boolean proven = true;
 
-		for (int i = 0; i < factors.size(); i++) {
+		for (int i = 0; i < solvers.length; i++) {
 			try {
 				Solver solver = returns.take();
 				if (solver.best == null) { // timeout
 					Log.println(solver + " found no solution");
-					proven = false;
+					if (solver instanceof DFSSolver) proven = false;
 					continue;
 				}
 				Log.println(solver + " found solution with score " + solver.best_reward);
@@ -256,7 +268,7 @@ public class Experiment extends Method {
 
 		if (best_reward < MyPlayer.MAX_SCORE && !proven) solution = null;
 
-		for (int i = 0; i < factors.size(); i++) {
+		for (int i = 0; i < solvers.length; i++) {
 			if (solvers[i].isAlive()) {
 				solvers[i].kill = true;
 				try {
@@ -268,9 +280,9 @@ public class Experiment extends Method {
 		}
 
 		if (solution != null) {
-			Log.println("solution found in " + (System.currentTimeMillis() - start) + " ms");
+			Log.println("solver: complete in " + (System.currentTimeMillis() - start) + " ms");
 		} else {
-			Log.println("solver failed to find solution");
+			Log.println("solver: failed to find solution");
 		}
 	}
 
@@ -290,26 +302,30 @@ public class Experiment extends Method {
 		return false;
 	}
 
-	private int findReward(int[] rewards) {
-		double reward = OUR_WEIGHT * rewards[ourRoleIndex];
-		for (int i = 0; i < roles.length; i++) {
-			if (i == ourRoleIndex) continue;
+	// arg in machine order
+	// returns in player-first order
+	private double[] findReward(double[] rewards) {
+		double tmp = rewards[0];
+		rewards[0] = rewards[ourRoleIndex];
+		rewards[ourRoleIndex] = tmp;
+		double reward = OUR_WEIGHT * rewards[0];
+		for (int i = 1; i < roles.length; i++) {
 			reward += (MyPlayer.MAX_SCORE - rewards[i]) * oppWeight;
 		}
-		return (int) Math.round(reward);
+		rewards[0] = Math.round(reward);
+		return rewards;
 	}
 
-	private int findReward(StateMachine machine, Role role, MachineState state) {
-		try {
-			if (opponents.size() == 0) return machine.findReward(role, state);
-			double reward = OUR_WEIGHT * machine.findReward(role, state);
-			for (Role opp : opponents) {
-				reward += (MyPlayer.MAX_SCORE - machine.findReward(opp, state)) * oppWeight;
+	private double[] findReward(StateMachine machine, MachineState state) {
+		double[] rewards = new double[roles.length];
+		for (int i = 0; i < roles.length; i++) {
+			try {
+				rewards[i] = machine.findReward(roles[i], state);
+			} catch (GoalDefinitionException e) {
+				e.printStackTrace();
 			}
-			return (int) Math.round(reward);
-		} catch (GoalDefinitionException e) {
-			return 0;
 		}
+		return findReward(rewards);
 	}
 
 	@Override
@@ -425,22 +441,26 @@ public class Experiment extends Method {
 		}
 		FastThread ft = new FastThread(timeout, machines[nthread], role, rootstate);
 		ft.start();
-		int expandTime = 0;
+		int dctime = 0;
 		while (System.currentTimeMillis() < timeout && !root.isProven()) {
 			MTreeNode node = select(root);
 			if (machine.isTerminal(node.state)) {
-				backpropogate(node, findReward(machine, role, node.state), 0, true);
+				backpropogate(node, findReward(machine, node.state), 0, true);
 			} else {
 				if (node.children.isEmpty()) {
-					long start = System.currentTimeMillis();
 					expand(machine, role, node);
-					expandTime += System.currentTimeMillis() - start;
 				}
-				input.offer(node);
+				try {
+					long start = System.currentTimeMillis();
+					input.put(node);
+					dctime += System.currentTimeMillis() - start;
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
 				while (true) {
 					DCOut out = output.poll();
 					if (out == null) break;
-					if (out.eval == FAIL) continue;
+					if (out.eval == null) continue;
 					backpropogate(out.node, out.eval, 0, false);
 				}
 			}
@@ -457,16 +477,14 @@ public class Experiment extends Method {
 		for (MTreeNode child : root.children) {
 			MTreeNode fastChild = ft.searchFor(child);
 			if (fastChild != null) {
-				child.lower = Math.max(child.lower, fastChild.lower);
-				child.upper = Math.min(child.upper, fastChild.upper);
+				child.lower[0] = Math.max(child.lower[0], fastChild.lower[0]);
+				child.upper[0] = Math.min(child.upper[0], fastChild.upper[0]);
 			}
-			if (bestChild == null || child.utility() > bestChild.utility()
-					|| (child.utility() == bestChild.utility() && child.visits > bestChild.visits))
-				bestChild = child;
+			if (child.compareTo(bestChild) > 0) bestChild = child;
 			Log.println("move=" + info(child, child));
 		}
 		Log.println("played=" + info(bestChild, root));
-		Log.printf("time=%d expandtime=%d\n", (System.currentTimeMillis() - timestart), expandTime);
+		Log.printf("time=%d dctime=%d\n", (System.currentTimeMillis() - timestart), dctime);
 		Log.print("expected line: ");
 		int root_nmoves = root.children.size();
 		int root_nopp = 0;
@@ -476,8 +494,8 @@ public class Experiment extends Method {
 				if (next == null || child.visits > next.visits) next = child;
 			}
 			root = next;
-			if (root.jmove != null) {
-				Log.printf(" %s (%d/%d)", root.jmove, root_nmoves, root_nopp);
+			if (root.nextToMove == 0) {
+				Log.printf(" %s (%d/%d)", root.getJointMove(), root_nmoves, root_nopp);
 				root_nmoves = root.children.size();
 			} else {
 				root_nopp = root.children.size();
@@ -508,7 +526,7 @@ public class Experiment extends Method {
 	private String info(MTreeNode scoreNode, MTreeNode rootNode) {
 		return String.format("%s score=%f ci=(%f, %f) bound=(%.0f, %.0f) visits=%d depth=%d",
 				scoreNode.move, scoreNode.utility(), score(scoreNode, -1), score(scoreNode, 1),
-				scoreNode.lower, scoreNode.upper, rootNode.visits, rootNode.depth);
+				scoreNode.lower[0], scoreNode.upper[0], rootNode.visits, rootNode.depth);
 	}
 
 	private MTreeNode select(MTreeNode node) {
@@ -518,26 +536,28 @@ public class Experiment extends Method {
 				if (child.visits == 0) return child;
 			}
 			MTreeNode best = null;
-			if (node.isMaxNode()) {
-				double score = Double.NEGATIVE_INFINITY;
-				for (MTreeNode child : node.children) {
-					if (child.isProven()) continue;
-					double newscore = score(child, 1);
-					if (newscore > score) {
-						score = newscore;
-						best = child;
-					}
+			double score = Double.NEGATIVE_INFINITY;
+			for (MTreeNode child : node.children) {
+				if (child.isProven()) continue;
+				double newscore = score(child, 1);
+				if (newscore > score) {
+					score = newscore;
+					best = child;
 				}
-			} else {
-				double score = Double.POSITIVE_INFINITY;
+			}
+			if (best == null) {
+				int i = 0;
 				for (MTreeNode child : node.children) {
-					if (child.isProven()) continue;
-					double newscore = score(child, -1);
-					if (newscore < score) {
-						score = newscore;
-						best = child;
-					}
+					if (child.isProven()) Log.println("child " + i + " proven");
+					else Log.println(
+							"child " + i + " value " + score(child, 1) + " visits " + child.visits);
+					++i;
 				}
+				while (node != null) {
+					Log.print(node.move + " ");
+					node = node.parent;
+				}
+				Log.println("");
 			}
 			node = best;
 		}
@@ -568,49 +588,12 @@ public class Experiment extends Method {
 		return output;
 	}
 
-	// copied from StateMachine.java
-	protected void crossProductMoves(List<List<Move>> legals, List<List<Move>> crossProduct,
-			LinkedList<Move> partial) {
-		if (partial.size() == legals.size()) {
-			crossProduct.add(new ArrayList<Move>(partial));
-		} else {
-			for (Move move : legals.get(partial.size())) {
-				partial.addLast(move);
-				crossProductMoves(legals, crossProduct, partial);
-				partial.removeLast();
-			}
-		}
-	}
-
-	public List<List<Move>> getUsefulJointMoves(StateMachine machine, MachineState state, Role role,
-			Move move) throws MoveDefinitionException {
-		List<List<Move>> legals = new ArrayList<List<Move>>();
-		for (Role r : machine.getRoles()) {
-			if (r.equals(role)) {
-				List<Move> m = new ArrayList<Move>();
-				m.add(move);
-				legals.add(m);
-			} else {
-				legals.add(getUsefulMoves(machine, r, state));
-			}
-		}
-
-		List<List<Move>> crossProduct = new ArrayList<List<Move>>();
-		crossProductMoves(legals, crossProduct, new LinkedList<Move>());
-
-		return crossProduct;
-	}
-
 	private void expand(StateMachine machine, Role role, MTreeNode node)
 			throws MoveDefinitionException, TransitionDefinitionException {
-		if (node.isMaxNode()) {
-			for (Move move : getUsefulMoves(machine, role, node.state)) {
-				MTreeNode newnode = new MTreeNode(node.state, move, node);
-				node.children.add(newnode);
-			}
-		} else {
-			for (List<Move> jmove : getUsefulJointMoves(machine, node.state, role, node.move)) {
-				MachineState newstate = machine.findNext(jmove, node.state);
+		for (Move move : getUsefulMoves(machine, rolesWithUsFirst[node.nextToMove], node.state)) {
+			MTreeNode newnode = new MTreeNode(node.state, move, node);
+			if (newnode.nextToMove == 0) {
+				MachineState newstate = machine.findNext(newnode.getJointMove(), node.state);
 				if (propNetInitialized) {
 					PropNetMachineState oldstate = (PropNetMachineState) node.state;
 					PropNetMachineState newpstate = (PropNetMachineState) newstate;
@@ -618,22 +601,25 @@ public class Experiment extends Method {
 						if (ignoreProps[i]) newpstate.props[i] = oldstate.props[i];
 					}
 				}
-				MTreeNode newnode = new MTreeNode(newstate, jmove, node);
-				node.children.add(newnode);
+				newnode.state = newstate;
 			}
+			node.children.add(newnode);
 		}
 	}
 
-	private void backpropogate(MTreeNode node, double eval, int depth, boolean proven) {
+	// eval in player order
+	private void backpropogate(MTreeNode node, double[] eval, int depth, boolean proven) {
 		if (proven) {
-			node.lower = node.upper = eval;
+			node.lower = eval.clone();
+			node.upper = eval.clone();
 		}
 		while (true) {
 			node.visits++;
-			node.sum_utility += eval;
-			node.sum_sq += eval * eval;
+			double thisEval = eval[node.whoJustMoved];
+			node.sum_utility += thisEval;
+			node.sum_sq += thisEval * thisEval;
 			node.depth = Math.max(node.depth, depth);
-			if (node.isMaxNode()) depth++;
+			if (node.nextToMove == 0) depth++;
 			node = node.parent;
 			if (node == null) return;
 			if (proven) proven = node.setBounds();
@@ -644,9 +630,6 @@ public class Experiment extends Method {
 	public void cleanUp() {
 		return;
 	}
-
-	private static final int DC_MAX = 99;
-	private static final int DC_MIN = 1;
 
 	private class DepthChargeThread extends Thread {
 
@@ -668,20 +651,24 @@ public class Experiment extends Method {
 		private DCOut simulate(MTreeNode node) throws MoveDefinitionException,
 				TransitionDefinitionException, GoalDefinitionException {
 			MachineState state = node.state;
-			if (node.move != null) state = machine.getRandomNextState(state, role, node.move);
-			double score;
+			if (node.nextToMove != 0) state = machine.getRandomNextState(state,
+					rolesWithUsFirst[node.whoJustMoved], node.move);
+			double[] score;
 			if (propNetInitialized) {
 				JustKiddingPropNetStateMachine pnsm = (JustKiddingPropNetStateMachine) machine;
-				score = findReward(pnsm.internalDC((PropNetMachineState) state));
+				int[] rewards = pnsm.internalDC((PropNetMachineState) state);
+				double[] asDouble = new double[rewards.length];
+				for (int i = 0; i < rewards.length; i++) {
+					asDouble[i] = rewards[i];
+				}
+				score = findReward(asDouble);
 			} else {
 				while (!machine.isTerminal(state)) {
-					if (System.currentTimeMillis() > timeout) return new DCOut(node, FAIL);
+					if (System.currentTimeMillis() > timeout) return new DCOut(node, null);
 					state = machine.getRandomNextState(state);
 				}
-				score = findReward(machine, role, state);
+				score = findReward(machine, state);
 			}
-			if (score < DC_MIN) score = DC_MIN;
-			if (score > DC_MAX) score = DC_MAX;
 			return new DCOut(node, score);
 		}
 
@@ -701,75 +688,104 @@ public class Experiment extends Method {
 		}
 	}
 
-	private static class MTreeNode {
+	private class MTreeNode implements Comparable<MTreeNode> {
 		// prior: sum squares = 10000 so that stdev != 0
 		public int visits = 0;
 		public double sum_utility = 0;
 		public double sum_sq = 10000;
 		// bounds
-		public double lower = MyPlayer.MIN_SCORE;
-		public double upper = MyPlayer.MAX_SCORE;
+		public double lower[] = new double[roles.length];
+		public double upper[] = new double[roles.length];
 
 		public List<MTreeNode> children = new ArrayList<>();
 		public MTreeNode parent;
 
 		public MachineState state;
-		public Move move; // null if max-node; non-null if min-node
-		public List<Move> jmove;
+		public Move move;
 		public int depth = 0;
-		public boolean isMaxNode;
+		public int whoJustMoved = 0;
+		public int nextToMove = 0;
 
+		// make root state
 		public MTreeNode(MachineState state) {
 			this.state = state;
-			isMaxNode = true;
-		}
-
-		public MTreeNode(MachineState state, List<Move> jmove, MTreeNode parent) {
-			this.parent = parent;
-			this.jmove = jmove;
-			this.state = state;
-			isMaxNode = true;
+			Arrays.fill(this.lower, MyPlayer.MIN_SCORE);
+			Arrays.fill(this.upper, MyPlayer.MAX_SCORE);
 		}
 
 		public MTreeNode(MachineState state, Move move, MTreeNode parent) {
+			this(state);
 			this.parent = parent;
 			this.move = move;
-			this.state = state;
-			isMaxNode = false;
+			this.nextToMove = (parent.nextToMove + 1) % roles.length;
+			this.whoJustMoved = parent.nextToMove;
 		}
 
-		public boolean setBounds() {
-			double oldupp = upper, oldlow = lower;
-			if (isMaxNode()) {
-				upper = MyPlayer.MIN_SCORE;
-				lower = MyPlayer.MIN_SCORE;
-				for (MTreeNode c : children) {
-					upper = Math.max(upper, c.upper);
-					lower = Math.max(lower, c.lower);
-				}
-			} else {
-				upper = MyPlayer.MAX_SCORE;
-				lower = MyPlayer.MAX_SCORE;
-				for (MTreeNode c : children) {
-					upper = Math.min(upper, c.upper);
-					lower = Math.min(lower, c.lower);
-				}
+		// joint move returned in machine order
+		public List<Move> getJointMove() {
+			List<Move> jmove = new ArrayList<>();
+			MTreeNode cur = this;
+			for (int i = 0; i < roles.length; i++) {
+				jmove.add(cur.move);
+				cur = cur.parent;
 			}
-			return upper != oldupp || lower != oldlow;
+			Collections.reverse(jmove);
+			Collections.swap(jmove, 0, ourRoleIndex);
+			return jmove;
 		}
 
-		public double putInBounds(double eval) {
-			if (eval < lower) eval = lower;
-			if (eval > upper) eval = upper;
-			return eval;
+		public int compareTo(MTreeNode other) {
+			if (other == null) return 1;
+			int cmp = Double.compare(utility(), other.utility());
+			if (cmp != 0) return cmp;
+			cmp = Double.compare(lower[whoJustMoved], other.lower[whoJustMoved]);
+			if (cmp != 0) return cmp;
+			cmp = Double.compare(upper[whoJustMoved], other.upper[whoJustMoved]);
+			return Double.compare(visits, other.visits);
 		}
 
 		public boolean isProven() {
-			return lower == upper;
+			return lower[nextToMove] == upper[nextToMove];
 		}
 
-		public boolean isMaxNode() {
-			return isMaxNode;
+		// return whether a change was made
+		public boolean setBounds() {
+			boolean changeWasMade = false;
+			MTreeNode bestBoundedChild = null;
+			for (int i = 0; i < roles.length; i++) {
+				double lastLower = lower[i], lastUpper = upper[i];
+				if (i == nextToMove) {
+					upper[i] = MyPlayer.MIN_SCORE;
+					lower[i] = FAIL;
+					for (MTreeNode c : children) {
+						upper[i] = Math.max(upper[i], c.upper[i]);
+						if (c.lower[i] > lower[i]) {
+							lower[i] = c.lower[i];
+							bestBoundedChild = c;
+						}
+					}
+				} else {
+					upper[i] = MyPlayer.MIN_SCORE;
+					lower[i] = MyPlayer.MAX_SCORE;
+					for (MTreeNode c : children) {
+						upper[i] = Math.max(upper[i], c.upper[i]);
+						lower[i] = Math.min(lower[i], c.lower[i]);
+					}
+				}
+				if (lastLower != lower[i] || lastUpper != upper[i]) changeWasMade = true;
+			}
+			if (isProven()) {
+				for (int i = 0; i < roles.length; i++) {
+					upper[i] = lower[i] = bestBoundedChild.lower[i];
+				}
+			}
+			return changeWasMade;
+		}
+
+		public double putInBounds(double eval) {
+			if (eval < lower[whoJustMoved]) eval = lower[whoJustMoved];
+			if (eval > upper[whoJustMoved]) eval = upper[whoJustMoved];
+			return eval;
 		}
 
 		public double utility() {
@@ -786,10 +802,10 @@ public class Experiment extends Method {
 	}
 
 	private static class DCOut {
-		double eval;
+		double[] eval;
 		MTreeNode node;
 
-		public DCOut(MTreeNode node, double eval) {
+		public DCOut(MTreeNode node, double[] eval) {
 			this.eval = eval;
 			this.node = node;
 		}
@@ -904,7 +920,7 @@ public class Experiment extends Method {
 	}
 
 	// a namespace for astar-related methods...or really just a DFS
-	private class Solver extends Thread {
+	private class DFSSolver extends Solver {
 
 		private boolean[] ignoreProps;
 		private BlockingQueue<Solver> out;
@@ -912,16 +928,12 @@ public class Experiment extends Method {
 		private int id;
 		private StateMachine machine;
 
-		public boolean kill = false;
-		public int best_reward;
-		public Stack<Move> best;
-
 		@Override
 		public String toString() {
 			return "solver-" + id;
 		}
 
-		public Solver(StateMachine machine, long timeout, boolean[] ignoreProps,
+		public DFSSolver(StateMachine machine, long timeout, boolean[] ignoreProps,
 				BlockingQueue<Solver> out, int id) {
 			this.machine = machine;
 			this.timeout = timeout;
@@ -1010,7 +1022,7 @@ public class Experiment extends Method {
 				if (closed.contains(u)) continue;
 				closed.add(u);
 				if (machine.isTerminal(u)) {
-					int reward = findReward(machine, role, u);
+					int reward = machine.findReward(role, u);
 					if (reward > best_reward) {
 						best = reconstruct(info, u);
 						best_reward = reward;
@@ -1045,11 +1057,15 @@ public class Experiment extends Method {
 		public MTreeNode root;
 		public boolean kill;
 
+		private double[] default_values;
+
 		public FastThread(long timeout, StateMachine machine, Role role, MachineState rootstate) {
 			this.timeout = timeout;
 			this.machine = machine;
 			this.role = role;
 			this.rootstate = rootstate;
+			default_values = new double[roles.length];
+			Arrays.fill(default_values, 50);
 		}
 
 		public MTreeNode searchFor(MTreeNode node) {
@@ -1068,13 +1084,13 @@ public class Experiment extends Method {
 				MTreeNode node = select(root);
 				expand(machine, role, node);
 				if (machine.isTerminal(node.state)) {
-					backpropogate(node, findReward(machine, role, node.state), 0, true);
+					backpropogate(node, findReward(machine, node.state), 0, true);
 				} else {
-					backpropogate(node, 50, 0, false);
+					backpropogate(node, default_values, 0, false);
 				}
 			}
-			Log.printf("fastresult: bound=(%.0f, %.0f) visits=%d depth=%d\n", root.lower,
-					root.upper, root.visits, root.depth);
+			Log.printf("fastresult: bound=(%.0f, %.0f) visits=%d depth=%d\n", root.lower[0],
+					root.upper[0], root.visits, root.depth);
 		}
 
 		@Override

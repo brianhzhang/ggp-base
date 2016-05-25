@@ -432,18 +432,22 @@ public class MCTS extends Method {
 		}
 		FastThread ft = new FastThread(timeout, machines[nthread], role, rootstate);
 		ft.start();
-		int expandTime = 0;
+		int dctime = 0;
 		while (System.currentTimeMillis() < timeout && !root.isProven()) {
 			MTreeNode node = select(root);
 			if (machine.isTerminal(node.state)) {
 				backpropogate(node, findReward(machine, role, node.state), 0, true);
 			} else {
 				if (node.children.isEmpty()) {
-					long start = System.currentTimeMillis();
 					expand(machine, role, node);
-					expandTime += System.currentTimeMillis() - start;
 				}
-				input.offer(node);
+				try {
+					long start = System.currentTimeMillis();
+					input.put(node);
+					dctime += System.currentTimeMillis() - start;
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
 				while (true) {
 					DCOut out = output.poll();
 					if (out == null) break;
@@ -471,7 +475,7 @@ public class MCTS extends Method {
 			Log.println("move=" + info(child, child));
 		}
 		Log.println("played=" + info(bestChild, root));
-		Log.printf("time=%d expandtime=%d\n", (System.currentTimeMillis() - timestart), expandTime);
+		Log.printf("time=%d dctime=%d\n", (System.currentTimeMillis() - timestart), dctime);
 		Log.print("expected line: ");
 		int root_nmoves = root.children.size();
 		int root_nopp = 0;
