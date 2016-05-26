@@ -76,19 +76,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			return m.hashCode() + role;
 		}
 	}
-	
-	public JustKiddingPropNetStateMachine() {
-		if (defined) {
-			initInternalDC();
-		}
-	}
-	
-	public JustKiddingPropNetStateMachine(boolean init) {
-		defined = init;
-		if (defined) {
-			initInternalDC();
-		}
-	}
 
 	@Override
 	public void initialize(List<Gdl> description) {
