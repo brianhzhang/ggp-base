@@ -165,7 +165,11 @@ public class Experiment extends Method {
 		}
 
 		if (nUsefulRoles != 1) {
-			multiPlayerMetaGame(timeout);
+			try {
+				multiPlayerMetaGame(timeout);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
 			return;
 		}
 		Log.println("single player game. starting solver");
@@ -313,12 +317,16 @@ public class Experiment extends Method {
 		private JustKiddingPropNetStateMachine machine;
 		private long timeout;
 		private Role role;
+		public LinRegCalc[] timeCalc = new LinRegCalc[heuristicCalcs.size()];
 		public List<MetaGameDCOut> output = new ArrayList<>();
 
 		public MetaGameDCThread(StateMachine machine, Role role, long timeout) {
 			this.machine = (JustKiddingPropNetStateMachine) machine;
 			this.role = role;
 			this.timeout = timeout;
+			for (int i = 0; i < timeCalc.length; i++) {
+				timeCalc[i] = new LinRegCalc(heuristicCalcs.get(i).term);
+			}
 		}
 
 		@Override
@@ -341,9 +349,14 @@ public class Experiment extends Method {
 					if (System.currentTimeMillis() > timeout) return;
 					PropNetMachineState pstate = (PropNetMachineState) state;
 					for (int i = 0; i < n_heuristic; i++) {
+						int icount = 0;
 						for (int j : heuristicProps.get(i)) {
-							if (pstate.props[j]) out.counts[i]++;
+							if (pstate.props[j]) {
+								out.counts[i]++;
+								icount++;
+							}
 						}
+						timeCalc[i].addData(nstep, icount);
 					}
 					nstep++;
 					state = machine.getRandomNextState(state);
@@ -369,11 +382,85 @@ public class Experiment extends Method {
 		return heuristic;
 	}
 
-	public void multiPlayerMetaGame(long timeout) {
+	private class Factor {
+		public boolean[] factor;
+
+		public Factor(Role role, List<Move> moves) {
+			Set<Component> reachableBases = new HashSet<>();
+			Map<GdlSentence, Proposition> propMap = smthread.m.p.getInputPropositions();
+			for (Move move : moves) {
+				if (move == null) continue;
+				findComponentsForwards(propMap.get(ProverQueryBuilder.toDoes(role, move)),
+						reachableBases);
+			}
+			List<Proposition> bases = smthread.m.props;
+			factor = new boolean[bases.size()];
+			for (int i = 0; i < bases.size(); i++) {
+				factor[i] = reachableBases.contains(bases.get(i));
+			}
+		}
+
+		@Override
+		public int hashCode() {
+			return Arrays.hashCode(factor);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return Arrays.equals(factor, ((Factor) other).factor);
+		}
+
+		public double dist(Factor other) {
+			int dist = 0;
+			int tot = 0;
+			for (int i = 0; i < factor.length; i++) {
+				if (factor[i] != other.factor[i]) dist++;
+				if (factor[i] || other.factor[i]) tot++;
+			}
+			return 1.0 * dist / tot;
+		}
+	}
+
+	public void multiPlayerMetaGame(long timeout)
+			throws MoveDefinitionException, TransitionDefinitionException {
 		Role role = player.getRole();
 		List<MetaGameDCThread> pool = new ArrayList<>();
 		int n_thread = 4;
-		Log.println("begin random exploration...");
+		Log.println("finding factors...");
+		long start = System.currentTimeMillis();
+		long alloc_factoring = start + (timeout - start) / 10;
+
+		Map<Factor, Integer> factors = new HashMap<>();
+		StateMachine machine = player.getStateMachine();
+		MachineState initial = machine.getInitialState();
+		while (System.currentTimeMillis() < alloc_factoring) {
+			MachineState state = initial;
+			while (!machine.isTerminal(state)) {
+				List<Move> moves = getUsefulMoves(machine, role, state);
+				if (moves.size() > 1) {
+					Factor current = new Factor(role, moves);
+					factors.put(current, factors.getOrDefault(current, 0) + 1);
+				}
+				state = machine.getRandomNextState(state);
+			}
+		}
+		Factor max_factor = null;
+		int max_size = -1;
+		for (Factor f : factors.keySet()) {
+			int count = factors.get(f);
+			if (count > max_size) {
+				max_factor = f;
+				max_size = count;
+			}
+		}
+
+		for (Factor f : factors.keySet()) {
+			if (max_factor.dist(f) > 0.5 && factors.get(f) * 2 > max_size) {
+				Log.println("found multiple distinct factors. abandoning piece heuristic.");
+				return;
+			}
+		}
+		Log.println("game has one factor. begin random exploration...");
 		for (int i = 0; i < n_thread; i++) {
 			MetaGameDCThread thread = new MetaGameDCThread(machines[i], role, timeout);
 			pool.add(thread);
@@ -387,10 +474,20 @@ public class Experiment extends Method {
 			}
 		}
 		int ngame = 0;
+		boolean[] canUseHeuristic = new boolean[heuristicCalcs.size()];
+		for (int i = 0; i < heuristicCalcs.size(); i++) {
+			double sum = 0;
+			for (MetaGameDCThread thread : pool) {
+				sum += thread.timeCalc[i].calculate().m;
+			}
+			Log.println(heuristicCalcs.get(i).term + " time correlation: " + sum / 4);
+			canUseHeuristic[i] = sum < 0 && sum > -1;
+		}
 		for (MetaGameDCThread thread : pool) {
 			for (MetaGameDCOut out : thread.output) {
 				ngame++;
 				for (int i = 0; i < heuristicCalcs.size(); i++) {
+					if (!canUseHeuristic[i]) continue;
 					heuristicCalcs.get(i).addData(out.counts[i], out.eval);
 				}
 			}
@@ -497,18 +594,20 @@ public class Experiment extends Method {
 				heuristics[j] += reg.rsq * reg.m;
 			}
 		}
-		while (!linregs.isEmpty()) {
-			LinReg reg = linregs.poll();
-			Log.println(reg + " (m = " + (reg.rsq * reg.m / tot_rsq) + ")");
-		}
-		if (tot_rsq == 0) heuristic_yint = 50;
-		else {
+		if (tot_rsq == 0) {
+			Log.println("no piece heuristic");
+			heuristic_yint = 50;
+		} else {
+			while (!linregs.isEmpty()) {
+				LinReg reg = linregs.poll();
+				Log.println(reg + " (m=" + (reg.rsq * reg.m / tot_rsq) + ")");
+			}
 			for (int i = 0; i < heuristics.length; i++) {
 				heuristics[i] /= tot_rsq;
 			}
 			heuristic_yint /= tot_rsq;
+			Log.printf("tot_rsq=%.3f, yint=%.3f\n", tot_rsq, heuristic_yint);
 		}
-		Log.printf("tot_rsq=%.3f, yint=%.3f\n", tot_rsq, heuristic_yint);
 	}
 
 	public Move run_(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
@@ -642,9 +741,9 @@ public class Experiment extends Method {
 					child.utility(), child.lower, child.upper, child.visits, child.depth);
 		}
 		if (bestVisits.utility() > bestChild.lower) bestChild = bestVisits;
-		Log.printf("played=%s vp=%.3f score=%.3f bound=(%.0f, %.0f) visits=%d depth=%d\n",
-				bestChild.move, (bestChild == bestVisits ? bestVisitPct : 0), bestChild.utility(),
-				bestChild.lower, bestChild.upper, root.visits, root.depth);
+		Log.printf("played=%s vp=%.3f visits=%d score=%.3f bound=(%.0f, %.0f) visits=%d depth=%d\n",
+				bestChild.move, (bestChild == bestVisits ? bestVisitPct : 0), bestChild.visits,
+				bestChild.utility(), bestChild.lower, bestChild.upper, root.visits, root.depth);
 		Log.printf("time=%d dctime=%d\n", (System.currentTimeMillis() - timestart), dctime);
 		Log.print("expected line: ");
 
@@ -817,6 +916,14 @@ public class Experiment extends Method {
 
 	@Override
 	public void cleanUp() {
+		if (smthread.isAlive()) {
+			smthread.m.kill = true;
+			try {
+				smthread.join();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
 		return;
 	}
 
@@ -1009,12 +1116,16 @@ public class Experiment extends Method {
 	}
 
 	private void findComponentsForwards(Component current, Set<Component> visited) {
-		if (current == null) return;
-		if (visited.contains(current)) return;
-		visited.add(current);
-		if (legalToInputMap.containsKey(current)) current = legalToInputMap.get(current);
-		for (Component next : current.getOutputs()) {
-			findComponentsForwards(next, visited);
+		Queue<Component> queue = new LinkedList<>();
+		queue.add(current);
+		while (!queue.isEmpty()) {
+			current = queue.poll();
+			if (visited.contains(current)) continue;
+			visited.add(current);
+			if (legalToInputMap.containsKey(current)) current = legalToInputMap.get(current);
+			for (Component next : current.getOutputs()) {
+				queue.offer(next);
+			}
 		}
 	}
 
@@ -1040,6 +1151,10 @@ public class Experiment extends Method {
 		public void run() {
 			m = new JustKiddingPropNetStateMachine();
 			m.initialize(description);
+			if (m.kill) {
+				Log.println("propnet building aborted");
+				return;
+			}
 			Log.println("propnet created. processing...");
 
 			// make two-way input maps
@@ -1302,7 +1417,7 @@ public class Experiment extends Method {
 
 		@Override
 		public String toString() {
-			return String.format("%s: y = %.3f x + %.3f (r^2 = %.3f)", term, m, b, rsq);
+			return String.format("%s: y = %.3fx + %.3f (r^2=%.3f)", term, m, b, rsq);
 		}
 	}
 
