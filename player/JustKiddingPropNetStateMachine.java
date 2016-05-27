@@ -47,6 +47,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	Random rgen = new Random();
 	long x = System.nanoTime();
 	static boolean defined;
+	
+	boolean kill = false;
 
 	PropNet p;
 	ArrayList<Proposition> props;
@@ -85,6 +87,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
+		if (kill) return;
 
 		List<Component> components = getOrdering(new ArrayList<Component>(p.getComponents()),
 				new HashSet<Proposition>(p.getBasePropositions().values()),
@@ -93,6 +96,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		for (Component c : components) {
 			c.crystalize();
 		}
+		if (kill) return;
 		
 		props = new ArrayList<Proposition>();
 		comps = new int[components.size() * 2];
@@ -125,6 +129,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		int goal = 0;
 		// Fill the components array
 		for (int i = 0; i < components.size() * 2; i += 2) {
+			if (kill) return;
 			Component component = components.get(i / 2);
 			if (!(component instanceof Proposition)) {
 				comps[i] = getComp(components.get(i / 2));
@@ -207,16 +212,19 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		Set<Component> visited = new HashSet<Component>();
 
 		for (int i = 0; i < basearr.length; i++) {
+			if (kill) return;
 			for (int j = 0; j < structure[basearr[i] / 2].length; j++) {
 				startPropagate(structure[basearr[i] / 2][j], 0, components, visited);
 			}
 		}
 		for (int i = 0; i < inputarr.length; i++) {
+			if (kill) return;
 			for (int j = 0; j < structure[inputarr[i] / 2].length; j++) {
 				startPropagate(structure[inputarr[i] / 2][j], 0, components, visited);
 			}
 		}
 		for (Component c : components) {
+			if (kill) return;
 			if (c instanceof Constant) {
 				startPropagate(components.indexOf(c) * 2, 0, components, visited);
 			}
