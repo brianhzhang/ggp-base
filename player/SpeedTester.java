@@ -108,7 +108,7 @@ public class SpeedTester extends StateMachineGamer {
 		// new LolAnotherMetaPropNetStateMachineFactory(((GDLGetter)
 		// getStateMachine()).getDescription());
 		StateMachine m1 = new JustKiddingPropNetStateMachine();
-		StateMachine m2 = new YeahWasntTheLastOnePropNetStateMachine(false);
+		StateMachine m2 = new YeahWasntTheLastOnePropNetStateMachine();
 		m1.initialize(((GDLGetter) getStateMachine()).getDescription());
 		m2.initialize(((GDLGetter) getStateMachine()).getDescription());
 		TestThread t1 = new TestThread(m1, true);

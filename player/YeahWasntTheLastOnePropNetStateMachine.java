@@ -76,23 +76,9 @@ public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 			return m.hashCode() + role;
 		}
 	}
-	
-	public YeahWasntTheLastOnePropNetStateMachine() {
-		if (defined) {
-			initInternalDC();
-		}
-	}
-	
-	public YeahWasntTheLastOnePropNetStateMachine(boolean init) {
-		defined = init;
-		if (defined) {
-			initInternalDC();
-		}
-	}
 
 	@Override
 	public void initialize(List<Gdl> description) {
-		long start = System.currentTimeMillis();
 		p = null;
 		try {
 			p = OptimizingPropNetFactory.create(description);
@@ -216,18 +202,8 @@ public class YeahWasntTheLastOnePropNetStateMachine extends StateMachine {
 		
 		Set<Component> visited = new HashSet<Component>();
 
-		for (int i = 0; i < basearr.length; i++) {
-			for (int j = 0; j < structure[basearr[i] / 2].length; j++) {
-				startPropagate(structure[basearr[i] / 2][j], 0, components, visited);
-			}
-		}
-		for (int i = 0; i < inputarr.length; i++) {
-			for (int j = 0; j < structure[inputarr[i] / 2].length; j++) {
-				startPropagate(structure[inputarr[i] / 2][j], 0, components, visited);
-			}
-		}
 		for (Component c : components) {
-			if (c instanceof Constant) {
+			if (c instanceof Constant || c instanceof Not) {
 				startPropagate(components.indexOf(c) * 2, 0, components, visited);
 			}
 		}
