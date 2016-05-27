@@ -1,22 +1,12 @@
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
 import org.ggp.base.player.gamer.exception.GamePreviewException;
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
 import org.ggp.base.util.game.Game;
-import org.ggp.base.util.gdl.grammar.GdlSentence;
-import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
-import org.ggp.base.util.statemachine.Role;
 import org.ggp.base.util.statemachine.StateMachine;
-import org.ggp.base.util.statemachine.cache.CachedStateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
-import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
 public class SpeedTester extends StateMachineGamer {
 
@@ -35,10 +25,11 @@ public class SpeedTester extends StateMachineGamer {
 			nsteps = 0;
 			this.internal = internal;
 		}
-		
+
+		@Override
 		public void run() {
 			MachineState init = m.getInitialState();
-			if (!internal){
+			if (!internal) {
 				while (!stop) {
 					MachineState state = init;
 					while (!m.isTerminal(state)) {
@@ -48,59 +39,60 @@ public class SpeedTester extends StateMachineGamer {
 							// TODO Auto-generated catch block
 							e.printStackTrace();
 						}
-						nsteps ++;
+						nsteps++;
 					}
-					for (int i = 0; i < m.getRoles().size(); i ++) {
+					for (int i = 0; i < m.getRoles().size(); i++) {
 						try {
 							goals += m.getGoal(state, m.getRoles().get(i));
 						} catch (GoalDefinitionException e) {
 							e.printStackTrace();
 						}
 					}
-					ncharges ++;
+					ncharges++;
 				}
 			} else {
 				if (m instanceof JustKiddingPropNetStateMachine) {
 					while (!stop) {
 						MachineState state = init;
-						int[] g = ((JustKiddingPropNetStateMachine)m).internalDC((PropNetMachineState) state);
-						for (int i = 0; i < g.length; i ++) {
+						int[] g = ((JustKiddingPropNetStateMachine) m)
+								.internalDC((PropNetMachineState) state);
+						for (int i = 0; i < g.length; i++) {
 							goals += g[i];
 						}
-						ncharges ++;
+						ncharges++;
 					}
-				}
-				else if (m instanceof YeahWasntTheLastOnePropNetStateMachine) {
+				} else if (m instanceof YeahWasntTheLastOnePropNetStateMachine) {
 					while (!stop) {
 						MachineState state = init;
-						int[] g = ((YeahWasntTheLastOnePropNetStateMachine)m).internalDC((PropNetMachineState) state);
-						for (int i = 0; i < g.length; i ++) {
+						int[] g = ((YeahWasntTheLastOnePropNetStateMachine) m)
+								.internalDC((PropNetMachineState) state);
+						for (int i = 0; i < g.length; i++) {
 							goals += g[i];
 						}
-						ncharges ++;
+						ncharges++;
 					}
 				}
 			}
 			System.out.println("Done!");
 		}
-		
+
 		public void halt() {
 			stop = true;
 		}
-		
+
 		public int getNum() {
 			return ncharges;
 		}
-		
+
 		public int getSteps() {
 			return nsteps;
 		}
-		
+
 		public long goals() {
 			return goals;
 		}
 	}
-	
+
 	@Override
 	public StateMachine getInitialStateMachine() {
 		return new GDLGetter();
@@ -109,11 +101,13 @@ public class SpeedTester extends StateMachineGamer {
 	@Override
 	public void stateMachineMetaGame(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
-//		BetterMetaPropNetStateMachineFactory m = 
-//				new BetterMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
-//		LolAnotherMetaPropNetStateMachineFactory l = 
-//				new LolAnotherMetaPropNetStateMachineFactory(((GDLGetter) getStateMachine()).getDescription());
-		StateMachine m1 = new JustKiddingPropNetStateMachine(false);
+		// BetterMetaPropNetStateMachineFactory m =
+		// new BetterMetaPropNetStateMachineFactory(((GDLGetter)
+		// getStateMachine()).getDescription());
+		// LolAnotherMetaPropNetStateMachineFactory l =
+		// new LolAnotherMetaPropNetStateMachineFactory(((GDLGetter)
+		// getStateMachine()).getDescription());
+		StateMachine m1 = new JustKiddingPropNetStateMachine();
 		StateMachine m2 = new YeahWasntTheLastOnePropNetStateMachine(false);
 		m1.initialize(((GDLGetter) getStateMachine()).getDescription());
 		m2.initialize(((GDLGetter) getStateMachine()).getDescription());
@@ -137,7 +131,7 @@ public class SpeedTester extends StateMachineGamer {
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
-		System.out.println("Seconds elapsed: " + 1.0 * (System.currentTimeMillis() - start)/1000);
+		System.out.println("Seconds elapsed: " + 1.0 * (System.currentTimeMillis() - start) / 1000);
 		System.out.println("Machine 1 depth charges: " + t1.getNum());
 		System.out.println("Average Step Counter: " + (1.0 * t1.getSteps() / t1.getNum()));
 		System.out.println("Average Aggregate Goals: " + (1.0 * t1.goals() / t1.getNum()));

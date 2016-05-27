@@ -7,6 +7,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.Queue;
 import java.util.Set;
 import java.util.Stack;
 import java.util.TreeMap;
@@ -84,8 +85,16 @@ public class MCTS extends Method {
 		smthread.start();
 	}
 
+	public void gc() {
+		long start = System.currentTimeMillis();
+		System.gc();
+		Log.println("garbage collection: " + (System.currentTimeMillis() - start) + " ms");
+	}
+
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
+		gc();
+
 		useless = new HashMap<>();
 		noops = new HashMap<>();
 		solution = null;
@@ -298,6 +307,7 @@ public class MCTS extends Method {
 	}
 
 	private int findReward(int[] rewards) {
+		if (opponents.size() == 0) return rewards[ourRoleIndex];
 		double reward = OUR_WEIGHT * rewards[ourRoleIndex];
 		for (int i = 0; i < roles.length; i++) {
 			if (i == ourRoleIndex) continue;
@@ -323,6 +333,7 @@ public class MCTS extends Method {
 	public Move run(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
+
 		if (solution != null && !solution.isEmpty()) {
 			Move move = solution.pop();
 			Log.println("solution move: " + move);
@@ -334,6 +345,7 @@ public class MCTS extends Method {
 		}
 
 		Log.println("--------------------");
+		gc();
 
 		if (nextPossibles != null && !contains(nextPossibles, rootstate)) {
 			nBehindServer++;
@@ -357,7 +369,6 @@ public class MCTS extends Method {
 			nextPossibles.add(machine.getNextState(rootstate, jmove));
 		}
 		Log.println("time to enumerate next states: " + (System.currentTimeMillis() - start));
-
 		return move;
 	}
 
@@ -816,11 +827,16 @@ public class MCTS extends Method {
 	}
 
 	private void findComponentsBackwards(Component current, Set<Component> visited) {
-		if (visited.contains(current)) return;
-		visited.add(current);
-		if (inputToLegalMap.containsKey(current)) current = inputToLegalMap.get(current);
-		for (Component parent : current.getInputs()) {
-			findComponentsBackwards(parent, visited);
+		Queue<Component> queue = new LinkedList<>();
+		queue.add(current);
+		while (!queue.isEmpty()) {
+			current = queue.poll();
+			if (visited.contains(current)) continue;
+			visited.add(current);
+			if (inputToLegalMap.containsKey(current)) current = inputToLegalMap.get(current);
+			for (Component parent : current.getInputs()) {
+				queue.offer(parent);
+			}
 		}
 	}
 
@@ -867,9 +883,10 @@ public class MCTS extends Method {
 
 		@Override
 		public void run() {
-			m = new JustKiddingPropNetStateMachine(false);
+			m = new JustKiddingPropNetStateMachine();
 			m.initialize(description);
-			Log.println("propnet created. processing...");
+			Log.println("propnet created: " + m.p.getComponents().size()
+					+ " components. processing...");
 
 			// make two-way input maps
 			Map<GdlSentence, Proposition> inputs = m.p.getInputPropositions();
@@ -890,6 +907,7 @@ public class MCTS extends Method {
 			for (Component comp : reachable) {
 				badInputSet.remove(comp);
 			}
+
 			int count = 0;
 
 			for (GdlSentence input : inputs.keySet()) {

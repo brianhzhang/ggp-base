@@ -83,6 +83,10 @@ public class MyPlayer extends StateMachineGamer {
 		newp.p = p.p;
 		newp.props = p.props;
 		newp.legaltoinput = p.legaltoinput;
+		newp.moves = p.moves.clone();
+		newp.counts = p.counts.clone();
+		newp.indicies = p.indicies.clone();
+		newp.inputs = p.inputs.clone();
 		return newp;
 	}
 
@@ -189,7 +193,7 @@ public class MyPlayer extends StateMachineGamer {
 
 	@Override
 	public String getName() {
-		return "DTT";//"Brian and Jeff'); DROP TABLE TEAMS; --";
+		return "DTT";// "Brian and Jeff'); DROP TABLE TEAMS; --";
 	}
 }
 
