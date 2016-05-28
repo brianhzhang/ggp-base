@@ -173,7 +173,7 @@ public class MyPlayer extends StateMachineGamer {
 		}
 		gamelog.println(save);
 		player.cleanUp();
-		return;
+		player = null;
 	}
 
 	@Override

@@ -95,14 +95,8 @@ public class Experiment extends Method {
 		smthread.start();
 	}
 
-	public void gc() {
-		// System.gc();
-	}
-
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
-		gc();
-
 		useless = new HashMap<>();
 		noops = new HashMap<>();
 		solution = null;
@@ -549,8 +543,6 @@ public class Experiment extends Method {
 		}
 
 		Log.println("--------------------");
-		gc();
-
 		if (nextPossibles != null && !contains(nextPossibles, rootstate)) {
 			nBehindServer++;
 			long newclock = (timeout - System.currentTimeMillis()) / nBehindServer;
@@ -634,7 +626,7 @@ public class Experiment extends Method {
 						reachableBases);
 			}
 
-			reachableBases.retainAll(bases);
+			reachableBases.retainAll(new HashSet<>(bases));
 			Log.printf("%d of %d props relevant\n", reachableBases.size(), bases.size());
 			int count = 0;
 			Set<Component> ignore = new HashSet<>();
@@ -923,7 +915,6 @@ public class Experiment extends Method {
 				e.printStackTrace();
 			}
 		}
-		return;
 	}
 
 	private class DepthChargeThread extends Thread {
