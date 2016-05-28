@@ -96,9 +96,7 @@ public class Experiment extends Method {
 	}
 
 	public void gc() {
-		long start = System.currentTimeMillis();
-		System.gc();
-		Log.println("garbage collection: " + (System.currentTimeMillis() - start) + " ms");
+		// System.gc();
 	}
 
 	@Override
@@ -643,6 +641,7 @@ public class Experiment extends Method {
 			for (Role r : machine.findRoles()) {
 				for (Move action : machine.findActions(r)) {
 					Component does = propMap.get(ProverQueryBuilder.toDoes(r, action));
+					if (does == null) continue;
 					findComponentsForwards(does, ignore);
 					if (!findAnyComponentForwards(does, new HashSet<>(), reachableBases)) {
 						useless.get(r).add(action);
