@@ -473,7 +473,7 @@ public class MCTS extends Method {
 				sum += thread.timeCalc[i].calculate().m;
 			}
 			Log.println(heuristicCalcs.get(i).term + " time correlation: " + sum / 4);
-			canUseHeuristic[i] = sum < 0 && sum > -1;
+			canUseHeuristic[i] = sum < 0;
 		}
 		for (MetaGameDCThread thread : pool) {
 			for (MetaGameDCOut out : thread.output) {
@@ -584,7 +584,7 @@ public class MCTS extends Method {
 				heuristics[j] += reg.rsq * reg.m;
 			}
 		}
-		if (tot_rsq == 0) {
+		if (tot_rsq < 0.01) {
 			Log.println("no piece heuristic");
 			heuristic_yint = 50;
 		} else {
