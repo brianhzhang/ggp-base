@@ -187,6 +187,10 @@ public class SatSolver extends Solver {
 					solver.or(nkey, nvec);
 				}
 			} else if (comp instanceof Proposition) {
+				// if (bases.contains(comp)) {
+				// System.out.println(getName(comp));
+				// printComponent(comp.getSingleInput().getSingleInput(), " ");
+				// }
 				if (bases.contains(comp)) {
 					known.push(inits.contains(comp) ? key : -key);
 					solver.not(-nkey, nextCompMap.get(comp.getSingleInput()));
@@ -248,6 +252,22 @@ public class SatSolver extends Solver {
 		}
 	}
 
+	private String getName(Component comp) {
+		String toParse = comp.toString();
+		int start = toParse.indexOf("label=\"") + 7;
+		int end = toParse.indexOf("\"", start);
+		return toParse.substring(start, end);
+	}
+
+	private void printComponent(Component component, String indent) {
+		if (component instanceof Transition) return;
+		System.out.println(indent + getName(component));
+		indent += " ";
+		for (Component inp : component.getInputs()) {
+			printComponent(inp, indent);
+		}
+	}
+
 	private boolean checkSolution(Set<Proposition> moves, List<Move> output)
 			throws GoalDefinitionException, MoveDefinitionException, TransitionDefinitionException {
 		MachineState state = machine.getInitialState();
@@ -274,6 +294,8 @@ public class SatSolver extends Solver {
 					for (Component does : child2.getInputs()) {
 						orOut.add(does);
 					}
+				} else if (isDoes(child2)) {
+					orOut.add(child2);
 				} else inputs.add(child2);
 			}
 			if (foundAndClause && !inputs.equals(andOut)) return false;
@@ -329,11 +351,16 @@ public class SatSolver extends Solver {
 		return backpropagate(legal, does, false, false);
 	}
 
+	private boolean isDoes(Component in) {
+		if (!(in instanceof Proposition)) return false;
+		if (!(((Proposition) in).getName().getName().toString().equals("does"))) return false;
+		return true;
+	}
+
 	private boolean isAllDoes(Component comp) {
 		if (!(comp instanceof Or)) return false;
 		for (Component in : comp.getInputs()) {
-			if (!(in instanceof Proposition)) return false;
-			if (!(((Proposition) in).getName().getName().toString().equals("does"))) return false;
+			if (!isDoes(in)) return false;
 		}
 		return true;
 	}
