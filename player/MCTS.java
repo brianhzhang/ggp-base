@@ -1,5 +1,6 @@
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -116,38 +117,41 @@ public class MCTS extends Method {
 		Log.println("roles: " + Arrays.toString(roles) + " | our role: " + ourRoleIndex);
 		oppWeight = opponents.size() == 0 ? 0 : (1 - OUR_WEIGHT) / opponents.size();
 
-		// find clock
-		while (System.currentTimeMillis() < timeout && smthread.isAlive()) {
-			Map<GdlConstant, Set<GdlSentence>> possibles = new HashMap<>();
-			MachineState state = machine.getInitialState();
-			while (!machine.isTerminal(state) && System.currentTimeMillis() < timeout) {
-				for (GdlSentence sent : state.getContents()) {
-					sent = sent.get(0).toSentence();
-					GdlConstant name = sent.getName();
-					if (impossibles.contains(name)) continue;
-					if (!possibles.containsKey(name)) {
-						possibles.put(name, new HashSet<>());
-						all.add(name);
-					}
-					Set<GdlSentence> previous = possibles.get(name);
-					if (previous.contains(sent)) {
-						impossibles.add(name);
-						possibles.remove(name);
-						Log.println(name + " is not the clock");
-					} else previous.add(sent);
-				}
-				try {
-					state = machine.getRandomNextState(state);
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			}
-		}
+		while (System.currentTimeMillis() < timeout && smthread.isAlive()) {}
 
 		if (!checkStateMachineStatus()) {
 			Log.println("still building propnet...");
 			return;
 		}
+		
+		machine = smthread.m;
+		Map<GdlConstant, Set<GdlSentence>> possibles = new HashMap<>();
+		MachineState state = machine.getInitialState();
+//		while (System.currentTimeMillis() < timeout) {
+//			boolean[] set = ((PropNetMachineState) state).props;
+//			for (int i = 0; i < set.length; i ++) {
+//				GdlSentence sent = smthread.m.props.get(i).getName().get(0).toSentence().get(0);
+//				GdlSentence sent = null;
+//				sent = sent.get(0).toSentence();
+//				GdlConstant name = sent.getName();
+//				if (impossibles.contains(name)) continue;
+//				if (!possibles.containsKey(name)) {
+//					possibles.put(name, new HashSet<>());
+//					all.add(name);
+//				}
+//				Set<GdlSentence> previous = possibles.get(name);
+//				if (previous.contains(sent)) {
+//					impossibles.add(name);
+//					possibles.remove(name);
+//					Log.println(name + " is not the clock");
+//				} else previous.add(sent);
+//			}
+//			try {
+//				state = machine.getRandomNextState(state);
+//			} catch (Exception e) {
+//				e.printStackTrace();
+//			}
+//		}
 
 		for (Role r : machine.getRoles()) {
 			Log.println("noop for role " + r + " is " + noops.get(r));
@@ -177,7 +181,7 @@ public class MCTS extends Method {
 				}
 			}
 		}
-
+		
 		PropNet propnet = smthread.m.p;
 		class IgnoreList {
 			private boolean[] ignore = ignoreProps.clone();

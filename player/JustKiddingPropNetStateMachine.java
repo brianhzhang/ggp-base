@@ -47,6 +47,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	Random rgen = new Random();
 	long x = System.nanoTime();
 	static boolean defined;
+	static boolean cycles = true;
 	
 	boolean kill = false;
 
@@ -356,6 +357,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	}
 
 	private void markbases(PropNetMachineState state) {
+		if (cycles) comps = initcomps.clone();
 		if (state == last) return;
 		last = state;
 		for (int i = 0; i < state.props.length; i++) {
@@ -426,6 +428,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	
 	public int[] internalDC(PropNetMachineState MS) {
 		boolean[] state = MS.props.clone();
+		int[] temp = comps.clone();
 		last = null;
 		while (!internalTerminal(state)) {
 			internalRandomNextState(moves, counts, indicies, state, inputs);
@@ -436,6 +439,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		for (int i = 0; i < goals.length; i++) {
 			goals[i] = internalGoal(i);
 		}
+		comps = temp;
 		return goals;
 	}
 
