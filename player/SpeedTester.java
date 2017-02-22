@@ -4,11 +4,9 @@ import org.ggp.base.util.game.Game;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.StateMachine;
-import org.ggp.base.util.statemachine.cache.CachedStateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
-import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
 public class SpeedTester extends StateMachineGamer {
 
@@ -140,8 +138,6 @@ public class SpeedTester extends StateMachineGamer {
 		System.out.println("Machine 2 depth charges: " + t2.getNum());
 		System.out.println("Average Step Counter: " + (1.0 * t2.getSteps() / t2.getNum()));
 		System.out.println("Average Aggregate Goals: " + (1.0 * t2.goals() / t2.getNum()));
-		double time = 1.0 * (System.currentTimeMillis() - start) / 1000;
-		System.out.printf(" & %dx & %.02f & %.02f\\\\\n", (int)(1.0 * t1.getNum() / t2.getNum()), t2.getNum()/time, t1.getNum()/time);
 	}
 
 	@Override
