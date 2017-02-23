@@ -2,8 +2,10 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
 
@@ -47,11 +49,13 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	Random rgen = new Random();
 	long x = System.nanoTime();
 	static boolean defined;
+	boolean use_propnet_reset = false;
 
 	boolean kill = false;
 
 	PropNet p;
 	ArrayList<Proposition> props;
+	List<Component> components;
 
 	class RoleMove implements Serializable {
 		private static final long serialVersionUID = 1L;
@@ -79,20 +83,93 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 	}
 
+	private void findComponentsBackwards(Component current, Set<Component> visited) {
+		Queue<Component> queue = new LinkedList<>();
+		queue.add(current);
+		while (!queue.isEmpty()) {
+			current = queue.poll();
+			if (visited.contains(current)) continue;
+			visited.add(current);
+			for (Component parent : current.getInputs()) {
+				queue.offer(parent);
+			}
+		}
+	}
+
+	private boolean isCyclic(PropNet p) {
+		Set<Component> visited = new HashSet<>();
+		Set<Component> stackSet = new HashSet<>();
+		for (Component c : p.getComponents()) {
+			if (isCyclic(p, visited, stackSet, c)) return true;
+		}
+		return false;
+	}
+
+	private boolean isCyclic(PropNet p, Set<Component> visited, Set<Component> stack, Component v) {
+		if (!visited.contains(v)) {
+			visited.add(v);
+			stack.add(v);
+			for (Component c : v.getOutputs()) {
+				if (c instanceof Transition) continue;
+				if (!visited.contains(c) && isCyclic(p, visited, stack, c)) return true;
+				if (stack.contains(c)) return true;
+			}
+		}
+		stack.remove(v);
+		return false;
+	}
+
+	protected void setPropNet(List<Gdl> description) throws InterruptedException {
+		long start = System.currentTimeMillis();
+		long time = 0;
+		p = OptimizingPropNetFactory.create(description, false);
+		time = System.currentTimeMillis() - start;
+		Log.println("propnet factory finished in " + time + " ms.");
+
+		// trim unnecessary propositions
+
+		Set<Component> critical = new HashSet<>();
+		critical.add(p.getTerminalProposition());
+		critical.addAll(p.getInputPropositions().values());
+		for (Role role : p.getRoles()) {
+			critical.addAll(p.getGoalPropositions().get(role));
+			critical.addAll(p.getLegalPropositions().get(role));
+
+		}
+		Set<Component> important = new HashSet<>();
+		for (Component comp : critical) {
+			findComponentsBackwards(comp, important);
+		}
+		Set<Component> unimportant = new HashSet<>(p.getComponents());
+		unimportant.removeAll(important);
+		for (Component comp : unimportant) {
+			p.removeComponent(comp);
+		}
+		Log.println("trimmed " + unimportant.size() + " props, leaving " + p.getSize());
+
+		// cycle detection
+		use_propnet_reset = isCyclic(p);
+		if (use_propnet_reset) {
+			Log.println("propnet has cycles. differential propagation OFF");
+		} else {
+			Log.println("propnet is acyclic. differential propagation ON");
+		}
+
+		time = System.currentTimeMillis() - start;
+		Log.println("propnet created in " + time + " ms");
+	}
+
 	@Override
 	public void initialize(List<Gdl> description) {
 		p = null;
 		try {
-			long start = System.currentTimeMillis();
-			p = OptimizingPropNetFactory.create(description);
-			Log.println("propnet created in " + (System.currentTimeMillis() - start) + "ms");
+			setPropNet(description);
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
 
 		if (kill) return;
-
-		List<Component> components = getOrdering(new ArrayList<Component>(p.getComponents()),
+		components = getOrdering(new ArrayList<Component>(p.getComponents()),
 				new HashSet<Proposition>(p.getBasePropositions().values()),
 				new HashSet<Proposition>(p.getInputPropositions().values()));
 		List<Component> legaltoinputhelper = new ArrayList<Component>();
@@ -365,6 +442,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	private void markbases(PropNetMachineState state) {
 		if (state == last) return;
 		last = state;
+		resetPropnet();
 		for (int i = 0; i < state.props.length; i++) {
 			if (state.props[i] != (((comps[basearr[i]] >> 31) & 1) == 1)) {
 				comps[basearr[i]] = state.props[i] ? 0xF0000000 : 0x0F000000;
@@ -386,7 +464,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 	}
 
-	private void propagate(int index, int newValue) {
+	protected void propagate(int index, int newValue) {
 		if (comps[index + 1] == -1) {
 			int old = ((comps[index] >> 31) & 1);
 			comps[index] += newValue;
@@ -498,13 +576,22 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		return ((comps[comps[term + 1]] >> 31) & 1) == 1;
 	}
 
-	private void internalMarkbases(boolean[] bases) {
+	protected void internalMarkbases(boolean[] bases) {
+		resetPropnet();
 		for (int i = 0; i < bases.length; i++) {
 			if (bases[i] != (((comps[basearr[i]] >> 31) & 1) == 1)) {
 				comps[basearr[i]] = bases[i] ? 0xF0000000 : 0x0F000000;
 				for (int j = 0; j < structure[basearr[i] / 2].length; j++) {
 					propagate(structure[basearr[i] / 2][j], bases[i] ? 1 : -1);
 				}
+			}
+		}
+	}
+
+	protected void resetPropnet() {
+		if (use_propnet_reset) {
+			for (int i = 0; i < comps.length; i++) {
+				comps[i] = initcomps[i];
 			}
 		}
 	}

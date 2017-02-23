@@ -87,6 +87,7 @@ public class MyPlayer extends StateMachineGamer {
 		newp.counts = p.counts.clone();
 		newp.indicies = p.indicies.clone();
 		newp.inputs = p.inputs.clone();
+		newp.use_propnet_reset = p.use_propnet_reset;
 		return newp;
 	}
 

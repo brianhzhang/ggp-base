@@ -121,30 +121,39 @@ public class MCTS extends Method {
 		oppWeight = opponents.size() == 0 ? 0 : (1 - OUR_WEIGHT) / opponents.size();
 
 		// find clock
-		while (System.currentTimeMillis() < timeout && smthread.isAlive()) {
-			Map<GdlConstant, Set<GdlSentence>> possibles = new HashMap<>();
-			MachineState state = machine.getInitialState();
-			while (!machine.isTerminal(state) && System.currentTimeMillis() < timeout) {
-				for (GdlSentence sent : state.getContents()) {
-					sent = sent.get(0).toSentence();
-					GdlConstant name = sent.getName();
-					if (impossibles.contains(name)) continue;
-					if (!possibles.containsKey(name)) {
-						possibles.put(name, new HashSet<>());
-						all.add(name);
+		if (nUsefulRoles == 1) {
+			while (System.currentTimeMillis() < timeout && smthread.isAlive()) {
+				Map<GdlConstant, Set<GdlSentence>> possibles = new HashMap<>();
+				MachineState state = machine.getInitialState();
+				while (!machine.isTerminal(state) && System.currentTimeMillis() < timeout) {
+					for (GdlSentence sent : state.getContents()) {
+						sent = sent.get(0).toSentence();
+						GdlConstant name = sent.getName();
+						if (impossibles.contains(name)) continue;
+						if (!possibles.containsKey(name)) {
+							possibles.put(name, new HashSet<>());
+							all.add(name);
+						}
+						Set<GdlSentence> previous = possibles.get(name);
+						if (previous.contains(sent)) {
+							impossibles.add(name);
+							possibles.remove(name);
+							Log.println(name + " is not the clock");
+						} else previous.add(sent);
 					}
-					Set<GdlSentence> previous = possibles.get(name);
-					if (previous.contains(sent)) {
-						impossibles.add(name);
-						possibles.remove(name);
-						Log.println(name + " is not the clock");
-					} else previous.add(sent);
+					try {
+						state = machine.getRandomNextState(state);
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
 				}
-				try {
-					state = machine.getRandomNextState(state);
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
+			}
+		} else {
+			Log.println("multi-player game. clock detection skipped");
+			try {
+				smthread.join(timeout - System.currentTimeMillis());
+			} catch (InterruptedException e) {
+				e.printStackTrace();
 			}
 		}
 
@@ -544,6 +553,12 @@ public class MCTS extends Method {
 		}
 
 		Log.println("--------------------");
+		if (nextPossibles != null && !contains(nextPossibles, rootstate)) {
+			nBehindServer++;
+			long newclock = (timeout - System.currentTimeMillis()) / nBehindServer;
+			Log.println("move transmission error. shortening play clock to " + newclock);
+			timeout = System.currentTimeMillis() + newclock;
+		} else nBehindServer = 1;
 
 		if (checkStateMachineStatus()) {
 			// reinit state machine
