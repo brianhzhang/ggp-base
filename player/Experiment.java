@@ -1,6 +1,7 @@
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -18,6 +19,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
+import org.ggp.base.util.Pair;
 import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.gdl.grammar.GdlConstant;
 import org.ggp.base.util.gdl.grammar.GdlSentence;
@@ -95,6 +97,61 @@ public class Experiment extends Method {
 		smthread.start();
 	}
 
+	private Set<GdlConstant> findClocks(JustKiddingPropNetStateMachine machine) {
+		// find clock
+		// a clock is
+		Set<GdlConstant> possibleClocks = new HashSet<>();
+		Set<GdlConstant> notClocks = new HashSet<>();
+		int iter = 0;
+		boolean changing = true;
+		Map<GdlSentence, Integer> forward = new HashMap<>();
+		Map<Pair<GdlConstant, Integer>, GdlSentence> backward = new HashMap<>();
+		double totLegalMoves = 0;
+		double nPly = 0;
+		while (iter < 40 * totLegalMoves / nPly || changing) {
+			MachineState state = machine.getInitialState();
+			int step = 0;
+			Map<GdlSentence, Integer> oldForward = new HashMap<>(forward);
+			Map<Pair<GdlConstant, Integer>, GdlSentence> oldBackward = new HashMap<>(backward);
+			while (!machine.isTerminal(state)) {
+				step++;
+				for (GdlSentence sent : state.getContents()) {
+					sent = sent.get(0).toSentence();
+					GdlConstant name = sent.getName();
+					if (notClocks.contains(name)) continue;
+					possibleClocks.add(name);
+					if (forward.containsKey(sent)) {
+						if (forward.get(sent) != step) {
+							Log.printf("%s is not the clock: %s found at steps %d and %d\n",
+									name, sent, forward.get(sent), step);
+							notClocks.add(name);
+						}
+					} else forward.put(sent, step);
+
+					if (backward.containsKey(Pair.of(name, step))) {
+						if (!backward.get(Pair.of(name, step)).equals(sent)) {
+							Log.printf("%s is not the clock: at step %d, found both %s and %s\n",
+									name, step, backward.get(Pair.of(name, step)), sent);
+							notClocks.add(name);
+						}
+					} else backward.put(Pair.of(name, step), sent);
+				}
+				try {
+					nPly += 1;
+					totLegalMoves += machine.getLegalMoves(state, roles[ourRoleIndex]).size();
+					state = machine.getRandomNextState(state);
+
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+			changing = !(oldForward.equals(forward) && oldBackward.equals(backward));
+			iter++;
+		}
+		possibleClocks.removeAll(notClocks);
+		return possibleClocks;
+	}
+
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
 		useless = new HashMap<>();
@@ -104,9 +161,6 @@ public class Experiment extends Method {
 		nextPossibles = null;
 		nBehindServer = 1;
 		heuristics = null;
-
-		Set<GdlConstant> all = new HashSet<>();
-		Set<GdlConstant> impossibles = new HashSet<>();
 
 		StateMachine machine = gamer.getStateMachine();
 		roles = machine.findRoles().toArray(new Role[0]);
@@ -119,32 +173,10 @@ public class Experiment extends Method {
 		Log.println("roles: " + Arrays.toString(roles) + " | our role: " + ourRoleIndex);
 		oppWeight = opponents.size() == 0 ? 0 : (1 - OUR_WEIGHT) / opponents.size();
 
-		// find clock
-		while (System.currentTimeMillis() < timeout && smthread.isAlive()) {
-			Map<GdlConstant, Set<GdlSentence>> possibles = new HashMap<>();
-			MachineState state = machine.getInitialState();
-			while (!machine.isTerminal(state) && System.currentTimeMillis() < timeout) {
-				for (GdlSentence sent : state.getContents()) {
-					sent = sent.get(0).toSentence();
-					GdlConstant name = sent.getName();
-					if (impossibles.contains(name)) continue;
-					if (!possibles.containsKey(name)) {
-						possibles.put(name, new HashSet<>());
-						all.add(name);
-					}
-					Set<GdlSentence> previous = possibles.get(name);
-					if (previous.contains(sent)) {
-						impossibles.add(name);
-						possibles.remove(name);
-						Log.println(name + " is not the clock");
-					} else previous.add(sent);
-				}
-				try {
-					state = machine.getRandomNextState(state);
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			}
+		try {
+			smthread.join(timeout - System.currentTimeMillis());
+		} catch (InterruptedException e) {
+			e.printStackTrace();
 		}
 
 		if (!checkStateMachineStatus()) {
@@ -164,17 +196,21 @@ public class Experiment extends Method {
 			}
 			return;
 		}
+
 		Log.println("single player game. starting solver");
+
 		machine = gamer.getStateMachine();
+		PropNetMachineState.bases = smthread.m.props;
 
 		List<Proposition> bases = smthread.m.props;
 
 		boolean[] ignoreProps = new boolean[bases.size()];
-		all.removeAll(impossibles);
-		if (all.size() == 0) Log.println("no clock");
-		else if (all.size() > 1) Log.println("too many possible clocks: " + all);
+		Set<GdlConstant> possibleClocks = findClocks((JustKiddingPropNetStateMachine) machine);
+		if (possibleClocks.size() == 0) Log.println("no clock");
+		else if (possibleClocks.size() > 1)
+			Log.println("too many possible clocks: " + possibleClocks);
 		else {
-			GdlConstant clockConstant = all.iterator().next();
+			GdlConstant clockConstant = possibleClocks.iterator().next();
 			Log.println("ignoring clock proposition " + clockConstant);
 			Map<GdlSentence, Integer> basemap = new HashMap<>();
 			for (int i = 0; i < bases.size(); i++) {
@@ -417,7 +453,7 @@ public class Experiment extends Method {
 			throws MoveDefinitionException, TransitionDefinitionException {
 		Role role = player.getRole();
 		List<MetaGameDCThread> pool = new ArrayList<>();
-		int n_thread = 4;
+		int n_thread = MyPlayer.N_THREADS;
 		Log.println("finding factors...");
 		long start = System.currentTimeMillis();
 		long alloc_factoring = start + (timeout - start) / 10;
@@ -473,7 +509,7 @@ public class Experiment extends Method {
 				sum += thread.timeCalc[i].calculate().m;
 			}
 			Log.println(heuristicCalcs.get(i).term + " time correlation: " + sum / 4);
-			canUseHeuristic[i] = sum < 0 && sum > -1;
+			canUseHeuristic[i] = sum < 0;
 		}
 		for (MetaGameDCThread thread : pool) {
 			for (MetaGameDCOut out : thread.output) {
@@ -486,22 +522,6 @@ public class Experiment extends Method {
 		}
 		Log.println("games explored: " + ngame);
 		computeHeuristic();
-	}
-
-	public boolean sameState(MachineState state1, MachineState state2) {
-		if (propNetInitialized) {
-			boolean[] props1 = ((PropNetMachineState) state1).props;
-			boolean[] props2 = ((PropNetMachineState) state2).props;
-			return Arrays.equals(props1, props2);
-		}
-		return state1.equals(state2);
-	}
-
-	public boolean contains(List<MachineState> states, MachineState target) {
-		for (MachineState state : states) {
-			if (sameState(state, target)) return true;
-		}
-		return false;
 	}
 
 	private int findReward(int[] rewards) {
@@ -543,7 +563,7 @@ public class Experiment extends Method {
 		}
 
 		Log.println("--------------------");
-		if (nextPossibles != null && !contains(nextPossibles, rootstate)) {
+		if (nextPossibles != null && !nextPossibles.contains(rootstate)) {
 			nBehindServer++;
 			long newclock = (timeout - System.currentTimeMillis()) / nBehindServer;
 			Log.println("move transmission error. shortening play clock to " + newclock);
@@ -584,7 +604,7 @@ public class Experiment extends Method {
 				heuristics[j] += reg.rsq * reg.m;
 			}
 		}
-		if (tot_rsq == 0) {
+		if (tot_rsq < 0.01) {
 			Log.println("no piece heuristic");
 			heuristic_yint = 50;
 		} else {
@@ -661,11 +681,14 @@ public class Experiment extends Method {
 
 		// set up tree
 
+		Map<MachineState, MTreeNode> dagMap = new HashMap<>();
+
 		MTreeNode root = new MTreeNode(rootstate);
-		expand(machine, role, root);
+		dagMap.put(rootstate, root);
+		expand(machine, role, root, dagMap);
 
 		DepthChargeThread[] threads = new DepthChargeThread[nthread];
-		BlockingQueue<MTreeNode> input = new ArrayBlockingQueue<>(nthread);
+		BlockingQueue<Stack<MTreeNode>> input = new ArrayBlockingQueue<>(nthread);
 		BlockingQueue<DCOut> output = new LinkedBlockingQueue<>();
 		for (int i = 0; i < nthread; i++) {
 			threads[i] = new DepthChargeThread(machines[i], role, timeout, input, output);
@@ -674,17 +697,19 @@ public class Experiment extends Method {
 		FastThread ft = new FastThread(timeout, machines[nthread], role, rootstate);
 		ft.start();
 		int dctime = 0;
+
 		while (System.currentTimeMillis() < timeout && !root.isProven()) {
-			MTreeNode node = select(root);
+			Stack<MTreeNode> tree = select(root);
+			MTreeNode node = tree.peek();
 			if (machine.isTerminal(node.state)) {
-				backpropogate(node, findReward(machine, role, node.state), 0, true);
+				backpropogate(tree, findReward(machine, role, node.state), true);
 			} else {
 				if (node.children.isEmpty()) {
-					expand(machine, role, node);
+					expand(machine, role, node, dagMap);
 				}
 				try {
 					long start = System.currentTimeMillis();
-					input.put(node);
+					input.put(tree);
 					dctime += System.currentTimeMillis() - start;
 				} catch (InterruptedException e) {
 					e.printStackTrace();
@@ -693,7 +718,7 @@ public class Experiment extends Method {
 					DCOut out = output.poll();
 					if (out == null) break;
 					if (out.eval == FAIL) continue;
-					backpropogate(out.node, out.eval, 0, false);
+					backpropogate(out.node, out.eval, false);
 				}
 			}
 		}
@@ -726,6 +751,11 @@ public class Experiment extends Method {
 				bestVisits = child;
 			}
 
+		}
+		Collections.sort(root.children);
+		for (MTreeNode child : root.children) {
+			MTreeNode fastChild = ft.searchFor(child);
+			double visitPct = Math.log(child.visits);
 			Log.printf(
 					"move=%s vp=%.3f v=(%d, %d) score=%.3f bound=(%.0f, %.0f) visits=%d depth=%d\n",
 					child.move, visitPct, child.visits, (fastChild == null ? 0 : fastChild.visits),
@@ -736,25 +766,25 @@ public class Experiment extends Method {
 				bestChild.move, (bestChild == bestVisits ? bestVisitPct : 0), bestChild.visits,
 				bestChild.utility(), bestChild.lower, bestChild.upper, root.visits, root.depth);
 		Log.printf("time=%d dctime=%d\n", (System.currentTimeMillis() - timestart), dctime);
-		Log.print("expected line: ");
-
-		int cur_nmoves = root.children.size();
-		int cur_nopp = 0;
-		MTreeNode cur = bestChild;
-		while (!cur.children.isEmpty()) {
-			if (cur.jmove != null) {
-				Log.printf(" %s (%d/%d)", cur.jmove, cur_nmoves, cur_nopp);
-				cur_nmoves = cur.children.size();
-			} else {
-				cur_nopp = cur.children.size();
-			}
-			MTreeNode next = null;
-			for (MTreeNode child : cur.children) {
-				if (child.compareTo(next) > 0) next = child;
-			}
-			cur = next;
-		}
-		Log.println("");
+//		Log.print("expected line: ");
+//
+//		int cur_nmoves = root.children.size();
+//		int cur_nopp = 0;
+//		MTreeNode cur = bestChild;
+//		while (!cur.children.isEmpty()) {
+//			if (cur.jmove != null) {
+//				Log.printf(" %s (%d/%d)", cur.jmove, cur_nmoves, cur_nopp);
+//				cur_nmoves = cur.children.size();
+//			} else {
+//				cur_nopp = cur.children.size();
+//			}
+//			MTreeNode next = null;
+//			for (MTreeNode child : cur.children) {
+//				if (child.compareTo(next) > 0) next = child;
+//			}
+//			cur = next;
+//		}
+//		Log.println("");
 		if (oldUseless != null) useless = oldUseless;
 		return bestChild.move;
 	}
@@ -776,11 +806,27 @@ public class Experiment extends Method {
 		return node.score(sgn * CFACTOR);
 	}
 
-	private MTreeNode select(MTreeNode node) {
+	private Stack<MTreeNode> select(MTreeNode node) {
+		Stack<MTreeNode> out = new Stack<>();
 		while (true) {
-			if (node.children.isEmpty()) return node;
+			if (node == null) {
+				for (MTreeNode n : out) {
+					System.out.printf("%s\t%s\t%s\t(%.0f, %.0f)\t",
+							n.move, n.visits, n.depth, n.lower, n.upper);
+					for (MTreeNode c : n.children) {
+						System.out.print(c.isProven() ? 1 : 0);
+					}
+					System.out.println();
+				}
+				System.out.flush();
+			}
+			out.push(node);
+			if (node.children.isEmpty()) return out;
 			for (MTreeNode child : node.children) {
-				if (child.visits == 0) return child;
+				if (child.visits == 0) {
+					out.push(child);
+					return out;
+				}
 			}
 			MTreeNode best = null;
 			if (node.isMaxNode()) {
@@ -866,8 +912,9 @@ public class Experiment extends Method {
 		return crossProduct;
 	}
 
-	private void expand(StateMachine machine, Role role, MTreeNode node)
-			throws MoveDefinitionException, TransitionDefinitionException {
+	private void expand(StateMachine machine, Role role, MTreeNode node,
+			Map<MachineState, MTreeNode> dagMap)
+					throws MoveDefinitionException, TransitionDefinitionException {
 		if (node.isMaxNode()) {
 			for (Move move : getUsefulMoves(machine, role, node.state)) {
 				MTreeNode newnode = new MTreeNode(node.state, move, node);
@@ -883,25 +930,44 @@ public class Experiment extends Method {
 						if (ignoreProps[i]) newpstate.props[i] = oldstate.props[i];
 					}
 				}
-				MTreeNode newnode = new MTreeNode(newstate, jmove, node);
+				MTreeNode newnode;
+				if (dagMap.containsKey(newstate)) {
+					newnode = dagMap.get(newstate);
+					newnode.parents.add(node);
+				} else {
+					newnode = new MTreeNode(newstate, jmove, node);
+					dagMap.put(newstate, newnode);
+				}
 				node.children.add(newnode);
 			}
+			propagateBound(node);
 		}
 	}
 
-	private void backpropogate(MTreeNode node, double eval, int depth, boolean proven) {
+	private void propagateBound(MTreeNode node) {
+		if (!node.setBounds()) return;
+		for (MTreeNode parent : node.parents) {
+			propagateBound(parent);
+		}
+	}
+
+	private void backpropogate(Stack<MTreeNode> tree, double eval, boolean proven) {
+		MTreeNode node = tree.pop();
 		if (proven) {
 			node.lower = node.upper = eval;
+			for (MTreeNode parent : node.parents) {
+				propagateBound(parent);
+			}
 		}
+		int depth = 0;
 		while (true) {
 			node.visits++;
 			node.sum_utility += eval;
 			node.sum_sq += eval * eval;
 			node.depth = Math.max(node.depth, depth);
 			if (node.isMaxNode()) depth++;
-			node = node.parent;
-			if (node == null) return;
-			if (proven) proven = node.setBounds();
+			if (tree.isEmpty()) return;
+			node = tree.pop();
 		}
 	}
 
@@ -922,11 +988,11 @@ public class Experiment extends Method {
 		private StateMachine machine;
 		private Role role;
 		private long timeout;
-		private BlockingQueue<MTreeNode> input;
+		private BlockingQueue<Stack<MTreeNode>> input;
 		private BlockingQueue<DCOut> output;
 
 		public DepthChargeThread(StateMachine machine, Role role, long timeout,
-				BlockingQueue<MTreeNode> input, BlockingQueue<DCOut> output) {
+				BlockingQueue<Stack<MTreeNode>> input, BlockingQueue<DCOut> output) {
 			this.machine = machine;
 			this.role = role;
 			this.timeout = timeout;
@@ -934,8 +1000,9 @@ public class Experiment extends Method {
 			this.output = output;
 		}
 
-		private DCOut simulate(MTreeNode node) throws MoveDefinitionException,
+		private DCOut simulate(Stack<MTreeNode> tree) throws MoveDefinitionException,
 				TransitionDefinitionException, GoalDefinitionException {
+			MTreeNode node = tree.peek();
 			MachineState state = node.state;
 			if (node.move != null) state = machine.getRandomNextState(state, role, node.move);
 			double score;
@@ -944,19 +1011,19 @@ public class Experiment extends Method {
 				score = findReward(pnsm.internalDC((PropNetMachineState) state));
 			} else {
 				while (!machine.isTerminal(state)) {
-					if (System.currentTimeMillis() > timeout) return new DCOut(node, FAIL);
+					if (System.currentTimeMillis() > timeout) return new DCOut(tree, FAIL);
 					state = machine.getRandomNextState(state);
 				}
 				score = findReward(machine, role, state);
 			}
-			return new DCOut(node, score);
+			return new DCOut(tree, score);
 		}
 
 		@Override
 		public void run() {
 			while (true) {
 				try {
-					MTreeNode node = input.poll(
+					Stack<MTreeNode> node = input.poll(
 							timeout - System.currentTimeMillis() + MyPlayer.TIMEOUT_BUFFER,
 							TimeUnit.MILLISECONDS);
 					if (node == null) return;
@@ -978,11 +1045,11 @@ public class Experiment extends Method {
 		public double upper = MyPlayer.MAX_SCORE;
 
 		public List<MTreeNode> children = new ArrayList<>();
-		public MTreeNode parent;
+		public List<MTreeNode> parents = new ArrayList<>();
 
 		public MachineState state;
 		public Move move; // null if max-node; non-null if min-node
-		public List<Move> jmove;
+
 		public int depth = 0;
 		public boolean isMaxNode;
 
@@ -992,14 +1059,13 @@ public class Experiment extends Method {
 		}
 
 		public MTreeNode(MachineState state, List<Move> jmove, MTreeNode parent) {
-			this.parent = parent;
-			this.jmove = jmove;
+			this.parents.add(parent);
 			this.state = state;
 			isMaxNode = true;
 		}
 
 		public MTreeNode(MachineState state, Move move, MTreeNode parent) {
-			this.parent = parent;
+			this.parents.add(parent);
 			this.move = move;
 			this.state = state;
 			isMaxNode = false;
@@ -1058,15 +1124,19 @@ public class Experiment extends Method {
 		public double score(double c) {
 			double util = sum_utility / visits;
 			double var = sum_sq / visits - util * util;
-			return util + c * Math.sqrt(Math.log(parent.visits) / visits * var);
+			int totParentVisits = 0;
+			for (MTreeNode parent : parents) {
+				totParentVisits += parent.visits;
+			}
+			return util + c * Math.sqrt(Math.log(totParentVisits) / visits * var);
 		}
 	}
 
 	private static class DCOut {
 		double eval;
-		MTreeNode node;
+		Stack<MTreeNode> node;
 
-		public DCOut(MTreeNode node, double eval) {
+		public DCOut(Stack<MTreeNode> node, double eval) {
 			this.eval = eval;
 			this.node = node;
 		}
@@ -1365,16 +1435,20 @@ public class Experiment extends Method {
 
 		public void run_() throws MoveDefinitionException, TransitionDefinitionException,
 				GoalDefinitionException {
+
 			root = new MTreeNode(rootstate);
-			expand(machine, role, root);
+			Map<MachineState, MTreeNode> dagMap = new HashMap<>();
+			dagMap.put(rootstate, root);
+			expand(machine, role, root, dagMap);
 			while (System.currentTimeMillis() < timeout && !kill) {
 				if (root.isProven()) break;
-				MTreeNode node = select(root);
-				expand(machine, role, node);
+				Stack<MTreeNode> tree = select(root);
+				MTreeNode node = tree.peek();
+				expand(machine, role, node, dagMap);
 				if (machine.isTerminal(node.state)) {
-					backpropogate(node, findReward(machine, role, node.state), 0, true);
+					backpropogate(tree, findReward(machine, role, node.state), true);
 				} else {
-					backpropogate(node, heuristic(node.state), 0, false);
+					backpropogate(tree, heuristic(node.state), false);
 				}
 			}
 			Log.printf("fastresult: bound=(%.0f, %.0f) visits=%d depth=%d\n", root.lower,

@@ -83,11 +83,8 @@ public class MyPlayer extends StateMachineGamer {
 		newp.p = p.p;
 		newp.props = p.props;
 		newp.legaltoinput = p.legaltoinput;
-		newp.moves = p.moves.clone();
-		newp.counts = p.counts.clone();
-		newp.indicies = p.indicies.clone();
-		newp.inputs = p.inputs.clone();
 		newp.use_propnet_reset = p.use_propnet_reset;
+		newp.initInternalDC();
 		return newp;
 	}
 
