@@ -58,10 +58,6 @@ public class MCTS extends Method {
 	private int nUsefulRoles;
 	private boolean[] ignoreProps;
 
-	// for timeout control
-	private List<MachineState> nextPossibles;
-	private int nBehindServer;
-
 	// for weighted depth charge results
 	private static final double OUR_WEIGHT = 2. / 3;
 	private double oppWeight;
@@ -158,8 +154,6 @@ public class MCTS extends Method {
 		noops = new HashMap<>();
 		solution = null;
 		opponents = new ArrayList<>();
-		nextPossibles = null;
-		nBehindServer = 1;
 		heuristics = null;
 
 		StateMachine machine = gamer.getStateMachine();
@@ -563,12 +557,6 @@ public class MCTS extends Method {
 		}
 
 		Log.println("--------------------");
-		if (nextPossibles != null && !nextPossibles.contains(rootstate)) {
-			nBehindServer++;
-			long newclock = (timeout - System.currentTimeMillis()) / nBehindServer;
-			Log.println("move transmission error. shortening play clock to " + newclock);
-			timeout = System.currentTimeMillis() + newclock;
-		} else nBehindServer = 1;
 
 		if (checkStateMachineStatus()) {
 			// reinit state machine
@@ -576,16 +564,7 @@ public class MCTS extends Method {
 			rootstate = player.getCurrentState();
 		}
 
-		Move move = run_(machine, rootstate, role, moves, timeout);
-
-		long start = System.currentTimeMillis();
-		nextPossibles = new ArrayList<>();
-		List<List<Move>> jmoves = machine.getLegalJointMoves(rootstate, role, move);
-		for (List<Move> jmove : jmoves) {
-			nextPossibles.add(machine.getNextState(rootstate, jmove));
-		}
-		Log.println("time to enumerate next states: " + (System.currentTimeMillis() - start));
-		return move;
+		return run_(machine, rootstate, role, moves, timeout);
 	}
 
 	public void computeHeuristic() {
@@ -698,7 +677,7 @@ public class MCTS extends Method {
 		ft.start();
 		int dctime = 0;
 
-		while (System.currentTimeMillis() < timeout && !root.isProven()) {
+		while (ft.isAlive() && !root.isLooselyProven()) {
 			Stack<MTreeNode> tree = select(root);
 			MTreeNode node = tree.peek();
 			if (machine.isTerminal(node.state)) {
@@ -755,36 +734,18 @@ public class MCTS extends Method {
 		Collections.sort(root.children);
 		for (MTreeNode child : root.children) {
 			MTreeNode fastChild = ft.searchFor(child);
-			double visitPct = Math.log(child.visits);
 			Log.printf(
-					"move=%s vp=%.3f v=(%d, %d) score=%.3f bound=(%.0f, %.0f) visits=%d depth=%d\n",
-					child.move, visitPct, child.visits, (fastChild == null ? 0 : fastChild.visits),
-					child.utility(), child.lower, child.upper, child.visits, child.depth);
+					"%s v=(%d, %d) s=(%.1f, %.1f) b=(%.0f, %.0f) d=%d\n",
+					child.move, child.visits,
+					(fastChild == null ? 0 : fastChild.visits),
+					child.utility(),
+					(fastChild == null ? -1.0 : fastChild.utility()),
+					child.lower, child.upper, child.depth);
 		}
 		if (bestVisits.utility() > bestChild.lower) bestChild = bestVisits;
-		Log.printf("played=%s vp=%.3f visits=%d score=%.3f bound=(%.0f, %.0f) visits=%d depth=%d\n",
-				bestChild.move, (bestChild == bestVisits ? bestVisitPct : 0), bestChild.visits,
-				bestChild.utility(), bestChild.lower, bestChild.upper, root.visits, root.depth);
+		Log.printf("played=%s visits=%d/%d depth=%d\n",
+				bestChild.move, bestChild.visits, root.visits, root.depth);
 		Log.printf("time=%d dctime=%d\n", (System.currentTimeMillis() - timestart), dctime);
-//		Log.print("expected line: ");
-//
-//		int cur_nmoves = root.children.size();
-//		int cur_nopp = 0;
-//		MTreeNode cur = bestChild;
-//		while (!cur.children.isEmpty()) {
-//			if (cur.jmove != null) {
-//				Log.printf(" %s (%d/%d)", cur.jmove, cur_nmoves, cur_nopp);
-//				cur_nmoves = cur.children.size();
-//			} else {
-//				cur_nopp = cur.children.size();
-//			}
-//			MTreeNode next = null;
-//			for (MTreeNode child : cur.children) {
-//				if (child.compareTo(next) > 0) next = child;
-//			}
-//			cur = next;
-//		}
-//		Log.println("");
 		if (oldUseless != null) useless = oldUseless;
 		return bestChild.move;
 	}
@@ -802,10 +763,6 @@ public class MCTS extends Method {
 		if (remove != null) root.children.remove(remove);
 	}
 
-	private double score(MTreeNode node, int sgn) {
-		return node.score(sgn * CFACTOR);
-	}
-
 	private Stack<MTreeNode> select(MTreeNode node) {
 		Stack<MTreeNode> out = new Stack<>();
 		while (true) {
@@ -814,7 +771,7 @@ public class MCTS extends Method {
 					System.out.printf("%s\t%s\t%s\t(%.0f, %.0f)\t",
 							n.move, n.visits, n.depth, n.lower, n.upper);
 					for (MTreeNode c : n.children) {
-						System.out.print(c.isProven() ? 1 : 0);
+						System.out.print(c.score(n.isMaxNode() ? 1 : -1, n) + " ");
 					}
 					System.out.println();
 				}
@@ -828,29 +785,7 @@ public class MCTS extends Method {
 					return out;
 				}
 			}
-			MTreeNode best = null;
-			if (node.isMaxNode()) {
-				double score = Double.NEGATIVE_INFINITY;
-				for (MTreeNode child : node.children) {
-					if (child.isProven()) continue;
-					double newscore = score(child, 1);
-					if (newscore > score) {
-						score = newscore;
-						best = child;
-					}
-				}
-			} else {
-				double score = Double.POSITIVE_INFINITY;
-				for (MTreeNode child : node.children) {
-					if (child.isProven()) continue;
-					double newscore = score(child, -1);
-					if (newscore < score) {
-						score = newscore;
-						best = child;
-					}
-				}
-			}
-			node = best;
+			node = node.selectBestChild();
 		}
 	}
 
@@ -951,24 +886,30 @@ public class MCTS extends Method {
 		}
 	}
 
-	private void backpropogate(Stack<MTreeNode> tree, double eval, boolean proven) {
-		MTreeNode node = tree.pop();
+	private void backpropogate(Stack<MTreeNode> stack, double eval, boolean proven) {
+		MTreeNode node = stack.pop();
 		if (proven) {
-			node.lower = node.upper = eval;
+			node.lower = node.upper = Math.round(eval);
 			for (MTreeNode parent : node.parents) {
 				propagateBound(parent);
 			}
 		}
-		int depth = 0;
-		while (true) {
-			node.visits++;
-			node.sum_utility += eval;
-			node.sum_sq += eval * eval;
-			node.depth = Math.max(node.depth, depth);
-			if (node.isMaxNode()) depth++;
-			if (tree.isEmpty()) return;
-			node = tree.pop();
+		backpropRec(stack, node, null, eval, 0);
+	}
+
+	private void backpropRec(Stack<MTreeNode> stack,
+			MTreeNode node, MTreeNode prev, double eval, int depth) {
+		if (node.isMaxNode()) depth++;
+		for (MTreeNode parent : node.parents) {
+			if (parent == stack.peek()) {
+				stack.pop();
+				backpropRec(stack, parent, node, eval, depth);
+				stack.push(parent);
+			} else if (parent.selectBestChild() == node) {
+				backpropRec(stack, parent, node, eval, depth);
+			}
 		}
+		node.addData(eval, depth);
 	}
 
 	@Override
@@ -1052,22 +993,26 @@ public class MCTS extends Method {
 
 		public int depth = 0;
 		public boolean isMaxNode;
+		private MTreeNode bestChildCached = null;
+
+		private void init(MachineState state, Object key, MTreeNode parent) {
+			this.state = state;
+			if (parent != null) this.parents.add(parent);
+		}
 
 		public MTreeNode(MachineState state) {
-			this.state = state;
+			init(state, null, null);
 			isMaxNode = true;
 		}
 
 		public MTreeNode(MachineState state, List<Move> jmove, MTreeNode parent) {
-			this.parents.add(parent);
-			this.state = state;
+			init(state, jmove, parent);
 			isMaxNode = true;
 		}
 
 		public MTreeNode(MachineState state, Move move, MTreeNode parent) {
-			this.parents.add(parent);
+			init(state, move, parent);
 			this.move = move;
-			this.state = state;
 			isMaxNode = false;
 		}
 
@@ -1111,6 +1056,24 @@ public class MCTS extends Method {
 			return lower == upper;
 		}
 
+		// returns whether the best move is known
+		// (even if its evaluation is not)
+		public boolean isLooselyProven() {
+			assert isMaxNode;
+			if (children.isEmpty()) return false;
+			MTreeNode bestChild = children.get(0);
+			for (MTreeNode child : children) {
+				if (child.lower > bestChild.lower
+						|| (child.lower == bestChild.lower && child.upper > bestChild.upper)) {
+					bestChild = child;
+				}
+			}
+			for (MTreeNode child : children) {
+				if (child != bestChild && child.upper > bestChild.lower) return false;
+			}
+			return true;
+		}
+
 		public boolean isMaxNode() {
 			return isMaxNode;
 		}
@@ -1121,14 +1084,46 @@ public class MCTS extends Method {
 		}
 
 		// dynamic score: multiplies by standard deviation
-		public double score(double c) {
+		public double score(double c, MTreeNode parent) {
 			double util = sum_utility / visits;
 			double var = sum_sq / visits - util * util;
-			int totParentVisits = 0;
-			for (MTreeNode parent : parents) {
-				totParentVisits += parent.visits;
+			var = c * Math.sqrt(Math.log(parent.visits) / visits * var);
+			return util + var;
+		}
+
+		public void addData(double eval, int newDepth) {
+			visits++;
+			sum_utility += eval;
+			sum_sq += eval * eval;
+			depth = Math.max(depth, newDepth);
+			bestChildCached = null;
+		}
+
+		public MTreeNode selectBestChild() {
+			if (bestChildCached != null && !bestChildCached.isProven()) return bestChildCached;
+			MTreeNode best = null;
+			if (isMaxNode()) {
+				double score = Double.NEGATIVE_INFINITY;
+				for (MTreeNode child : children) {
+					if (child.isProven()) continue;
+					double newscore = child.score(CFACTOR, this);
+					if (newscore > score) {
+						score = newscore;
+						best = child;
+					}
+				}
+			} else {
+				double score = Double.POSITIVE_INFINITY;
+				for (MTreeNode child : children) {
+					if (child.isProven()) continue;
+					double newscore = child.score(-CFACTOR, this);
+					if (newscore < score) {
+						score = newscore;
+						best = child;
+					}
+				}
 			}
-			return util + c * Math.sqrt(Math.log(totParentVisits) / visits * var);
+			return bestChildCached = best;
 		}
 	}
 
@@ -1441,7 +1436,7 @@ public class MCTS extends Method {
 			dagMap.put(rootstate, root);
 			expand(machine, role, root, dagMap);
 			while (System.currentTimeMillis() < timeout && !kill) {
-				if (root.isProven()) break;
+				if (root.isLooselyProven()) break;
 				Stack<MTreeNode> tree = select(root);
 				MTreeNode node = tree.peek();
 				expand(machine, role, node, dagMap);
