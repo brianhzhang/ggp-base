@@ -1,9 +1,7 @@
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.gdl.grammar.GdlSentence;
@@ -117,16 +115,5 @@ class PropNetMachineState extends MachineState {
 	@Override
 	public int hashCode() {
 		return Arrays.hashCode(props);
-	}
-
-	@Override
-	public Set<GdlSentence> getContents() {
-		if (bases == null) return super.getContents();
-		Set<GdlSentence> out = new HashSet<>();
-		assert props.length == bases.size();
-		for (int i = 0; i < props.length; i++) {
-			if (props[i]) out.add(bases.get(i).getName());
-		}
-		return out;
 	}
 }
