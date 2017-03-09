@@ -116,4 +116,15 @@ class PropNetMachineState extends MachineState {
 	public int hashCode() {
 		return Arrays.hashCode(props);
 	}
+
+//	@Override
+//	public Set<GdlSentence> getContents() {
+//		if (bases == null) return super.getContents();
+//		Set<GdlSentence> out = new HashSet<>();
+//		assert props.length == bases.size();
+//		for (int i = 0; i < props.length; i++) {
+//			if (props[i]) out.add(bases.get(i).getName());
+//		}
+//		return out;
+//	}
 }
