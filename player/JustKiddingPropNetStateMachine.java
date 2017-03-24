@@ -125,27 +125,75 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		p = OptimizingPropNetFactory.create(description, false);
 		time = System.currentTimeMillis() - start;
 		Log.println("propnet factory finished in " + time + " ms.");
-
+		Log.println("number of comps: " + p.getSize());
 		// trim unnecessary propositions
+		int oldSize = 0;
+		for (int round = 1; oldSize != p.getSize(); round++) {
+			oldSize = p.getSize();
 
-		Set<Component> critical = new HashSet<>();
-		critical.add(p.getTerminalProposition());
-		critical.addAll(p.getInputPropositions().values());
-		for (Role role : p.getRoles()) {
-			critical.addAll(p.getGoalPropositions().get(role));
-			critical.addAll(p.getLegalPropositions().get(role));
+			Log.println("optimizing propnet: round " + round);
+			Set<Component> critical = new HashSet<>();
+			critical.add(p.getTerminalProposition());
+			critical.addAll(p.getInputPropositions().values());
+			for (Role role : p.getRoles()) {
+				critical.addAll(p.getGoalPropositions().get(role));
+				critical.addAll(p.getLegalPropositions().get(role));
+			}
+			Set<Component> important = new HashSet<>();
+			for (Component comp : critical) {
+				findComponentsBackwards(comp, important);
+			}
+			Set<Component> unimportant = new HashSet<>(p.getComponents());
+			unimportant.removeAll(important);
+			for (Component comp : unimportant) {
+				p.removeComponent(comp);
+			}
+			Log.println("\ttrimmed " + unimportant.size() + " irrelevant comps");
 
+			// removing single-input components
+			// i.e. are anything that has one input (i.e. anon, view props)
+			// exceptions: NOT, TRANSITION, CONSTANT, and non-view propositions.
+
+			critical.addAll(p.getBasePropositions().values());
+			critical.add(p.getInitProposition());
+
+			int ntrimmed = 0;
+			Set<Component> compsCopy = new HashSet<>(p.getComponents());
+			for (Component c : compsCopy) {
+				if (c instanceof Not) continue;
+				if (c instanceof Transition) continue;
+				if (c instanceof Constant) continue;
+				if (critical.contains(c)) continue;
+				if (c.getInputs().size() != 1) continue;
+				Component in = c.getSingleInput();
+				for (Component out : c.getOutputs()) {
+					in.addOutput(out);
+					out.addInput(in);
+				}
+				p.removeComponent(c);
+				ntrimmed++;
+			}
+			Log.println("\ttrimmed " + ntrimmed + " single-input comps");
+
+			// if two components have the same inputs and are the same type,
+			// then we can condense them
+			compsCopy = new HashSet<>(p.getComponents());
+			ntrimmed = 0;
+			Map<Set<Component>, List<Component>> inputMaps = new HashMap<>();
+			for (Component c : compsCopy) {
+				if (c instanceof Transition) continue;
+				if (c instanceof Constant) continue;
+				if (critical.contains(c)) continue;
+				if (!inputMaps.containsKey(c.getInputs())) {
+					inputMaps.put(c.getInputs(), new ArrayList<>());
+				}
+				List<Component> possibles = inputMaps.get(c.getInputs());
+				if (condenseDuplicates(c, possibles)) ntrimmed++;
+			}
+
+			Log.println("\tmerged " + ntrimmed + " duplicate comps");
+			Log.println("\tcomps remaining: " + p.getSize());
 		}
-		Set<Component> important = new HashSet<>();
-		for (Component comp : critical) {
-			findComponentsBackwards(comp, important);
-		}
-		Set<Component> unimportant = new HashSet<>(p.getComponents());
-		unimportant.removeAll(important);
-		for (Component comp : unimportant) {
-			p.removeComponent(comp);
-		}
-		Log.println("trimmed " + unimportant.size() + " props, leaving " + p.getSize());
 
 		// cycle detection
 		use_propnet_reset = isCyclic(p);
@@ -157,6 +205,21 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 		time = System.currentTimeMillis() - start;
 		Log.println("propnet created in " + time + " ms");
+	}
+
+	public boolean condenseDuplicates(Component c, List<Component> possibles) {
+		for (Component poss : possibles) {
+			if (!c.getClass().equals(poss.getClass())) continue;
+			for (Component next : c.getOutputs()) {
+				poss.addOutput(next);
+				next.addInput(poss);
+			}
+			p.removeComponent(c);
+			return true;
+		}
+		// failed
+		possibles.add(c);
+		return false;
 	}
 
 	@Override
@@ -280,7 +343,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			// fill the structure array:
 			structure[i / 2] = new int[component.getOutputs().size()];
 			for (int j = 0; j < structure[i / 2].length; j++) {
-				structure[i / 2][j] = indexMap.get(component.getOutputarr()[j]) * 2;
+				Component out = component.getOutputarr()[j];
+				structure[i / 2][j] = indexMap.get(out) * 2;
 			}
 		}
 
