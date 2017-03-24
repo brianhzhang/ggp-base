@@ -117,7 +117,9 @@ public class Experiment extends Method {
 			Map<Pair<GdlConstant, Integer>, GdlSentence> oldBackward = new HashMap<>(backward);
 			while (!machine.isTerminal(state)) {
 				step++;
-				for (GdlSentence sent : state.getContents()) {
+				Set<GdlSentence> contents = ((PropNetMachineState) state)
+						.pnContents(smthread.m.props);
+				for (GdlSentence sent : contents) {
 					sent = sent.get(0).toSentence();
 					GdlConstant name = sent.getName();
 					if (notClocks.contains(name)) continue;
@@ -200,7 +202,6 @@ public class Experiment extends Method {
 		Log.println("single player game. starting solver");
 
 		machine = gamer.getStateMachine();
-		PropNetMachineState.bases = smthread.m.props;
 
 		List<Proposition> bases = smthread.m.props;
 

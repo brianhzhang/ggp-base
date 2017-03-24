@@ -111,7 +111,9 @@ public class MCTS extends Method {
 			Map<Pair<GdlConstant, Integer>, GdlSentence> oldBackward = new HashMap<>(backward);
 			while (!machine.isTerminal(state)) {
 				step++;
-				for (GdlSentence sent : state.getContents()) {
+				Set<GdlSentence> contents = ((PropNetMachineState) state)
+						.pnContents(smthread.m.props);
+				for (GdlSentence sent : contents) {
 					sent = sent.get(0).toSentence();
 					GdlConstant name = sent.getName();
 					if (notClocks.contains(name)) continue;
@@ -194,7 +196,6 @@ public class MCTS extends Method {
 		Log.println("single player game. starting solver");
 
 		machine = gamer.getStateMachine();
-		PropNetMachineState.bases = smthread.m.props;
 
 		List<Proposition> bases = smthread.m.props;
 
@@ -404,85 +405,13 @@ public class MCTS extends Method {
 		return heuristic;
 	}
 
-	private class Factor {
-		public boolean[] factor;
-
-		public Factor(Role role, List<Move> moves) {
-			Set<Component> reachableBases = new HashSet<>();
-			Map<GdlSentence, Proposition> propMap = smthread.m.p.getInputPropositions();
-			for (Move move : moves) {
-				if (move == null) continue;
-				findComponentsForwards(propMap.get(ProverQueryBuilder.toDoes(role, move)),
-						reachableBases);
-			}
-			List<Proposition> bases = smthread.m.props;
-			factor = new boolean[bases.size()];
-			for (int i = 0; i < bases.size(); i++) {
-				factor[i] = reachableBases.contains(bases.get(i));
-			}
-		}
-
-		@Override
-		public int hashCode() {
-			return Arrays.hashCode(factor);
-		}
-
-		@Override
-		public boolean equals(Object other) {
-			return Arrays.equals(factor, ((Factor) other).factor);
-		}
-
-		public double dist(Factor other) {
-			int dist = 0;
-			int tot = 0;
-			for (int i = 0; i < factor.length; i++) {
-				if (factor[i] != other.factor[i]) dist++;
-				if (factor[i] || other.factor[i]) tot++;
-			}
-			return 1.0 * dist / tot;
-		}
-	}
-
 	public void multiPlayerMetaGame(long timeout)
 			throws MoveDefinitionException, TransitionDefinitionException {
 		Role role = player.getRole();
 		List<MetaGameDCThread> pool = new ArrayList<>();
 		int n_thread = MyPlayer.N_THREADS;
-		Log.println("finding factors...");
-		long start = System.currentTimeMillis();
-		long alloc_factoring = start + (timeout - start) / 10;
 
-		Map<Factor, Integer> factors = new HashMap<>();
-		StateMachine machine = player.getStateMachine();
-		MachineState initial = machine.getInitialState();
-		while (System.currentTimeMillis() < alloc_factoring) {
-			MachineState state = initial;
-			while (!machine.isTerminal(state)) {
-				List<Move> moves = getUsefulMoves(machine, role, state);
-				if (moves.size() > 1) {
-					Factor current = new Factor(role, moves);
-					factors.put(current, factors.getOrDefault(current, 0) + 1);
-				}
-				state = machine.getRandomNextState(state);
-			}
-		}
-		Factor max_factor = null;
-		int max_size = -1;
-		for (Factor f : factors.keySet()) {
-			int count = factors.get(f);
-			if (count > max_size) {
-				max_factor = f;
-				max_size = count;
-			}
-		}
-
-		for (Factor f : factors.keySet()) {
-			if (max_factor.dist(f) > 0.5 && factors.get(f) * 2 > max_size) {
-				Log.println("found multiple distinct factors. abandoning piece heuristic.");
-				return;
-			}
-		}
-		Log.println("game has one factor. begin random exploration...");
+		Log.println("begin random exploration...");
 		for (int i = 0; i < n_thread; i++) {
 			MetaGameDCThread thread = new MetaGameDCThread(machines[i], role, timeout);
 			pool.add(thread);

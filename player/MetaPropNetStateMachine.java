@@ -1,7 +1,9 @@
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.gdl.grammar.GdlSentence;
@@ -96,7 +98,6 @@ public abstract class MetaPropNetStateMachine extends StateMachine {
 
 class PropNetMachineState extends MachineState {
 	final boolean[] props;
-	public static List<Proposition> bases;
 
 	public PropNetMachineState(boolean[] props) {
 		this.props = props;
@@ -117,14 +118,12 @@ class PropNetMachineState extends MachineState {
 		return Arrays.hashCode(props);
 	}
 
-//	@Override
-//	public Set<GdlSentence> getContents() {
-//		if (bases == null) return super.getContents();
-//		Set<GdlSentence> out = new HashSet<>();
-//		assert props.length == bases.size();
-//		for (int i = 0; i < props.length; i++) {
-//			if (props[i]) out.add(bases.get(i).getName());
-//		}
-//		return out;
-//	}
+	public Set<GdlSentence> pnContents(List<Proposition> bases) {
+		Set<GdlSentence> out = new HashSet<>();
+		assert props.length == bases.size();
+		for (int i = 0; i < props.length; i++) {
+			if (props[i]) out.add(bases.get(i).getName());
+		}
+		return out;
+	}
 }
