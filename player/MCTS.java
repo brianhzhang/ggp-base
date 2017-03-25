@@ -664,12 +664,12 @@ public class MCTS extends Method {
 		for (MTreeNode child : root.children) {
 			MTreeNode fastChild = ft.searchFor(child);
 			Log.printf(
-					"%s v=(%d, %d) s=(%.1f, %.1f) b=(%.0f, %.0f) d=%d\n",
-					child.move, child.visits,
+					"v=(%d, %d) s=(%.1f, %.1f) b=(%.0f, %.0f) d=%d %s\n",
+					child.visits,
 					(fastChild == null ? 0 : fastChild.visits),
 					child.utility(),
 					(fastChild == null ? -1.0 : fastChild.utility()),
-					child.lower, child.upper, child.depth);
+					child.lower, child.upper, child.depth, child.move);
 		}
 		if (bestVisits.utility() > bestChild.lower) bestChild = bestVisits;
 		Log.printf("played=%s visits=%d/%d depth=%d\n",
@@ -952,6 +952,7 @@ public class MCTS extends Method {
 			cmp = Double.compare(lower, other.lower);
 			if (cmp != 0) return cmp;
 			cmp = Double.compare(upper, other.upper);
+			if (cmp != 0) return cmp;
 			return Double.compare(visits, other.visits);
 		}
 
@@ -989,14 +990,18 @@ public class MCTS extends Method {
 		// (even if its evaluation is not)
 		public boolean isLooselyProven() {
 			assert isMaxNode;
+			if (isProven()) return true;
 			if (children.isEmpty()) return false;
 			MTreeNode bestChild = children.get(0);
+			MTreeNode visitsChild = bestChild;
 			for (MTreeNode child : children) {
 				if (child.lower > bestChild.lower
 						|| (child.lower == bestChild.lower && child.upper > bestChild.upper)) {
 					bestChild = child;
 				}
+				if (child.visits > visitsChild.visits) visitsChild = child;
 			}
+			if (bestChild != visitsChild) return false;
 			for (MTreeNode child : children) {
 				if (child != bestChild && child.upper > bestChild.lower) return false;
 			}

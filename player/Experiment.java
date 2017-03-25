@@ -42,7 +42,6 @@ public class Experiment extends Method {
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	private static final boolean USE_MULTIPLAYER_FACTORING = true;
 	private static final double CFACTOR = 1.0;
-	private static final double RAVE_FACTOR = 0.0008;
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
 	private MyPlayer player;
@@ -73,11 +72,6 @@ public class Experiment extends Method {
 	private double[] heuristics;
 	// for each heuristic in heuristicCalcs, contains the props that affect
 	private List<List<Integer>> heuristicProps;
-
-	private static Map<Object, Rave> mainRave = new HashMap<>();
-	private static Map<Object, Rave> fastRave = new HashMap<>();
-
-	private final Stack<MTreeNode> EMPTY_STACK = new Stack<>();
 
 	private boolean checkStateMachineStatus() {
 		if (!propNetInitialized && !smthread.isAlive()) {
@@ -499,9 +493,6 @@ public class Experiment extends Method {
 			rootstate = player.getCurrentState();
 		}
 
-		mainRave.clear();
-		fastRave.clear();
-
 		return run_(machine, rootstate, role, moves, timeout);
 	}
 
@@ -600,7 +591,7 @@ public class Experiment extends Method {
 
 		Map<MachineState, MTreeNode> dagMap = new HashMap<>();
 
-		MTreeNode root = new MTreeNode(rootstate, false);
+		MTreeNode root = new MTreeNode(rootstate);
 		dagMap.put(rootstate, root);
 		expand(machine, role, root, dagMap);
 
@@ -672,18 +663,13 @@ public class Experiment extends Method {
 		Collections.sort(root.children);
 		for (MTreeNode child : root.children) {
 			MTreeNode fastChild = ft.searchFor(child);
-			int fastVisits = fastChild == null ? 0 : fastChild.visits;
-			int raveVisits = child.parents.get(root).visits - child.visits;
-			double fastUtility = fastChild == null ? 0 : fastChild.utility();
-			double raveUtility = child.parents.get(root).sum - child.sum_utility;
-			if (raveVisits == 0) raveUtility = 0;
-			else raveUtility /= raveVisits;
 			Log.printf(
-					"%s v=(%d, %d, %d) s=(%.1f, %.1f, %.1f) b=(%.0f, %.0f) d=%d\n",
-					child.move,
-					child.visits, fastVisits, raveVisits,
-					child.utility(), fastUtility, raveUtility,
-					child.lower, child.upper, child.depth);
+					"v=(%d, %d) s=(%.1f, %.1f) b=(%.0f, %.0f) d=%d %s\n",
+					child.visits,
+					(fastChild == null ? 0 : fastChild.visits),
+					child.utility(),
+					(fastChild == null ? -1.0 : fastChild.utility()),
+					child.lower, child.upper, child.depth, child.move);
 		}
 		if (bestVisits.utility() > bestChild.lower) bestChild = bestVisits;
 		Log.printf("played=%s visits=%d/%d depth=%d\n",
@@ -811,7 +797,7 @@ public class Experiment extends Method {
 				MTreeNode newnode;
 				if (dagMap.containsKey(newstate)) {
 					newnode = dagMap.get(newstate);
-					newnode.addParent(jmove, node);
+					newnode.parents.add(node);
 				} else {
 					newnode = new MTreeNode(newstate, jmove, node);
 					dagMap.put(newstate, newnode);
@@ -824,7 +810,7 @@ public class Experiment extends Method {
 
 	private void propagateBound(MTreeNode node) {
 		if (!node.setBounds()) return;
-		for (MTreeNode parent : node.parents.keySet()) {
+		for (MTreeNode parent : node.parents) {
 			propagateBound(parent);
 		}
 	}
@@ -833,7 +819,7 @@ public class Experiment extends Method {
 		MTreeNode node = stack.pop();
 		if (proven) {
 			node.lower = node.upper = Math.round(eval);
-			for (MTreeNode parent : node.parents.keySet()) {
+			for (MTreeNode parent : node.parents) {
 				propagateBound(parent);
 			}
 		}
@@ -843,18 +829,16 @@ public class Experiment extends Method {
 	private void backpropRec(Stack<MTreeNode> stack,
 			MTreeNode node, MTreeNode prev, double eval, int depth) {
 		if (node.isMaxNode()) depth++;
-		for (MTreeNode parent : node.parents.keySet()) {
-			// note to future self: != is correct here
-			if (stack != EMPTY_STACK && parent == stack.peek()) {
+		for (MTreeNode parent : node.parents) {
+			if (parent == stack.peek()) {
 				stack.pop();
 				backpropRec(stack, parent, node, eval, depth);
 				stack.push(parent);
 			} else if (parent.selectBestChild() == node) {
-				backpropRec(EMPTY_STACK, parent, node, eval, depth);
+				backpropRec(stack, parent, node, eval, depth);
 			}
 		}
-		if (stack.isEmpty()) node.addData(eval, depth, null);
-		else node.addData(eval, depth, stack.peek());
+		node.addData(eval, depth);
 	}
 
 	@Override
@@ -921,11 +905,6 @@ public class Experiment extends Method {
 		}
 	}
 
-	private static class Rave {
-		double sum = 0;
-		int visits = 0;
-	}
-
 	private static class MTreeNode implements Comparable<MTreeNode> {
 		// prior: sum squares = 10000 so that stdev != 0
 		public int visits = 0;
@@ -936,7 +915,7 @@ public class Experiment extends Method {
 		public double upper = MyPlayer.MAX_SCORE;
 
 		public List<MTreeNode> children = new ArrayList<>();
-		public Map<MTreeNode, Rave> parents = new HashMap<>();
+		public List<MTreeNode> parents = new ArrayList<>();
 
 		public MachineState state;
 		public Move move; // null if max-node; non-null if min-node
@@ -945,26 +924,13 @@ public class Experiment extends Method {
 		public boolean isMaxNode;
 		private MTreeNode bestChildCached = null;
 
-		private boolean isFastThread;
-
 		private void init(MachineState state, Object key, MTreeNode parent) {
 			this.state = state;
-			if (parent == null) {
-				isFastThread = (Boolean) key;
-				return;
-			}
-			isFastThread = parent.isFastThread;
-			addParent(key, parent);
+			if (parent != null) this.parents.add(parent);
 		}
 
-		public void addParent(Object key, MTreeNode parent) {
-			Map<Object, Rave> raves = isFastThread ? fastRave : mainRave;
-			if (!raves.containsKey(key)) raves.put(key, new Rave());
-			parents.put(parent, raves.get(key));
-		}
-
-		public MTreeNode(MachineState state, boolean isFastThread) {
-			init(state, isFastThread, null);
+		public MTreeNode(MachineState state) {
+			init(state, null, null);
 			isMaxNode = true;
 		}
 
@@ -986,6 +952,7 @@ public class Experiment extends Method {
 			cmp = Double.compare(lower, other.lower);
 			if (cmp != 0) return cmp;
 			cmp = Double.compare(upper, other.upper);
+			if (cmp != 0) return cmp;
 			return Double.compare(visits, other.visits);
 		}
 
@@ -1031,6 +998,7 @@ public class Experiment extends Method {
 					bestChild = child;
 				}
 			}
+			if (bestChild != selectBestChild()) return false;
 			for (MTreeNode child : children) {
 				if (child != bestChild && child.upper > bestChild.lower) return false;
 			}
@@ -1051,29 +1019,15 @@ public class Experiment extends Method {
 			double util = sum_utility / visits;
 			double var = sum_sq / visits - util * util;
 			var = c * Math.sqrt(Math.log(parent.visits) / visits * var);
-
-			Rave rave = parents.get(parent);
-			int raveVisits = rave.visits - visits;
-			if (raveVisits == 0) return util + var;
-
-			double raveSum = rave.sum - sum_utility;
-			double raveUtil = raveSum / raveVisits;
-			double bias = raveUtil - util;
-			double beta = RAVE_FACTOR * bias * bias * raveVisits * visits;
-			beta = raveVisits / (raveVisits + visits + beta);
-			return (1 - beta) * util + beta * raveUtil + var;
+			return util + var;
 		}
 
-		public void addData(double eval, int newDepth, MTreeNode parent) {
+		public void addData(double eval, int newDepth) {
 			visits++;
 			sum_utility += eval;
 			sum_sq += eval * eval;
 			depth = Math.max(depth, newDepth);
 			bestChildCached = null;
-			if (parent == null) return;
-			Rave rave = parents.get(parent);
-			rave.sum += eval;
-			rave.visits++;
 		}
 
 		public MTreeNode selectBestChild() {
@@ -1112,7 +1066,6 @@ public class Experiment extends Method {
 			this.eval = eval;
 			this.node = node;
 		}
-
 	}
 
 	private void findComponentsBackwards(Collection<Component> current, Set<Component> visited) {
@@ -1409,7 +1362,7 @@ public class Experiment extends Method {
 		public void run_() throws MoveDefinitionException, TransitionDefinitionException,
 				GoalDefinitionException {
 
-			root = new MTreeNode(rootstate, true);
+			root = new MTreeNode(rootstate);
 			Map<MachineState, MTreeNode> dagMap = new HashMap<>();
 			dagMap.put(rootstate, root);
 			expand(machine, role, root, dagMap);

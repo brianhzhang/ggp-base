@@ -192,6 +192,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			}
 
 			Log.println("\tmerged " + ntrimmed + " duplicate comps");
+
 			Log.println("\tcomps remaining: " + p.getSize());
 		}
 
