@@ -359,25 +359,13 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			}
 		}
 
-		Set<Component> visited = new HashSet<Component>();
-
-		for (int i = 0; i < basearr.length; i++) {
-			if (kill) return;
-			for (int j = 0; j < structure[basearr[i] / 2].length; j++) {
-				startPropagate(structure[basearr[i] / 2][j], 0, components, visited);
-			}
-		}
-		for (int i = 0; i < inputarr.length; i++) {
-			if (kill) return;
-			for (int j = 0; j < structure[inputarr[i] / 2].length; j++) {
-				startPropagate(structure[inputarr[i] / 2][j], 0, components, visited);
-			}
-		}
 		for (Component c : components) {
-			if (kill) return;
-			if (c instanceof Constant) {
-				startPropagate(indexMap.get(c) * 2, 0, components, visited);
+			if (c instanceof Proposition) continue;
+			int delta = getComp(c) - comps[indexMap.get(c) * 2];
+			for (Component d : c.getInputs()) {
+				delta += ((comps[indexMap.get(d) * 2] >> 31) & 1);
 			}
+			propagate(indexMap.get(c) * 2, delta);
 		}
 
 		initcomps = comps.clone();
@@ -538,24 +526,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 				for (int i = 0; i < structure[index / 2].length; i++) {
 					propagate(structure[index / 2][i], old);
 				}
-			}
-		}
-	}
-
-	// real index of the thing * 2 is index.
-	private void startPropagate(int index, int newValue, List<Component> components,
-			Set<Component> visited) {
-		if (comps[index + 1] != -1) {
-			return;
-		}
-		int old = ((comps[index] >> 31) & 1);
-		comps[index] += newValue;
-		if (old != ((comps[index] >> 31) & 1)
-				|| (newValue == 0 && (!visited.contains(components.get(index / 2))))) {
-			visited.add(components.get(index / 2));
-			for (int i = 0; i < structure[index / 2].length; i++) {
-				startPropagate(structure[index / 2][i], ((comps[index] >> 31) & 1), components,
-						visited);
 			}
 		}
 	}

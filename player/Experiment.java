@@ -41,7 +41,8 @@ public class Experiment extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	private static final boolean USE_MULTIPLAYER_FACTORING = true;
-	private static final double CFACTOR = 1.0;
+	// use the theoretically optimal value
+	private static final double CFACTOR = Math.sqrt(2);
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
 	private MyPlayer player;
@@ -185,11 +186,11 @@ public class Experiment extends Method {
 		}
 
 		if (nUsefulRoles != 1) {
-			try {
-				multiPlayerMetaGame(timeout);
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
+//			try {
+//				multiPlayerMetaGame(timeout);
+//			} catch (Exception e) {
+//				e.printStackTrace();
+//			}
 			return;
 		}
 
@@ -990,15 +991,18 @@ public class Experiment extends Method {
 		// (even if its evaluation is not)
 		public boolean isLooselyProven() {
 			assert isMaxNode;
+			if (isProven()) return true;
 			if (children.isEmpty()) return false;
 			MTreeNode bestChild = children.get(0);
+			MTreeNode visitsChild = bestChild;
 			for (MTreeNode child : children) {
 				if (child.lower > bestChild.lower
 						|| (child.lower == bestChild.lower && child.upper > bestChild.upper)) {
 					bestChild = child;
 				}
+				if (child.visits > visitsChild.visits) visitsChild = child;
 			}
-			if (bestChild != selectBestChild()) return false;
+			if (bestChild != visitsChild) return false;
 			for (MTreeNode child : children) {
 				if (child != bestChild && child.upper > bestChild.lower) return false;
 			}

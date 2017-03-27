@@ -41,7 +41,8 @@ public class MCTS extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	private static final boolean USE_MULTIPLAYER_FACTORING = true;
-	private static final double CFACTOR = 1.0;
+	// use the theoretically optimal value
+	private static final double CFACTOR = Math.sqrt(2);
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
 	private MyPlayer player;
@@ -185,11 +186,11 @@ public class MCTS extends Method {
 		}
 
 		if (nUsefulRoles != 1) {
-			try {
-				multiPlayerMetaGame(timeout);
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
+//			try {
+//				multiPlayerMetaGame(timeout);
+//			} catch (Exception e) {
+//				e.printStackTrace();
+//			}
 			return;
 		}
 
