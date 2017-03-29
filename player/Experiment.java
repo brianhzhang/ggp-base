@@ -154,6 +154,15 @@ public class Experiment extends Method {
 						}
 					} else backward.put(Pair.of(name, step), sent);
 				}
+				for (Proposition base : smthread.m.props) {
+					GdlConstant name = base.getName().get(0).toSentence().getName();
+					if (notClocks.contains(name)) continue;
+					if (!backward.containsKey(Pair.of(name, step))) {
+						Log.printf("%s is not the clock: not found at step %d\n",
+								name, step);
+						notClocks.add(name);
+					}
+				}
 				try {
 					nPly += 1;
 					totLegalMoves += machine.getLegalMoves(state, roles[ourRoleIndex]).size();
@@ -546,6 +555,11 @@ public class Experiment extends Method {
 	public Move run_(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
+		// we don't cache anyway. might as well...
+//		if (moves.size() == 1) {
+//			Log.println("one legal move: " + moves.get(0));
+//			return moves.get(0);
+//		}
 		Log.println("threads running: " + Thread.activeCount());
 		Map<Role, Set<Move>> oldUseless = null;
 		ignoreProps = null;
@@ -567,12 +581,16 @@ public class Experiment extends Method {
 			Log.printf("%d of %d props relevant\n", reachableBases.size(), bases.size());
 			int count = 0;
 			Set<Component> ignore = new HashSet<>();
+			Set<Component> relevant = new HashSet<>();
+			for (Component c : reachableBases) {
+				findComponentsBackwards(c, relevant);
+			}
 			for (Role r : machine.findRoles()) {
 				for (Move action : machine.findActions(r)) {
 					Component does = propMap.get(ProverQueryBuilder.toDoes(r, action));
 					if (does == null) continue;
 					findComponentsForwards(does, ignore);
-					if (!findAnyComponentForwards(does, new HashSet<>(), reachableBases)) {
+					if (!relevant.contains(does)) {
 						useless.get(r).add(action);
 						count++;
 					}
@@ -1131,19 +1149,6 @@ public class Experiment extends Method {
 				queue.offer(parent);
 			}
 		}
-	}
-
-	private boolean findAnyComponentForwards(Component current, Set<Component> visited,
-			Set<Component> target) {
-		if (current == null) return false;
-		if (target.contains(current)) return true;
-		if (visited.contains(current)) return false;
-		visited.add(current);
-
-		for (Component next : current.getOutputs()) {
-			if (findAnyComponentForwards(next, visited, target)) return true;
-		}
-		return false;
 	}
 
 	private void findComponentsForwards(Component current, Set<Component> visited) {

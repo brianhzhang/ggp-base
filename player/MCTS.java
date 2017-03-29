@@ -41,8 +41,8 @@ public class MCTS extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	private static final boolean USE_MULTIPLAYER_FACTORING = true;
-	// use the theoretically optimal value
-	private static final double CFACTOR = Math.sqrt(2);
+	private static final double CFACTOR = 1.0;
+
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
 	private MyPlayer player;
@@ -153,6 +153,15 @@ public class MCTS extends Method {
 							notClocks.add(name);
 						}
 					} else backward.put(Pair.of(name, step), sent);
+				}
+				for (Proposition base : smthread.m.props) {
+					GdlConstant name = base.getName().get(0).toSentence().getName();
+					if (notClocks.contains(name)) continue;
+					if (!backward.containsKey(Pair.of(name, step))) {
+						Log.printf("%s is not the clock: not found at step %d\n",
+								name, step);
+						notClocks.add(name);
+					}
 				}
 				try {
 					nPly += 1;
@@ -546,8 +555,14 @@ public class MCTS extends Method {
 	public Move run_(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
+		// we don't cache anyway. might as well...
+//		if (moves.size() == 1) {
+//			Log.println("one legal move: " + moves.get(0));
+//			return moves.get(0);
+//		}
 		Log.println("threads running: " + Thread.activeCount());
 		Map<Role, Set<Move>> oldUseless = null;
+		System.out.println("number of legal moves: " + moves.size());
 		ignoreProps = null;
 		if (propNetInitialized) {
 			oldUseless = new HashMap<>();
@@ -557,22 +572,29 @@ public class MCTS extends Method {
 				oldUseless.put(r, new HashSet<>(useless.get(r)));
 			}
 			Set<Component> reachableBases = new HashSet<>();
+			Set<Component> reachableBasesBackwards = new HashSet<>();
 			Map<GdlSentence, Proposition> propMap = smthread.m.p.getInputPropositions();
 			for (Move move : moves) {
-				findComponentsForwards(propMap.get(ProverQueryBuilder.toDoes(role, move)),
-						reachableBases);
+				Component c = propMap.get(ProverQueryBuilder.toDoes(role, move));
+				findComponentsForwards(c, reachableBases);
+				c = smthread.m.p.getLegalInputMap().get(c);
+				findComponentsBackwards(c, reachableBasesBackwards);
 			}
-
+			reachableBases.addAll(reachableBasesBackwards);
 			reachableBases.retainAll(new HashSet<>(bases));
 			Log.printf("%d of %d props relevant\n", reachableBases.size(), bases.size());
 			int count = 0;
 			Set<Component> ignore = new HashSet<>();
+			Set<Component> relevant = new HashSet<>();
+			for (Component c : reachableBases) {
+				findComponentsBackwards(c, relevant);
+			}
 			for (Role r : machine.findRoles()) {
 				for (Move action : machine.findActions(r)) {
 					Component does = propMap.get(ProverQueryBuilder.toDoes(r, action));
 					if (does == null) continue;
 					findComponentsForwards(does, ignore);
-					if (!findAnyComponentForwards(does, new HashSet<>(), reachableBases)) {
+					if (!relevant.contains(does)) {
 						useless.get(r).add(action);
 						count++;
 					}
@@ -1133,19 +1155,6 @@ public class MCTS extends Method {
 		}
 	}
 
-	private boolean findAnyComponentForwards(Component current, Set<Component> visited,
-			Set<Component> target) {
-		if (current == null) return false;
-		if (target.contains(current)) return true;
-		if (visited.contains(current)) return false;
-		visited.add(current);
-
-		for (Component next : current.getOutputs()) {
-			if (findAnyComponentForwards(next, visited, target)) return true;
-		}
-		return false;
-	}
-
 	private void findComponentsForwards(Component current, Set<Component> visited) {
 		Queue<Component> queue = new LinkedList<>();
 		queue.add(current);
@@ -1192,7 +1201,7 @@ public class MCTS extends Method {
 			}
 
 			reachable = new HashSet<>();
-			//findComponentsBackwards(m.p.getTerminalProposition(), reachable);
+			findComponentsBackwards(m.p.getTerminalProposition(), reachable);
 			Set<Component> goals = new HashSet<>();
 			goals.addAll(m.p.getGoalPropositions().get(role));
 			Set<Component> badInputSet = new HashSet<>(inputs.values());
@@ -1331,7 +1340,7 @@ public class MCTS extends Method {
 			Map<MachineState, StateInfo> info = new TreeMap<>(this::compare);
 
 			PriorityQueue<PQEntry> pq = new PriorityQueue<>();
-			//pq.add(new PQEntry(initial, 0));
+			pq.add(new PQEntry(initial, 0));
 			info.put(initial, new StateInfo(null, null, 0));
 			best_reward = 0;
 			best = null;
