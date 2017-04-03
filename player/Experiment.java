@@ -13,7 +13,6 @@ import java.util.Set;
 import java.util.Stack;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -41,8 +40,8 @@ public class Experiment extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	private static final boolean USE_MULTIPLAYER_FACTORING = true;
-	// use the theoretically optimal value
-	private static final double CFACTOR = Math.sqrt(2);
+	private static final double CFACTOR = 1.0;
+
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
 	private MyPlayer player;
@@ -63,6 +62,9 @@ public class Experiment extends Method {
 	private double oppWeight;
 	private Role[] roles;
 	private int ourRoleIndex = -1;
+
+	private int queueSize = MyPlayer.N_THREADS - 1;
+	private boolean depthChargeThreadWaiting = false;
 
 	// heuristics
 	// GdlTerm --> index into heuristicCalcs
@@ -209,11 +211,11 @@ public class Experiment extends Method {
 		}
 
 		if (nUsefulRoles != 1) {
-			try {
-				multiPlayerMetaGame(timeout);
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
+//			try {
+//				multiPlayerMetaGame(timeout);
+//			} catch (Exception e) {
+//				e.printStackTrace();
+//			}
 			return;
 		}
 
@@ -556,12 +558,13 @@ public class Experiment extends Method {
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 					TransitionDefinitionException {
 		// we don't cache anyway. might as well...
-//		if (moves.size() == 1) {
-//			Log.println("one legal move: " + moves.get(0));
-//			return moves.get(0);
-//		}
+		if (moves.size() == 1) {
+			Log.println("one legal move: " + moves.get(0));
+			return moves.get(0);
+		}
 		Log.println("threads running: " + Thread.activeCount());
 		Map<Role, Set<Move>> oldUseless = null;
+		System.out.println("number of legal moves: " + moves.size());
 		ignoreProps = null;
 		if (propNetInitialized) {
 			oldUseless = new HashMap<>();
@@ -571,12 +574,15 @@ public class Experiment extends Method {
 				oldUseless.put(r, new HashSet<>(useless.get(r)));
 			}
 			Set<Component> reachableBases = new HashSet<>();
+			Set<Component> reachableBasesBackwards = new HashSet<>();
 			Map<GdlSentence, Proposition> propMap = smthread.m.p.getInputPropositions();
 			for (Move move : moves) {
-				findComponentsForwards(propMap.get(ProverQueryBuilder.toDoes(role, move)),
-						reachableBases);
+				Component c = propMap.get(ProverQueryBuilder.toDoes(role, move));
+				findComponentsForwards(c, reachableBases);
+				c = smthread.m.p.getLegalInputMap().get(c);
+				findComponentsBackwards(c, reachableBasesBackwards);
 			}
-
+			reachableBases.addAll(reachableBasesBackwards);
 			reachableBases.retainAll(new HashSet<>(bases));
 			Log.printf("%d of %d props relevant\n", reachableBases.size(), bases.size());
 			int count = 0;
@@ -623,7 +629,8 @@ public class Experiment extends Method {
 		expand(machine, role, root, dagMap);
 
 		DepthChargeThread[] threads = new DepthChargeThread[nthread];
-		BlockingQueue<Stack<MTreeNode>> input = new ArrayBlockingQueue<>(nthread);
+		ResizableBlockingDeque<Stack<MTreeNode>> input = new ResizableBlockingDeque<>(queueSize);
+
 		BlockingQueue<DCOut> output = new LinkedBlockingQueue<>();
 		for (int i = 0; i < nthread; i++) {
 			threads[i] = new DepthChargeThread(machines[i], role, timeout, input, output);
@@ -649,9 +656,17 @@ public class Experiment extends Method {
 					timers[1] += System.currentTimeMillis();
 				}
 				try {
-					timers[2] -= System.currentTimeMillis();
-					input.put(tree);
-					timers[2] += System.currentTimeMillis();
+
+					if (!input.offerFirst(tree)) {
+						if (depthChargeThreadWaiting) {
+							depthChargeThreadWaiting = false;
+							input.increaseCapacity();
+						}
+						timers[2] -= System.currentTimeMillis();
+						input.putFirst(tree);
+						timers[2] += System.currentTimeMillis();
+					}
+
 				} catch (InterruptedException e) {
 					e.printStackTrace();
 				}
@@ -711,6 +726,14 @@ public class Experiment extends Method {
 				bestChild.move, bestChild.visits, root.visits, root.depth);
 		Log.printf("time=%d breakdown=%s\n", (System.currentTimeMillis() - timestart),
 				Arrays.toString(timers));
+
+		input.clear();
+		int totalTimeWaiting = 0;
+		for (DepthChargeThread thread : threads) {
+			totalTimeWaiting += thread.timeSpentWaiting;
+		}
+		Log.println("depth charge inactive time: " + totalTimeWaiting + " ms");
+		Log.println("depth charge queue capacity: " + (queueSize = input.getCapacity()));
 
 		Move chosen = bestChild.move;
 		if (chosen == USELESS_MOVE) {
@@ -918,11 +941,12 @@ public class Experiment extends Method {
 		private StateMachine machine;
 		private Role role;
 		private long timeout;
-		private BlockingQueue<Stack<MTreeNode>> input;
+		private ResizableBlockingDeque<Stack<MTreeNode>> input;
 		private BlockingQueue<DCOut> output;
+		private int timeSpentWaiting;
 
 		public DepthChargeThread(StateMachine machine, Role role, long timeout,
-				BlockingQueue<Stack<MTreeNode>> input, BlockingQueue<DCOut> output) {
+				ResizableBlockingDeque<Stack<MTreeNode>> input, BlockingQueue<DCOut> output) {
 			this.machine = machine;
 			this.role = role;
 			this.timeout = timeout;
@@ -953,10 +977,16 @@ public class Experiment extends Method {
 		public void run() {
 			while (true) {
 				try {
-					Stack<MTreeNode> node = input.poll(
-							timeout - System.currentTimeMillis() + MyPlayer.TIMEOUT_BUFFER,
-							TimeUnit.MILLISECONDS);
-					if (node == null) return;
+					Stack<MTreeNode> node = input.pollFirst();
+					if (node == null) {
+						long start = System.currentTimeMillis();
+						node = input.pollFirst(
+								timeout - System.currentTimeMillis() + MyPlayer.TIMEOUT_BUFFER,
+								TimeUnit.MILLISECONDS);
+						if (node == null) return;
+						timeSpentWaiting += System.currentTimeMillis() - start;
+						depthChargeThreadWaiting = true;
+					}
 					output.offer(simulate(node));
 				} catch (Exception e) {
 					e.printStackTrace();
@@ -1197,7 +1227,7 @@ public class Experiment extends Method {
 			}
 
 			reachable = new HashSet<>();
-			//findComponentsBackwards(m.p.getTerminalProposition(), reachable);
+			findComponentsBackwards(m.p.getTerminalProposition(), reachable);
 			Set<Component> goals = new HashSet<>();
 			goals.addAll(m.p.getGoalPropositions().get(role));
 			Set<Component> badInputSet = new HashSet<>(inputs.values());
@@ -1336,7 +1366,7 @@ public class Experiment extends Method {
 			Map<MachineState, StateInfo> info = new TreeMap<>(this::compare);
 
 			PriorityQueue<PQEntry> pq = new PriorityQueue<>();
-			//pq.add(new PQEntry(initial, 0));
+			pq.add(new PQEntry(initial, 0));
 			info.put(initial, new StateInfo(null, null, 0));
 			best_reward = 0;
 			best = null;
@@ -1407,6 +1437,12 @@ public class Experiment extends Method {
 			dagMap.put(rootstate, root);
 			expand(machine, role, root, dagMap);
 			while (System.currentTimeMillis() < timeout && !kill) {
+				try {
+					Thread.sleep(timeout - System.currentTimeMillis());
+				} catch (InterruptedException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
 				if (root.isLooselyProven()) break;
 				Stack<MTreeNode> tree = select(root);
 				MTreeNode node = tree.peek();

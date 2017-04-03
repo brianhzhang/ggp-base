@@ -37,7 +37,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int N_OPTIONS = 10;
 	public static final int TIMEOUT_BUFFER = 2500; // time for network
 	// communication in ms
-	public static final int N_THREADS = 2;
+	public static final int N_THREADS = 4;
 
 	public static final PrintWriter gamelog = getGameLog();
 	public static int method = 6;
