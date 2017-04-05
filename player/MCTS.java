@@ -211,11 +211,11 @@ public class MCTS extends Method {
 		}
 
 		if (nUsefulRoles != 1) {
-//			try {
-//				multiPlayerMetaGame(timeout);
-//			} catch (Exception e) {
-//				e.printStackTrace();
-//			}
+			try {
+				multiPlayerMetaGame(timeout);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
 			return;
 		}
 
@@ -1437,12 +1437,6 @@ public class MCTS extends Method {
 			dagMap.put(rootstate, root);
 			expand(machine, role, root, dagMap);
 			while (System.currentTimeMillis() < timeout && !kill) {
-				try {
-					Thread.sleep(timeout - System.currentTimeMillis());
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
 				if (root.isLooselyProven()) break;
 				Stack<MTreeNode> tree = select(root);
 				MTreeNode node = tree.peek();
