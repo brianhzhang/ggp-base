@@ -83,6 +83,7 @@ public class Experiment extends Method {
 	// for each heuristic in heuristicCalcs, contains the props that affect
 	private List<List<Integer>> heuristicProps;
 	private double heuristicWeight;
+	private MTreeNode root;
 
 	public Experiment(MyPlayer gamer, List<Gdl> description) {
 		this.player = gamer;
@@ -510,6 +511,9 @@ public class Experiment extends Method {
 		double dcRsq = dcRegression.getRSquare();
 		Log.println("depth charge rsq: " + dcRsq);
 		heuristicWeight = heuristicRsq / dcRsq;
+		if (heuristicWeight < 0 || !Double.isFinite(heuristicWeight)) {
+			heuristicWeight = 0;
+		}
 		Log.println("heuristic weight: " + heuristicWeight);
 	}
 
@@ -634,7 +638,7 @@ public class Experiment extends Method {
 
 		Map<MachineState, MTreeNode> dagMap = new HashMap<>();
 
-		MTreeNode root = new MTreeNode(rootstate);
+		root = new MTreeNode(rootstate);
 		dagMap.put(rootstate, root);
 		expand(machine, role, root, dagMap);
 
@@ -704,6 +708,7 @@ public class Experiment extends Method {
 				bestChild.move, bestChild.visits, root.visits, root.depth);
 		Log.printf("time=%d breakdown=%s\n", (System.currentTimeMillis() - timestart),
 				Arrays.toString(timers));
+		root = null; // allow gc
 
 		input.clear();
 		int totalTimeWaiting = 0;
@@ -1093,18 +1098,17 @@ public class Experiment extends Method {
 
 		public double utility() {
 			if (visits == 0) return putInBounds(1);
-			return putInBounds(score(0, null));
+			return putInBounds(score(0, root));
 		}
 
 		// dynamic score: multiplies by standard deviation
 		public double score(double c, MTreeNode parent) {
-			double heuristicWt = heuristicVisits * heuristicWeight;
+			double heuristicWt = visits * heuristicWeight * parent.heuristicVisits / parent.visits;
 			double eff_sum = sum_utility + heuristic * heuristicWt;
 			double eff_visits = visits + heuristicWt;
 			double eff_sumsq = sum_sq + 100 * heuristic * heuristicWt;
 
 			double util = eff_sum / eff_visits;
-			if (parent == null) return util;
 			double var = eff_sumsq / eff_visits - util * util;
 			var = c * Math.sqrt(Math.log(parent.visits) / eff_visits * var);
 			return util + var;
