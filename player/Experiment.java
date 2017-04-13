@@ -45,7 +45,8 @@ public class Experiment extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	private static final boolean USE_MULTIPLAYER_FACTORING = true;
-	private static final double CFACTOR = 1.0;
+	private static final double EXPLORATION_BIAS_FACTOR = 1.0;
+	private double exploration_bias = 1.0;
 
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
@@ -515,6 +516,8 @@ public class Experiment extends Method {
 			heuristicWeight = 0;
 		}
 		Log.println("heuristic weight: " + heuristicWeight);
+		exploration_bias = EXPLORATION_BIAS_FACTOR * Math.sqrt(1 + heuristicWeight);
+		Log.println("exploration bias: " + exploration_bias);
 	}
 
 	private int findReward(int[] rewards) {
@@ -698,9 +701,10 @@ public class Experiment extends Method {
 		Collections.sort(root.children);
 		for (MTreeNode child : root.children) {
 			Log.printf(
-					"v=(%d, %d) s=(%.1f, %.1f) b=(%.0f, %.0f) d=%d %s\n",
-					child.visits, child.heuristicVisits,
+					"v=(%d, %d) s=(%.1f, %.1f, %.1f) b=(%.0f, %.0f) d=%d %s\n",
+					child.visits, child.heuristicVisits - child.visits,
 					child.sum_utility / child.visits, child.heuristic,
+					child.utility(),
 					child.lower, child.upper, child.depth, child.move);
 		}
 		MTreeNode bestChild = root.children.get(root.children.size() - 1);
@@ -1097,31 +1101,33 @@ public class Experiment extends Method {
 		}
 
 		public double utility() {
-			if (visits == 0) return putInBounds(1);
 			return putInBounds(score(0, root));
 		}
 
 		// dynamic score: multiplies by standard deviation
 		public double score(double c, MTreeNode parent) {
-			double heuristicWt = visits * heuristicWeight * parent.heuristicVisits / parent.visits;
-			double eff_sum = sum_utility + heuristic * heuristicWt;
-			double eff_visits = visits + heuristicWt;
-			double eff_sumsq = sum_sq + 100 * heuristic * heuristicWt;
+			double heuristicEffVisits = heuristicWeight * visits
+					* parent.heuristicVisits / parent.visits;
+			double eff_sum = sum_utility + heuristic * heuristicEffVisits;
+			double eff_visits = visits + heuristicEffVisits;
+			double eff_sumsq = sum_sq + 100 * heuristic * heuristicEffVisits;
 
 			double util = eff_sum / eff_visits;
 			double var = eff_sumsq / eff_visits - util * util;
+
+			eff_visits -= (1 + heuristicWeight);
 			var = c * Math.sqrt(Math.log(parent.visits) / eff_visits * var);
 			return util + var;
 		}
 
 		public void addData(double eval, int newDepth, boolean isScore) {
-
 			if (isScore) {
 				visits++;
 				sum_utility += eval;
 				sum_sq += eval * eval;
 				depth = Math.max(depth, newDepth);
-			} else heuristicVisits++;
+			}
+			heuristicVisits++;
 		}
 
 		public MTreeNode selectBestChild(boolean force) {
@@ -1140,7 +1146,7 @@ public class Experiment extends Method {
 				double score = Double.NEGATIVE_INFINITY;
 				for (MTreeNode child : children) {
 					if (child.isProven()) continue;
-					double newscore = child.score(CFACTOR, this);
+					double newscore = child.score(exploration_bias, this);
 					if (newscore > score) {
 						score = newscore;
 						best = child;
@@ -1150,7 +1156,7 @@ public class Experiment extends Method {
 				double score = Double.POSITIVE_INFINITY;
 				for (MTreeNode child : children) {
 					if (child.isProven()) continue;
-					double newscore = child.score(-CFACTOR, this);
+					double newscore = child.score(-exploration_bias, this);
 					if (newscore < score) {
 						score = newscore;
 						best = child;
