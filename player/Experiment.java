@@ -85,6 +85,7 @@ public class Experiment extends Method {
 	private List<List<Integer>> heuristicProps;
 	private double heuristicWeight;
 	private MTreeNode root;
+	private Map<MachineState, MTreeNode> dagMap;
 
 	public Experiment(MyPlayer gamer, List<Gdl> description) {
 		this.player = gamer;
@@ -641,11 +642,10 @@ public class Experiment extends Method {
 
 		// set up tree
 
-		Map<MachineState, MTreeNode> dagMap = new HashMap<>();
+		dagMap = new HashMap<>();
 
 		root = new MTreeNode(rootstate);
 		dagMap.put(rootstate, root);
-		expand(machine, role, root, dagMap);
 
 		DepthChargeThread[] threads = new DepthChargeThread[nthread];
 		ResizableBlockingDeque<Stack<MTreeNode>> input = new ResizableBlockingDeque<>(queueSize);
@@ -655,7 +655,7 @@ public class Experiment extends Method {
 			threads[i] = new DepthChargeThread(machines[i], role, timeout, input, output);
 			threads[i].start();
 		}
-		int[] timers = new int[4];
+		int[] timers = new int[3];
 		depthChargeThreadWaitingCount = 0;
 
 		while (System.currentTimeMillis() < timeout) {
@@ -664,39 +664,33 @@ public class Experiment extends Method {
 			Stack<MTreeNode> tree = select(root);
 			timers[0] += System.currentTimeMillis();
 			MTreeNode node = tree.peek();
-			if (machine.isTerminal(node.state)) {
-				timers[3] -= System.currentTimeMillis();
-				backpropogate(tree, findReward(machine, role, node.state), true, true);
-				timers[3] += System.currentTimeMillis();
-			} else {
-				// EXPAND
-				if (node.children.isEmpty()) {
-					timers[1] -= System.currentTimeMillis();
-					expand(machine, role, node, dagMap);
-					timers[1] += System.currentTimeMillis();
-				}
-				// EXPLORE
+			if (node.isMaxNode() && machine.isTerminal(node.state)) {
 				timers[2] -= System.currentTimeMillis();
+				backpropogate(tree, findReward(machine, role, node.state), true, true);
+				timers[2] += System.currentTimeMillis();
+			} else {
+				// EXPLORE
+				timers[1] -= System.currentTimeMillis();
 				if (!input.offerFirst(tree)) {
 					if (depthChargeThreadWaitingCount > nthread) {
 						depthChargeThreadWaitingCount = 0;
 						input.increaseCapacity();
 					}
-					timers[2] += System.currentTimeMillis();
-					timers[3] -= System.currentTimeMillis();
+					timers[1] += System.currentTimeMillis();
+					timers[2] -= System.currentTimeMillis();
 					backpropogate(tree, 0, false, false);
-					timers[3] += System.currentTimeMillis();
+					timers[2] += System.currentTimeMillis();
 
-				} else timers[2] += System.currentTimeMillis();
+				} else timers[1] += System.currentTimeMillis();
 				// BACKPROP
-				timers[3] -= System.currentTimeMillis();
+				timers[2] -= System.currentTimeMillis();
 				while (true) {
 					DCOut out = output.poll();
 					if (out == null) break;
 					if (out.eval == FAIL) continue;
 					backpropogate(out.node, out.eval, false, true);
 				}
-				timers[3] += System.currentTimeMillis();
+				timers[2] += System.currentTimeMillis();
 			}
 		}
 		sanitizeMoves(role, root, moves);
@@ -764,7 +758,7 @@ public class Experiment extends Method {
 		if (remove != null) root.children.remove(remove);
 	}
 
-	private Stack<MTreeNode> select(MTreeNode node) {
+	private Stack<MTreeNode> select(MTreeNode node) throws TransitionDefinitionException {
 		Stack<MTreeNode> out = new Stack<>();
 		while (true) {
 			if (node == null) {
@@ -779,8 +773,8 @@ public class Experiment extends Method {
 				System.out.flush();
 			}
 			out.push(node);
-			if (node.children.isEmpty()) return out;
-			node = node.selectBestChild(true);
+			node = node.selectBestChild();
+			if (node == null) return out;
 		}
 	}
 
@@ -807,71 +801,6 @@ public class Experiment extends Method {
 		return output;
 	}
 
-	// copied from StateMachine.java
-	protected void crossProductMoves(List<List<Move>> legals, List<List<Move>> crossProduct,
-			LinkedList<Move> partial) {
-		if (partial.size() == legals.size()) {
-			crossProduct.add(new ArrayList<Move>(partial));
-		} else {
-			for (Move move : legals.get(partial.size())) {
-				partial.addLast(move);
-				crossProductMoves(legals, crossProduct, partial);
-				partial.removeLast();
-			}
-		}
-	}
-
-	public List<List<Move>> getUsefulJointMoves(StateMachine machine, MachineState state, Role role,
-			Move move) throws MoveDefinitionException {
-		List<List<Move>> legals = new ArrayList<List<Move>>();
-		for (Role r : machine.getRoles()) {
-			if (r.equals(role)) {
-				List<Move> m = new ArrayList<Move>();
-				m.add(move);
-				legals.add(m);
-			} else {
-				legals.add(getUsefulMoves(machine, r, state));
-			}
-		}
-
-		List<List<Move>> crossProduct = new ArrayList<List<Move>>();
-		crossProductMoves(legals, crossProduct, new LinkedList<Move>());
-
-		return crossProduct;
-	}
-
-	private void expand(StateMachine machine, Role role, MTreeNode node,
-			Map<MachineState, MTreeNode> dagMap)
-					throws MoveDefinitionException, TransitionDefinitionException {
-		if (node.isMaxNode()) {
-			for (Move move : getUsefulMoves(machine, role, node.state)) {
-				MTreeNode newnode = new MTreeNode(node.state, move, node);
-				node.children.add(newnode);
-			}
-		} else {
-			for (List<Move> jmove : getUsefulJointMoves(machine, node.state, role, node.move)) {
-				MachineState newstate = machine.findNext(jmove, node.state);
-				if (propNetInitialized) {
-					PropNetMachineState oldstate = (PropNetMachineState) node.state;
-					PropNetMachineState newpstate = (PropNetMachineState) newstate;
-					for (int i = 0; i < ignoreProps.length; i++) {
-						if (ignoreProps[i]) newpstate.props[i] = oldstate.props[i];
-					}
-				}
-				MTreeNode newnode;
-				if (dagMap.containsKey(newstate)) {
-					newnode = dagMap.get(newstate);
-					newnode.parents.add(node);
-				} else {
-					newnode = new MTreeNode(newstate, node);
-					dagMap.put(newstate, newnode);
-				}
-				node.children.add(newnode);
-			}
-			propagateBound(node);
-		}
-	}
-
 	private void propagateBound(MTreeNode node) {
 		if (!node.setBounds()) return;
 		for (MTreeNode parent : node.parents) {
@@ -880,7 +809,7 @@ public class Experiment extends Method {
 	}
 
 	private void backpropogate(Stack<MTreeNode> stack, double eval, boolean proven,
-			boolean isScore) {
+			boolean isScore) throws TransitionDefinitionException {
 		int index = stack.size() - 1;
 		MTreeNode node = stack.get(index--);
 		if (proven) {
@@ -902,7 +831,7 @@ public class Experiment extends Method {
 				if (index >= 0 && parent == stack.get(index)) {
 					index--;
 					q.add(parent);
-				} else if (parent.selectBestChild(false) == node) {
+				} else if (parent.bestChildCached == node) {
 					q.add(parent);
 				}
 			}
@@ -917,6 +846,72 @@ public class Experiment extends Method {
 				smthread.join();
 			} catch (InterruptedException e) {
 				e.printStackTrace();
+			}
+		}
+	}
+
+	private class LazyExpander {
+		private int index = -1;
+		private MTreeNode node;
+		private List<List<Move>> allMoves;
+		private List<Move> moves;
+		private int maxIndex = 1;
+
+		public LazyExpander(MTreeNode node) {
+			this.node = node;
+			if (node.isMaxNode()) {
+				moves = getUsefulMoves(mainThreadMachine, roles[ourRoleIndex], node.state);
+				maxIndex = moves.size();
+			} else {
+				allMoves = new ArrayList<>();
+				for (int i = 0; i < roles.length; i++) {
+					if (i == ourRoleIndex) {
+						allMoves.add(null);
+					} else {
+						List<Move> moves = getUsefulMoves(mainThreadMachine, roles[i], node.state);
+						allMoves.add(moves);
+						maxIndex *= moves.size();
+					}
+				}
+			}
+		}
+
+		public MTreeNode next() throws TransitionDefinitionException {
+			if (++index == maxIndex) return null;
+			if (node.isMaxNode()) {
+				Move move = moves.get(index);
+				MTreeNode newnode = new MTreeNode(node.state, move, node);
+				node.children.add(newnode);
+				return newnode;
+			} else {
+				List<Move> jmove = new ArrayList<>();
+				int copyIndex = index;
+				for (int i = 0; i < roles.length; i++) {
+					if (i == ourRoleIndex) jmove.add(node.move);
+					else {
+						List<Move> curMoves = allMoves.get(i);
+						jmove.add(curMoves.get(copyIndex % curMoves.size()));
+						copyIndex /= curMoves.size();
+					}
+				}
+				MachineState newstate = mainThreadMachine.findNext(jmove, node.state);
+				if (propNetInitialized) {
+					PropNetMachineState oldstate = (PropNetMachineState) node.state;
+					PropNetMachineState newpstate = (PropNetMachineState) newstate;
+					for (int i = 0; i < ignoreProps.length; i++) {
+						if (ignoreProps[i]) newpstate.props[i] = oldstate.props[i];
+					}
+				}
+				MTreeNode newnode;
+				if (dagMap.containsKey(newstate)) {
+					newnode = dagMap.get(newstate);
+					newnode.parents.add(node);
+				} else {
+					newnode = new MTreeNode(newstate, node);
+					dagMap.put(newstate, newnode);
+				}
+				node.children.add(newnode);
+				return newnode;
 			}
 		}
 	}
@@ -960,8 +955,8 @@ public class Experiment extends Method {
 
 		@Override
 		public void run() {
-			while (true) {
-				try {
+			try {
+				while (true) {
 					Stack<MTreeNode> node = input.pollFirst();
 					if (node == null) {
 						long start = System.currentTimeMillis();
@@ -973,9 +968,9 @@ public class Experiment extends Method {
 						depthChargeThreadWaitingCount++;
 					}
 					output.offer(simulate(node));
-				} catch (Exception e) {
-					e.printStackTrace();
 				}
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
 		}
 	}
@@ -995,7 +990,6 @@ public class Experiment extends Method {
 		public double upper = MyPlayer.MAX_SCORE;
 		public List<MTreeNode> children = new ArrayList<>();
 		public List<MTreeNode> parents = new ArrayList<>();
-		private int childSelectIndex = 0;
 
 		public MachineState state;
 		public Move move; // null if max-node; non-null if min-node
@@ -1005,27 +999,27 @@ public class Experiment extends Method {
 		private MTreeNode bestChildCached = null;
 
 		protected double heuristic;
+		private LazyExpander expander;
+		private boolean first = true;
 
-		private void init(MachineState state, MTreeNode parent) {
+		private void init(MachineState state, MTreeNode parent, boolean isMaxNode) {
 			this.state = state;
 			this.heuristic = heuristic(state);
+			this.isMaxNode = isMaxNode;
 			if (parent != null) this.parents.add(parent);
 		}
 
 		public MTreeNode(MachineState state) {
-			init(state, null);
-			isMaxNode = true;
+			init(state, null, true);
 		}
 
 		public MTreeNode(MachineState state, MTreeNode parent) {
-			init(state, parent);
-			isMaxNode = true;
+			init(state, parent, true);
 		}
 
 		public MTreeNode(MachineState state, Move move, MTreeNode parent) {
-			init(state, parent);
 			this.move = move;
-			isMaxNode = false;
+			init(state, parent, false);
 		}
 
 		public int compareTo(MTreeNode other) {
@@ -1040,8 +1034,8 @@ public class Experiment extends Method {
 		}
 
 		public boolean setBounds() {
-			double oldupp = upper, oldlow = lower, oldH = heuristic;
 			assert!children.isEmpty();
+			double oldupp = upper, oldlow = lower, oldH = heuristic;
 			if (isMaxNode()) {
 				upper = MyPlayer.MIN_SCORE;
 				lower = MyPlayer.MIN_SCORE;
@@ -1051,6 +1045,7 @@ public class Experiment extends Method {
 					lower = Math.max(lower, c.lower);
 					heuristic = Math.max(heuristic, c.heuristic);
 				}
+				assert expander == null;
 			} else {
 				upper = MyPlayer.MAX_SCORE;
 				lower = MyPlayer.MAX_SCORE;
@@ -1060,7 +1055,9 @@ public class Experiment extends Method {
 					lower = Math.min(lower, c.lower);
 					heuristic = Math.min(heuristic, c.heuristic);
 				}
+				if (expander != null) lower = oldlow;
 			}
+
 			heuristic = putInBounds(heuristic);
 			return upper != oldupp || lower != oldlow || heuristic != oldH;
 		}
@@ -1081,6 +1078,7 @@ public class Experiment extends Method {
 			assert isMaxNode;
 			if (isProven()) return true;
 			if (children.isEmpty()) return false;
+			if (expander != null) return false;
 			MTreeNode bestChild = children.get(0);
 			MTreeNode visitsChild = bestChild;
 			for (MTreeNode child : children) {
@@ -1130,16 +1128,23 @@ public class Experiment extends Method {
 			heuristicVisits++;
 		}
 
-		public MTreeNode selectBestChild(boolean force) {
-			if (force) {
-				while (childSelectIndex < children.size()) {
-					if (!children.get(childSelectIndex).isProven()) {
-						return bestChildCached = children.get(childSelectIndex++);
-					}
-					childSelectIndex++;
-				}
+		public MTreeNode selectBestChild() throws TransitionDefinitionException {
+			if (first) {
+				first = false;
+				return null;
 			}
-			if (!force && bestChildCached != null) return bestChildCached;
+			if (expander == null && children.isEmpty()) {
+				expander = new LazyExpander(this);
+			}
+			while (expander != null) {
+				MTreeNode next = expander.next();
+				if (next == null) {
+					expander = null;
+					propagateBound(this);
+					Collections.shuffle(children);
+				} else if (!next.isProven()) return bestChildCached = next;
+			}
+
 			MTreeNode best = null;
 
 			// just perform one random swap instead of a shuffle; it is faster

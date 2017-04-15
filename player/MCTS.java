@@ -664,7 +664,7 @@ public class MCTS extends Method {
 			Stack<MTreeNode> tree = select(root);
 			timers[0] += System.currentTimeMillis();
 			MTreeNode node = tree.peek();
-			if (machine.isTerminal(node.state)) {
+			if (node.isMaxNode() && machine.isTerminal(node.state)) {
 				timers[3] -= System.currentTimeMillis();
 				backpropogate(tree, findReward(machine, role, node.state), true, true);
 				timers[3] += System.currentTimeMillis();
@@ -803,9 +803,7 @@ public class MCTS extends Method {
 			}
 			output.add(move);
 		}
-		if (uselessMove != null) {
-			output.add(null);
-		}
+		if (uselessMove != null) output.add(null);
 		return output;
 	}
 
@@ -865,7 +863,7 @@ public class MCTS extends Method {
 					newnode = dagMap.get(newstate);
 					newnode.parents.add(node);
 				} else {
-					newnode = new MTreeNode(newstate, jmove, node);
+					newnode = new MTreeNode(newstate, node);
 					dagMap.put(newstate, newnode);
 				}
 				node.children.add(newnode);
@@ -883,7 +881,8 @@ public class MCTS extends Method {
 
 	private void backpropogate(Stack<MTreeNode> stack, double eval, boolean proven,
 			boolean isScore) {
-		MTreeNode node = stack.pop();
+		int index = stack.size() - 1;
+		MTreeNode node = stack.get(index--);
 		if (proven) {
 			node.lower = node.upper = Math.round(eval);
 			for (MTreeNode parent : node.parents) {
@@ -900,8 +899,8 @@ public class MCTS extends Method {
 			for (MTreeNode parent : node.parents) {
 				if (visited.contains(parent)) continue;
 				visited.add(parent);
-				if (!stack.isEmpty() && parent == stack.peek()) {
-					stack.pop();
+				if (index >= 0 && parent == stack.get(index)) {
+					index--;
 					q.add(parent);
 				} else if (parent.selectBestChild(false) == node) {
 					q.add(parent);
@@ -1007,24 +1006,24 @@ public class MCTS extends Method {
 
 		protected double heuristic;
 
-		private void init(MachineState state, Object key, MTreeNode parent) {
+		private void init(MachineState state, MTreeNode parent) {
 			this.state = state;
 			this.heuristic = heuristic(state);
 			if (parent != null) this.parents.add(parent);
 		}
 
 		public MTreeNode(MachineState state) {
-			init(state, null, null);
+			init(state, null);
 			isMaxNode = true;
 		}
 
-		public MTreeNode(MachineState state, List<Move> jmove, MTreeNode parent) {
-			init(state, jmove, parent);
+		public MTreeNode(MachineState state, MTreeNode parent) {
+			init(state, parent);
 			isMaxNode = true;
 		}
 
 		public MTreeNode(MachineState state, Move move, MTreeNode parent) {
-			init(state, move, parent);
+			init(state, parent);
 			this.move = move;
 			isMaxNode = false;
 		}
@@ -1142,7 +1141,13 @@ public class MCTS extends Method {
 			}
 			if (!force && bestChildCached != null) return bestChildCached;
 			MTreeNode best = null;
-			Collections.shuffle(children);
+
+			// just perform one random swap instead of a shuffle; it is faster
+			int random_index = (int) (Math.random() * children.size());
+			MTreeNode tmp = children.get(0);
+			children.set(0, children.get(random_index));
+			children.set(random_index, tmp);
+
 			if (isMaxNode()) {
 				double score = Double.NEGATIVE_INFINITY;
 				for (MTreeNode child : children) {
