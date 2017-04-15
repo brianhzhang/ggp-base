@@ -40,7 +40,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int N_THREADS = 4;
 
 	public static final PrintWriter gamelog = getGameLog();
-	public static int method = 6;
+	public static int method = EXPERIMENTAL;
 	private Method player;
 	List<Gdl> gameDescription;
 
@@ -73,7 +73,7 @@ public class MyPlayer extends StateMachineGamer {
 		newp.roles = p.roles;
 		newp.actions = p.actions;
 		newp.term = p.term;
-		newp.init = p.init;
+		newp.initial_state = p.initial_state;
 		newp.basearr = p.basearr;
 		newp.inputarr = p.inputarr;
 		newp.inputmap = p.inputmap;

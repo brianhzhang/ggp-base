@@ -12,6 +12,7 @@ import java.util.Set;
 import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.gdl.grammar.GdlConstant;
 import org.ggp.base.util.gdl.grammar.GdlRelation;
+import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.PropNet;
 import org.ggp.base.util.propnet.architecture.components.And;
@@ -25,9 +26,11 @@ import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
 import org.ggp.base.util.statemachine.StateMachine;
+import org.ggp.base.util.statemachine.cache.CachedStateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
+import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
 public class JustKiddingPropNetStateMachine extends StateMachine {
 
@@ -37,7 +40,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	List<Role> roles;
 	Map<Role, List<Move>> actions;
 	int term;
-	int init;
 	int[] basearr;
 	int[] inputarr;
 	Map<RoleMove, Integer> inputmap;
@@ -52,6 +54,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	boolean use_propnet_reset = false;
 
 	boolean kill = false;
+	PropNetMachineState initial_state;
 
 	PropNet p;
 	ArrayList<Proposition> props;
@@ -276,7 +279,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			indexMap.put(components.get(i), i);
 		}
 		// Fill the components array
-		init = -1;
 		for (int i = 0; i < components.size() * 2; i += 2) {
 			if (kill) return;
 			Component component = components.get(i / 2);
@@ -336,7 +338,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 						&& p.getInitProposition().equals(component)) {
 					comps[i] = 0;
 					comps[i + 1] = -1;
-					init = i;
 				} else if (isView) {
 					comps[i] = 0x7FFFFFFF;
 					comps[i + 1] = -1;
@@ -371,6 +372,16 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 
 		initcomps = comps.clone();
+		Log.println("finding initial state...");
+		StateMachine prover = new CachedStateMachine(new ProverStateMachine());
+		prover.initialize(description);
+		Set<GdlSentence> initial = new HashSet<>(prover.getInitialState().getContents());
+		boolean[] initbases = new boolean[basearr.length];
+		assert basearr.length == props.size();
+		for (int i = 0; i < basearr.length; i++) {
+			initbases[i] = initial.contains(props.get(i).getName());
+		}
+		initial_state = new PropNetMachineState(initbases);
 		initInternalDC();
 	}
 
@@ -449,24 +460,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	@Override
 	public MachineState getInitialState() {
-		comps = initcomps.clone();
-		if (init >= 0) {
-			for (int i = 0; i < structure[init / 2].length; i++) {
-				comps[init] = 0xF0000000;
-				propagate(structure[init / 2][i], 1);
-			}
-		}
-		boolean[] next = new boolean[basearr.length];
-		for (int i = 0; i < basearr.length; i++) {
-			next[i] = (((comps[comps[basearr[i] + 1]] >> 31) & 1) == 1);
-		}
-		if (init >= 0) {
-			for (int i = 0; i < structure[init / 2].length; i++) {
-				comps[init] = 0x0;
-				propagate(structure[init / 2][i], -1);
-			}
-		}
-		return new PropNetMachineState(next);
+		return initial_state;
 	}
 
 	@Override

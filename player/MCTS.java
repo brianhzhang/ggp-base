@@ -1,3 +1,4 @@
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -17,6 +18,10 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.math3.stat.regression.MillerUpdatingRegression;
+import org.apache.commons.math3.stat.regression.RegressionResults;
+import org.apache.commons.math3.stat.regression.SimpleRegression;
+import org.apache.commons.math3.stat.regression.UpdatingMultipleLinearRegression;
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
 import org.ggp.base.util.Pair;
 import org.ggp.base.util.gdl.grammar.Gdl;
@@ -40,11 +45,13 @@ public class MCTS extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	private static final boolean USE_MULTIPLAYER_FACTORING = true;
-	private static final double CFACTOR = 1.0;
+	private static final double EXPLORATION_BIAS_FACTOR = 1.0;
+	private double exploration_bias = 1.0;
 
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
 	private MyPlayer player;
+	private StateMachine mainThreadMachine;
 
 	private StateMachineCreatorThread smthread;
 
@@ -64,16 +71,20 @@ public class MCTS extends Method {
 	private int ourRoleIndex = -1;
 
 	private int queueSize = MyPlayer.N_THREADS - 1;
-	private boolean depthChargeThreadWaiting = false;
+	private int depthChargeThreadWaitingCount = 0;
 
 	// heuristics
 	// GdlTerm --> index into heuristicCalcs
-	private Map<GdlTerm, Integer> heuristicMap;
-	private List<LinRegCalc> heuristicCalcs;
+	private UpdatingMultipleLinearRegression heuristicRegression;
+	private SimpleRegression dcRegression;
+	private List<String> heuristicNames;
 	private double heuristic_yint;
+	private double heuristic_goalweight;
 	private double[] heuristics;
 	// for each heuristic in heuristicCalcs, contains the props that affect
 	private List<List<Integer>> heuristicProps;
+	private double heuristicWeight;
+	private MTreeNode root;
 
 	public MCTS(MyPlayer gamer, List<Gdl> description) {
 		this.player = gamer;
@@ -197,6 +208,7 @@ public class MCTS extends Method {
 			useless.put(role, new HashSet<>());
 		}
 		Log.println("roles: " + Arrays.toString(roles) + " | our role: " + ourRoleIndex);
+		Log.println("method: " + this.getClass().getCanonicalName());
 		oppWeight = opponents.size() == 0 ? 0 : (1 - OUR_WEIGHT) / opponents.size();
 
 		try {
@@ -356,25 +368,19 @@ public class MCTS extends Method {
 		}
 	}
 
-	private class MetaGameDCOut {
-		double[] counts = new double[heuristicCalcs.size()];
-		double eval;
-	}
-
 	private class MetaGameDCThread extends Thread {
 
 		private JustKiddingPropNetStateMachine machine;
 		private long timeout;
 		private Role role;
-		public LinRegCalc[] timeCalc = new LinRegCalc[heuristicCalcs.size()];
-		public List<MetaGameDCOut> output = new ArrayList<>();
+		public SimpleRegression[] timeCalc = new SimpleRegression[heuristicNames.size()];
 
 		public MetaGameDCThread(StateMachine machine, Role role, long timeout) {
 			this.machine = (JustKiddingPropNetStateMachine) machine;
 			this.role = role;
 			this.timeout = timeout;
 			for (int i = 0; i < timeCalc.length; i++) {
-				timeCalc[i] = new LinRegCalc(heuristicCalcs.get(i).term);
+				timeCalc[i] = new SimpleRegression();
 			}
 		}
 
@@ -389,39 +395,54 @@ public class MCTS extends Method {
 
 		public void run_() throws MoveDefinitionException, TransitionDefinitionException {
 			MachineState initial = machine.getInitialState();
-			int n_heuristic = heuristicCalcs.size();
+			int n_heuristic = heuristicNames.size();
 			while (System.currentTimeMillis() < timeout) {
-				MetaGameDCOut out = new MetaGameDCOut();
 				MachineState state = initial;
 				int nstep = 0;
+				List<double[]> states = new ArrayList<>();
+				List<PropNetMachineState> pstates = new ArrayList<>();
+
 				while (!machine.isTerminal(state)) {
+					double[] vstate = new double[1 + n_heuristic];
 					if (System.currentTimeMillis() > timeout) return;
 					PropNetMachineState pstate = (PropNetMachineState) state;
 					for (int i = 0; i < n_heuristic; i++) {
 						int icount = 0;
 						for (int j : heuristicProps.get(i)) {
 							if (pstate.props[j]) {
-								out.counts[i]++;
+								vstate[i]++;
 								icount++;
 							}
 						}
 						timeCalc[i].addData(nstep, icount);
 					}
+					vstate[n_heuristic] = findReward(machine, role, state);
+					for (int i = 0; i < vstate.length; i++) {
+						vstate[i] += Math.random() - 0.5;
+					}
 					nstep++;
 					state = machine.getRandomNextState(state);
+					states.add(vstate);
+					pstates.add(pstate);
 				}
-				for (int i = 0; i < n_heuristic; i++) {
-					out.counts[i] /= nstep;
+				double eval = findReward(machine, role, state);
+				int randomIndex = (int) (Math.random() * pstates.size());
+				PropNetMachineState randomState = pstates.get(randomIndex);
+				double randomEval = findReward(machine.internalDC(randomState));
+				synchronized (heuristicRegression) {
+					for (double[] s : states) {
+						heuristicRegression.addObservation(s, eval);
+					}
+					dcRegression.addData(randomEval, eval);
 				}
-				out.eval = findReward(machine, role, state);
-				output.add(out);
 			}
 		}
 	}
 
 	public double heuristic(MachineState state) {
 		if (heuristics == null) return 50;
-		double heuristic = heuristic_yint;
+		double reward = findReward(mainThreadMachine, player.getRole(), state);
+		double heuristic = heuristic_yint + reward * heuristic_goalweight;
 		PropNetMachineState pnstate = (PropNetMachineState) state;
 		for (int i = 0; i < heuristics.length; i++) {
 			if (pnstate.props[i]) heuristic += heuristics[i];
@@ -435,7 +456,7 @@ public class MCTS extends Method {
 			throws MoveDefinitionException, TransitionDefinitionException {
 		Role role = player.getRole();
 		List<MetaGameDCThread> pool = new ArrayList<>();
-		int n_thread = MyPlayer.N_THREADS;
+		int n_thread = 1; // MyPlayer.N_THREADS;
 
 		Log.println("begin random exploration...");
 		for (int i = 0; i < n_thread; i++) {
@@ -450,27 +471,55 @@ public class MCTS extends Method {
 				e.printStackTrace();
 			}
 		}
-		int ngame = 0;
-		boolean[] canUseHeuristic = new boolean[heuristicCalcs.size()];
-		for (int i = 0; i < heuristicCalcs.size(); i++) {
+		List<Integer> canUseHeuristic = new ArrayList<>();
+		canUseHeuristic.add(0);
+		canUseHeuristic.add(1 + heuristicNames.size()); // goal
+		for (int i = 0; i < heuristicNames.size(); i++) {
 			double sum = 0;
 			for (MetaGameDCThread thread : pool) {
-				sum += thread.timeCalc[i].calculate().m;
+				sum += thread.timeCalc[i].getSlope();
 			}
-			Log.println(heuristicCalcs.get(i).term + " time correlation: " + sum / 4);
-			canUseHeuristic[i] = sum < 0;
+			Log.println(heuristicNames.get(i) + " time correlation: " + sum / 4);
+			if (sum < 0) canUseHeuristic.add(i + 1);
 		}
-		for (MetaGameDCThread thread : pool) {
-			for (MetaGameDCOut out : thread.output) {
-				ngame++;
-				for (int i = 0; i < heuristicCalcs.size(); i++) {
-					if (!canUseHeuristic[i]) continue;
-					heuristicCalcs.get(i).addData(out.counts[i], out.eval);
+
+		Log.println("states explored: " + heuristicRegression.getN());
+
+		int[] canUseArr = new int[canUseHeuristic.size()];
+		for (int i = 0; i < canUseHeuristic.size(); i++) {
+			canUseArr[i] = canUseHeuristic.get(i);
+		}
+
+		int nbase = smthread.m.props.size();
+		heuristic_yint = 0;
+		heuristics = new double[nbase];
+		RegressionResults results = heuristicRegression.regress(canUseArr);
+		for (int j = 0; j < canUseArr.length; j++) {
+			double est = results.getParameterEstimate(j);
+			if (!Double.isFinite(est)) est = 0;
+			int i = canUseArr[j];
+			if (i == 0) Log.printf("\tintercept : %.3f\n", heuristic_yint = est);
+			else if (i > heuristicNames.size()) {
+				Log.printf("\tgoal : %.3f\n", heuristic_goalweight = est);
+			} else {
+				for (int k : heuristicProps.get(i - 1)) {
+					heuristics[k] += est;
 				}
+				Log.printf("\t%s : %.3f\n", heuristicNames.get(i - 1), est);
 			}
 		}
-		Log.println("games explored: " + ngame);
-		computeHeuristic();
+
+		double heuristicRsq = results.getAdjustedRSquared();
+		Log.println("heuristic rsq: " + heuristicRsq);
+		double dcRsq = dcRegression.getRSquare();
+		Log.println("depth charge rsq: " + dcRsq);
+		heuristicWeight = heuristicRsq / dcRsq;
+		if (heuristicWeight < 0 || !Double.isFinite(heuristicWeight)) {
+			heuristicWeight = 0;
+		}
+		Log.println("heuristic weight: " + heuristicWeight);
+		exploration_bias = EXPLORATION_BIAS_FACTOR * Math.sqrt(1 + heuristicWeight);
+		Log.println("exploration bias: " + exploration_bias);
 	}
 
 	private int findReward(int[] rewards) {
@@ -519,39 +568,9 @@ public class MCTS extends Method {
 			rootstate = player.getCurrentState();
 		}
 
-		return run_(machine, rootstate, role, moves, timeout);
-	}
+		mainThreadMachine = machine;
 
-	public void computeHeuristic() {
-		int nbase = smthread.m.props.size();
-		PriorityQueue<LinReg> linregs = new PriorityQueue<>();
-		double tot_rsq = 0;
-		heuristic_yint = 0;
-		heuristics = new double[nbase];
-		for (int i = 0; i < heuristicCalcs.size(); i++) {
-			LinReg reg = heuristicCalcs.get(i).calculate();
-			heuristicCalcs.get(i).clearData();
-			linregs.add(reg);
-			tot_rsq += reg.rsq;
-			heuristic_yint += reg.rsq * reg.b;
-			for (int j : heuristicProps.get(i)) {
-				heuristics[j] += reg.rsq * reg.m;
-			}
-		}
-		if (tot_rsq < 0.01) {
-			Log.println("no piece heuristic");
-			heuristic_yint = 50;
-		} else {
-			while (!linregs.isEmpty()) {
-				LinReg reg = linregs.poll();
-				Log.println(reg + " (m=" + (reg.rsq * reg.m / tot_rsq) + ")");
-			}
-			for (int i = 0; i < heuristics.length; i++) {
-				heuristics[i] /= tot_rsq;
-			}
-			heuristic_yint /= tot_rsq;
-			Log.printf("tot_rsq=%.3f, yint=%.3f\n", tot_rsq, heuristic_yint);
-		}
+		return run_(machine, rootstate, role, moves, timeout);
 	}
 
 	public Move run_(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
@@ -564,7 +583,7 @@ public class MCTS extends Method {
 		}
 		Log.println("threads running: " + Thread.activeCount());
 		Map<Role, Set<Move>> oldUseless = null;
-		System.out.println("number of legal moves: " + moves.size());
+		Log.println("number of legal moves: " + moves.size());
 		ignoreProps = null;
 		if (propNetInitialized) {
 			oldUseless = new HashMap<>();
@@ -624,7 +643,7 @@ public class MCTS extends Method {
 
 		Map<MachineState, MTreeNode> dagMap = new HashMap<>();
 
-		MTreeNode root = new MTreeNode(rootstate);
+		root = new MTreeNode(rootstate);
 		dagMap.put(rootstate, root);
 		expand(machine, role, root, dagMap);
 
@@ -636,96 +655,66 @@ public class MCTS extends Method {
 			threads[i] = new DepthChargeThread(machines[i], role, timeout, input, output);
 			threads[i].start();
 		}
-		FastThread ft = new FastThread(timeout, machines[nthread], role, rootstate);
-		ft.start();
 		int[] timers = new int[4];
+		depthChargeThreadWaitingCount = 0;
 
-		while (ft.isAlive() && !root.isLooselyProven()) {
+		while (System.currentTimeMillis() < timeout) {
+			if (root.isLooselyProven()) break;
 			timers[0] -= System.currentTimeMillis();
 			Stack<MTreeNode> tree = select(root);
 			timers[0] += System.currentTimeMillis();
 			MTreeNode node = tree.peek();
 			if (machine.isTerminal(node.state)) {
 				timers[3] -= System.currentTimeMillis();
-				backpropogate(tree, findReward(machine, role, node.state), true);
+				backpropogate(tree, findReward(machine, role, node.state), true, true);
 				timers[3] += System.currentTimeMillis();
 			} else {
+				// EXPAND
 				if (node.children.isEmpty()) {
 					timers[1] -= System.currentTimeMillis();
 					expand(machine, role, node, dagMap);
 					timers[1] += System.currentTimeMillis();
 				}
-				try {
-
-					if (!input.offerFirst(tree)) {
-						if (depthChargeThreadWaiting) {
-							depthChargeThreadWaiting = false;
-							input.increaseCapacity();
-						}
-						timers[2] -= System.currentTimeMillis();
-						input.putFirst(tree);
-						timers[2] += System.currentTimeMillis();
+				// EXPLORE
+				timers[2] -= System.currentTimeMillis();
+				if (!input.offerFirst(tree)) {
+					if (depthChargeThreadWaitingCount > nthread) {
+						depthChargeThreadWaitingCount = 0;
+						input.increaseCapacity();
 					}
+					timers[2] += System.currentTimeMillis();
+					timers[3] -= System.currentTimeMillis();
+					backpropogate(tree, 0, false, false);
+					timers[3] += System.currentTimeMillis();
 
-				} catch (InterruptedException e) {
-					e.printStackTrace();
-				}
+				} else timers[2] += System.currentTimeMillis();
+				// BACKPROP
 				timers[3] -= System.currentTimeMillis();
 				while (true) {
 					DCOut out = output.poll();
 					if (out == null) break;
 					if (out.eval == FAIL) continue;
-					backpropogate(out.node, out.eval, false);
+					backpropogate(out.node, out.eval, false, true);
 				}
 				timers[3] += System.currentTimeMillis();
 			}
 		}
-		ft.kill = true;
-		try {
-			ft.join();
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		}
-		MTreeNode bestChild = null;
-		MTreeNode bestVisits = null;
-		double bestVisitPct = Double.NEGATIVE_INFINITY;
-
 		sanitizeMoves(role, root, moves);
-		sanitizeMoves(role, ft.root, moves);
-
-		for (MTreeNode child : root.children) {
-			MTreeNode fastChild = ft.searchFor(child);
-			double visitPct = Math.log(child.visits);
-			if (fastChild != null) {
-				child.lower = Math.max(child.lower, fastChild.lower);
-				child.upper = Math.min(child.upper, fastChild.upper);
-				visitPct += Math.log(fastChild.visits);
-			}
-			if (child.compareTo(bestChild) > 0) {
-				bestChild = child;
-			}
-			if (bestVisits == null || visitPct > bestVisitPct) {
-				bestVisitPct = visitPct;
-				bestVisits = child;
-			}
-
-		}
 		Collections.sort(root.children);
 		for (MTreeNode child : root.children) {
-			MTreeNode fastChild = ft.searchFor(child);
 			Log.printf(
-					"v=(%d, %d) s=(%.1f, %.1f) b=(%.0f, %.0f) d=%d %s\n",
-					child.visits,
-					(fastChild == null ? 0 : fastChild.visits),
+					"v=(%d, %d) s=(%.1f, %.1f, %.1f) b=(%.0f, %.0f) d=%d %s\n",
+					child.visits, child.heuristicVisits - child.visits,
+					child.sum_utility / child.visits, child.heuristic,
 					child.utility(),
-					(fastChild == null ? -1.0 : fastChild.utility()),
 					child.lower, child.upper, child.depth, child.move);
 		}
-		if (bestVisits.utility() > bestChild.lower) bestChild = bestVisits;
+		MTreeNode bestChild = root.children.get(root.children.size() - 1);
 		Log.printf("played=%s visits=%d/%d depth=%d\n",
 				bestChild.move, bestChild.visits, root.visits, root.depth);
 		Log.printf("time=%d breakdown=%s\n", (System.currentTimeMillis() - timestart),
 				Arrays.toString(timers));
+		root = null; // allow gc
 
 		input.clear();
 		int totalTimeWaiting = 0;
@@ -791,13 +780,7 @@ public class MCTS extends Method {
 			}
 			out.push(node);
 			if (node.children.isEmpty()) return out;
-			for (MTreeNode child : node.children) {
-				if (child.visits == 0) {
-					out.push(child);
-					return out;
-				}
-			}
-			node = node.selectBestChild();
+			node = node.selectBestChild(true);
 		}
 	}
 
@@ -898,7 +881,8 @@ public class MCTS extends Method {
 		}
 	}
 
-	private void backpropogate(Stack<MTreeNode> stack, double eval, boolean proven) {
+	private void backpropogate(Stack<MTreeNode> stack, double eval, boolean proven,
+			boolean isScore) {
 		MTreeNode node = stack.pop();
 		if (proven) {
 			node.lower = node.upper = Math.round(eval);
@@ -906,22 +890,24 @@ public class MCTS extends Method {
 				propagateBound(parent);
 			}
 		}
-		backpropRec(stack, node, null, eval, 0);
-	}
-
-	private void backpropRec(Stack<MTreeNode> stack,
-			MTreeNode node, MTreeNode prev, double eval, int depth) {
-		if (node.isMaxNode()) depth++;
-		for (MTreeNode parent : node.parents) {
-			if (parent == stack.peek()) {
-				stack.pop();
-				backpropRec(stack, parent, node, eval, depth);
-				stack.push(parent);
-			} else if (parent.selectBestChild() == node) {
-				backpropRec(stack, parent, node, eval, depth);
+		Queue<MTreeNode> q = new ArrayDeque<>();
+		q.add(node);
+		int depth = stack.size() / 2;
+		Set<MTreeNode> visited = new HashSet<>();
+		while (!q.isEmpty()) {
+			node = q.poll();
+			node.addData(eval, depth, isScore);
+			for (MTreeNode parent : node.parents) {
+				if (visited.contains(parent)) continue;
+				visited.add(parent);
+				if (!stack.isEmpty() && parent == stack.peek()) {
+					stack.pop();
+					q.add(parent);
+				} else if (parent.selectBestChild(false) == node) {
+					q.add(parent);
+				}
 			}
 		}
-		node.addData(eval, depth);
 	}
 
 	@Override
@@ -985,7 +971,7 @@ public class MCTS extends Method {
 								TimeUnit.MILLISECONDS);
 						if (node == null) return;
 						timeSpentWaiting += System.currentTimeMillis() - start;
-						depthChargeThreadWaiting = true;
+						depthChargeThreadWaitingCount++;
 					}
 					output.offer(simulate(node));
 				} catch (Exception e) {
@@ -995,17 +981,22 @@ public class MCTS extends Method {
 		}
 	}
 
-	private static class MTreeNode implements Comparable<MTreeNode> {
+	private static final int MTREENODE_PRIOR_VISITS = 2;
+	private static final double MTREENODE_PRIOR_UTIL = 100;
+	private static final double MTREENODE_PRIOR_SUMSQ = 10000;
+
+	private class MTreeNode implements Comparable<MTreeNode> {
 		// prior: sum squares = 10000 so that stdev != 0
-		public int visits = 0;
-		public double sum_utility = 0;
-		public double sum_sq = 10000;
+		public int heuristicVisits = MTREENODE_PRIOR_VISITS;
+		public int visits = MTREENODE_PRIOR_VISITS;
+		public double sum_utility = MTREENODE_PRIOR_UTIL;
+		public double sum_sq = MTREENODE_PRIOR_SUMSQ;
 		// bounds
 		public double lower = MyPlayer.MIN_SCORE;
 		public double upper = MyPlayer.MAX_SCORE;
-
 		public List<MTreeNode> children = new ArrayList<>();
 		public List<MTreeNode> parents = new ArrayList<>();
+		private int childSelectIndex = 0;
 
 		public MachineState state;
 		public Move move; // null if max-node; non-null if min-node
@@ -1014,8 +1005,11 @@ public class MCTS extends Method {
 		public boolean isMaxNode;
 		private MTreeNode bestChildCached = null;
 
+		protected double heuristic;
+
 		private void init(MachineState state, Object key, MTreeNode parent) {
 			this.state = state;
+			this.heuristic = heuristic(state);
 			if (parent != null) this.parents.add(parent);
 		}
 
@@ -1047,23 +1041,29 @@ public class MCTS extends Method {
 		}
 
 		public boolean setBounds() {
-			double oldupp = upper, oldlow = lower;
+			double oldupp = upper, oldlow = lower, oldH = heuristic;
+			assert!children.isEmpty();
 			if (isMaxNode()) {
 				upper = MyPlayer.MIN_SCORE;
 				lower = MyPlayer.MIN_SCORE;
+				heuristic = MyPlayer.MIN_SCORE;
 				for (MTreeNode c : children) {
 					upper = Math.max(upper, c.upper);
 					lower = Math.max(lower, c.lower);
+					heuristic = Math.max(heuristic, c.heuristic);
 				}
 			} else {
 				upper = MyPlayer.MAX_SCORE;
 				lower = MyPlayer.MAX_SCORE;
+				heuristic = MyPlayer.MAX_SCORE;
 				for (MTreeNode c : children) {
 					upper = Math.min(upper, c.upper);
 					lower = Math.min(lower, c.lower);
+					heuristic = Math.min(heuristic, c.heuristic);
 				}
 			}
-			return upper != oldupp || lower != oldlow;
+			heuristic = putInBounds(heuristic);
+			return upper != oldupp || lower != oldlow || heuristic != oldH;
 		}
 
 		public double putInBounds(double eval) {
@@ -1103,34 +1103,51 @@ public class MCTS extends Method {
 		}
 
 		public double utility() {
-			if (visits == 0) return putInBounds(1);
-			return putInBounds(sum_utility / visits);
+			return putInBounds(score(0, root));
 		}
 
 		// dynamic score: multiplies by standard deviation
 		public double score(double c, MTreeNode parent) {
-			double util = sum_utility / visits;
-			double var = sum_sq / visits - util * util;
-			var = c * Math.sqrt(Math.log(parent.visits) / visits * var);
+			double heuristicEffVisits = heuristicWeight * visits;
+			double eff_sum = sum_utility + heuristic * heuristicEffVisits;
+			double eff_visits = visits + heuristicEffVisits;
+			double eff_sumsq = sum_sq + 100 * heuristic * heuristicEffVisits;
+
+			double util = eff_sum / eff_visits;
+			double var = eff_sumsq / eff_visits - util * util;
+
+			eff_visits -= (1 + heuristicWeight);
+			var = c * Math.sqrt(Math.log(parent.visits) / eff_visits * var);
 			return util + var;
 		}
 
-		public void addData(double eval, int newDepth) {
-			visits++;
-			sum_utility += eval;
-			sum_sq += eval * eval;
-			depth = Math.max(depth, newDepth);
-			bestChildCached = null;
+		public void addData(double eval, int newDepth, boolean isScore) {
+			if (isScore) {
+				visits++;
+				sum_utility += eval;
+				sum_sq += eval * eval;
+				depth = Math.max(depth, newDepth);
+			}
+			heuristicVisits++;
 		}
 
-		public MTreeNode selectBestChild() {
-			if (bestChildCached != null && !bestChildCached.isProven()) return bestChildCached;
+		public MTreeNode selectBestChild(boolean force) {
+			if (force) {
+				while (childSelectIndex < children.size()) {
+					if (!children.get(childSelectIndex).isProven()) {
+						return bestChildCached = children.get(childSelectIndex++);
+					}
+					childSelectIndex++;
+				}
+			}
+			if (!force && bestChildCached != null) return bestChildCached;
 			MTreeNode best = null;
+			Collections.shuffle(children);
 			if (isMaxNode()) {
 				double score = Double.NEGATIVE_INFINITY;
 				for (MTreeNode child : children) {
 					if (child.isProven()) continue;
-					double newscore = child.score(CFACTOR, this);
+					double newscore = child.score(exploration_bias, this);
 					if (newscore > score) {
 						score = newscore;
 						best = child;
@@ -1140,7 +1157,7 @@ public class MCTS extends Method {
 				double score = Double.POSITIVE_INFINITY;
 				for (MTreeNode child : children) {
 					if (child.isProven()) continue;
-					double newscore = child.score(-CFACTOR, this);
+					double newscore = child.score(-exploration_bias, this);
 					if (newscore < score) {
 						score = newscore;
 						best = child;
@@ -1256,22 +1273,24 @@ public class MCTS extends Method {
 			if (nUsefulRoles == 0) Log.println("this is a 0-player game...");
 			Log.println("found " + count + " irrelevant inputs");
 
-			heuristicMap = new HashMap<>();
+			Map<String, Integer> heuristicMap = new HashMap<>();
 			heuristicProps = new ArrayList<>();
-			heuristicCalcs = new ArrayList<>();
+			heuristicNames = new ArrayList<>();
 			// find heurisitics
 			for (int i = 0; i < m.props.size(); i++) {
 				GdlSentence base = m.props.get(i).getName().get(0).toSentence();
-				if (base.arity() < 3) continue;
-				GdlTerm term = base.get(base.arity() - 1);
-				if (!heuristicMap.containsKey(term)) {
-					heuristicMap.put(term, heuristicProps.size());
-					heuristicCalcs.add(new LinRegCalc(term));
+				if (base.arity() != 3) continue;
+				String name = base.getBody().subList(2, base.arity()).toString();
+				if (!heuristicMap.containsKey(name)) {
+					heuristicMap.put(name, heuristicProps.size());
+					heuristicNames.add(name);
 					heuristicProps.add(new ArrayList<>());
 				}
-				heuristicProps.get(heuristicMap.get(term)).add(i);
+				heuristicProps.get(heuristicMap.get(name)).add(i);
 
 			}
+			heuristicRegression = new MillerUpdatingRegression(1 + heuristicNames.size(), true);
+			dcRegression = new SimpleRegression();
 
 			Log.println("propnet ready");
 		}
@@ -1402,121 +1421,6 @@ public class MCTS extends Method {
 					}
 				}
 			}
-		}
-	}
-
-	// FastThread does not do depth charges, ergo it is deterministic.
-	private class FastThread extends Thread {
-		private long timeout;
-		private StateMachine machine;
-		private Role role;
-		private MachineState rootstate;
-
-		public MTreeNode root;
-		public boolean kill;
-
-		public FastThread(long timeout, StateMachine machine, Role role, MachineState rootstate) {
-			this.timeout = timeout;
-			this.machine = machine;
-			this.role = role;
-			this.rootstate = rootstate;
-		}
-
-		public MTreeNode searchFor(MTreeNode node) {
-			for (MTreeNode child : root.children) {
-				if (child.move.equals(node.move)) return child;
-			}
-			return null;
-		}
-
-		public void run_() throws MoveDefinitionException, TransitionDefinitionException,
-				GoalDefinitionException {
-
-			root = new MTreeNode(rootstate);
-			Map<MachineState, MTreeNode> dagMap = new HashMap<>();
-			dagMap.put(rootstate, root);
-			expand(machine, role, root, dagMap);
-			while (System.currentTimeMillis() < timeout && !kill) {
-				if (root.isLooselyProven()) break;
-				Stack<MTreeNode> tree = select(root);
-				MTreeNode node = tree.peek();
-				expand(machine, role, node, dagMap);
-				if (machine.isTerminal(node.state)) {
-					backpropogate(tree, findReward(machine, role, node.state), true);
-				} else {
-					backpropogate(tree, heuristic(node.state), false);
-				}
-			}
-			Log.printf("fastresult: bound=(%.0f, %.0f) visits=%d depth=%d\n", root.lower,
-					root.upper, root.visits, root.depth);
-		}
-
-		@Override
-		public void run() {
-			try {
-				run_();
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
-		}
-	}
-
-	private static class LinReg implements Comparable<LinReg> {
-		public double m;
-		public double b;
-		public double rsq;
-		public GdlTerm term;
-
-		public LinReg(GdlTerm term) {
-			this.term = term;
-		}
-
-		public int compareTo(LinReg other) {
-			return -Double.compare(rsq, other.rsq);
-		}
-
-		@Override
-		public String toString() {
-			return String.format("%s: y = %.3fx + %.3f (r^2=%.3f)", term, m, b, rsq);
-		}
-	}
-
-	private static class LinRegCalc {
-		private double sx = 0;
-		private double sx2 = 0;
-		private double sy = 0;
-		private double sxy = 0;
-		private double sy2 = 0;
-		private int n = 0;
-		private GdlTerm term;
-
-		public LinRegCalc(GdlTerm term) {
-			this.term = term;
-		}
-
-		public void clearData() {
-			sx = sy = sxy = sx2 = sy2 = n = 0;
-		}
-
-		public void addData(double x, double y) {
-			sx += x;
-			sy += y;
-			sxy += x * y;
-			sx2 += x * x;
-			sy2 += y * y;
-			n++;
-		}
-
-		public LinReg calculate() {
-			LinReg linreg = new LinReg(term);
-			linreg.m = (n * sxy - sx * sy) / (n * sx2 - sx * sx);
-			linreg.b = (sy - linreg.m * sx) / n;
-			double rnum = n * sxy - sx * sy;
-			linreg.rsq = (rnum * rnum) / ((n * sx2 - sx * sx) * (n * sy2 - sy * sy));
-			if (!Double.isFinite(linreg.b) || !Double.isFinite(linreg.rsq)) {
-				linreg.m = linreg.b = linreg.rsq = 0; // NaN --> no correlation...
-			}
-			return linreg;
 		}
 	}
 }

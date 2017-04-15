@@ -208,6 +208,7 @@ public class Experiment extends Method {
 			useless.put(role, new HashSet<>());
 		}
 		Log.println("roles: " + Arrays.toString(roles) + " | our role: " + ourRoleIndex);
+		Log.println("method: " + this.getClass().getCanonicalName());
 		oppWeight = opponents.size() == 0 ? 0 : (1 - OUR_WEIGHT) / opponents.size();
 
 		try {
@@ -400,6 +401,7 @@ public class Experiment extends Method {
 				int nstep = 0;
 				List<double[]> states = new ArrayList<>();
 				List<PropNetMachineState> pstates = new ArrayList<>();
+
 				while (!machine.isTerminal(state)) {
 					double[] vstate = new double[1 + n_heuristic];
 					if (System.currentTimeMillis() > timeout) return;
@@ -454,7 +456,7 @@ public class Experiment extends Method {
 			throws MoveDefinitionException, TransitionDefinitionException {
 		Role role = player.getRole();
 		List<MetaGameDCThread> pool = new ArrayList<>();
-		int n_thread = MyPlayer.N_THREADS;
+		int n_thread = 1; // MyPlayer.N_THREADS;
 
 		Log.println("begin random exploration...");
 		for (int i = 0; i < n_thread; i++) {
@@ -507,7 +509,7 @@ public class Experiment extends Method {
 			}
 		}
 
-		double heuristicRsq = results.getRSquared();
+		double heuristicRsq = results.getAdjustedRSquared();
 		Log.println("heuristic rsq: " + heuristicRsq);
 		double dcRsq = dcRegression.getRSquare();
 		Log.println("depth charge rsq: " + dcRsq);
@@ -801,9 +803,7 @@ public class Experiment extends Method {
 			}
 			output.add(move);
 		}
-		if (uselessMove != null) {
-			output.add(null);
-		}
+		if (uselessMove != null) output.add(null);
 		return output;
 	}
 
@@ -863,7 +863,7 @@ public class Experiment extends Method {
 					newnode = dagMap.get(newstate);
 					newnode.parents.add(node);
 				} else {
-					newnode = new MTreeNode(newstate, jmove, node);
+					newnode = new MTreeNode(newstate, node);
 					dagMap.put(newstate, newnode);
 				}
 				node.children.add(newnode);
@@ -881,7 +881,8 @@ public class Experiment extends Method {
 
 	private void backpropogate(Stack<MTreeNode> stack, double eval, boolean proven,
 			boolean isScore) {
-		MTreeNode node = stack.pop();
+		int index = stack.size() - 1;
+		MTreeNode node = stack.get(index--);
 		if (proven) {
 			node.lower = node.upper = Math.round(eval);
 			for (MTreeNode parent : node.parents) {
@@ -898,8 +899,8 @@ public class Experiment extends Method {
 			for (MTreeNode parent : node.parents) {
 				if (visited.contains(parent)) continue;
 				visited.add(parent);
-				if (!stack.isEmpty() && parent == stack.peek()) {
-					stack.pop();
+				if (index >= 0 && parent == stack.get(index)) {
+					index--;
 					q.add(parent);
 				} else if (parent.selectBestChild(false) == node) {
 					q.add(parent);
@@ -1005,24 +1006,24 @@ public class Experiment extends Method {
 
 		protected double heuristic;
 
-		private void init(MachineState state, Object key, MTreeNode parent) {
+		private void init(MachineState state, MTreeNode parent) {
 			this.state = state;
 			this.heuristic = heuristic(state);
 			if (parent != null) this.parents.add(parent);
 		}
 
 		public MTreeNode(MachineState state) {
-			init(state, null, null);
+			init(state, null);
 			isMaxNode = true;
 		}
 
-		public MTreeNode(MachineState state, List<Move> jmove, MTreeNode parent) {
-			init(state, jmove, parent);
+		public MTreeNode(MachineState state, MTreeNode parent) {
+			init(state, parent);
 			isMaxNode = true;
 		}
 
 		public MTreeNode(MachineState state, Move move, MTreeNode parent) {
-			init(state, move, parent);
+			init(state, parent);
 			this.move = move;
 			isMaxNode = false;
 		}
@@ -1106,8 +1107,7 @@ public class Experiment extends Method {
 
 		// dynamic score: multiplies by standard deviation
 		public double score(double c, MTreeNode parent) {
-			double heuristicEffVisits = heuristicWeight * visits
-					* parent.heuristicVisits / parent.visits;
+			double heuristicEffVisits = heuristicWeight * visits;
 			double eff_sum = sum_utility + heuristic * heuristicEffVisits;
 			double eff_visits = visits + heuristicEffVisits;
 			double eff_sumsq = sum_sq + 100 * heuristic * heuristicEffVisits;
@@ -1141,7 +1141,13 @@ public class Experiment extends Method {
 			}
 			if (!force && bestChildCached != null) return bestChildCached;
 			MTreeNode best = null;
-			Collections.shuffle(children);
+
+			// just perform one random swap instead of a shuffle; it is faster
+			int random_index = (int) (Math.random() * children.size());
+			MTreeNode tmp = children.get(0);
+			children.set(0, children.get(random_index));
+			children.set(random_index, tmp);
+
 			if (isMaxNode()) {
 				double score = Double.NEGATIVE_INFINITY;
 				for (MTreeNode child : children) {
