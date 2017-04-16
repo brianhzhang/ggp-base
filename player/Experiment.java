@@ -419,7 +419,7 @@ public class Experiment extends Method {
 					}
 					vstate[n_heuristic] = findReward(machine, role, state);
 					for (int i = 0; i < vstate.length; i++) {
-						vstate[i] += Math.random() - 0.5;
+						vstate[i] += 1e-8 * (Math.random() - 0.5);
 					}
 					nstep++;
 					state = machine.getRandomNextState(state);
@@ -1141,18 +1141,11 @@ public class Experiment extends Method {
 				if (next == null) {
 					expander = null;
 					propagateBound(this);
-					Collections.shuffle(children);
 				} else if (!next.isProven()) return bestChildCached = next;
 			}
 
 			MTreeNode best = null;
-
-			// just perform one random swap instead of a shuffle; it is faster
-			int random_index = (int) (Math.random() * children.size());
-			MTreeNode tmp = children.get(0);
-			children.set(0, children.get(random_index));
-			children.set(random_index, tmp);
-
+			int countBest = 1;
 			if (isMaxNode()) {
 				double score = Double.NEGATIVE_INFINITY;
 				for (MTreeNode child : children) {
@@ -1161,6 +1154,11 @@ public class Experiment extends Method {
 					if (newscore > score) {
 						score = newscore;
 						best = child;
+						countBest = 1;
+					} else if (newscore == score) {
+						if (Math.random() < 1.0 / (++countBest)) {
+							best = child;
+						}
 					}
 				}
 			} else {
@@ -1171,6 +1169,11 @@ public class Experiment extends Method {
 					if (newscore < score) {
 						score = newscore;
 						best = child;
+						countBest = 1;
+					} else if (newscore == score) {
+						if (Math.random() < 1.0 / (++countBest)) {
+							best = child;
+						}
 					}
 				}
 			}

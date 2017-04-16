@@ -1,5 +1,6 @@
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -116,7 +117,8 @@ public class Heuristic extends Method {
 					TransitionDefinitionException {
 		// if (moves.size() == 1) return moves.get(0);
 		Log.println("--------------------");
-
+		moves = new ArrayList<>(moves);
+		Collections.shuffle(moves);
 		Move bestMove = moves.get(0);
 		int bestScore = MyPlayer.MIN_SCORE;
 
@@ -147,9 +149,11 @@ public class Heuristic extends Method {
 				}
 			}
 			if (!heuristicUsed && startLevel != level) break; // game fully analyzed
+			if (level == 5) break; // limit depth
 			Log.printf("bestmove=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
 					bestMove, bestScore, level, nNodes, nCacheHits, cache.size());
 			level++;
+
 		}
 		Log.printf("played=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n", bestMove,
 				bestScore, level, nNodes, nCacheHits, cache.size());
