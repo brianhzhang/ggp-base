@@ -130,30 +130,33 @@ public class Heuristic extends Method {
 		nNodes = nCacheHits = 0;
 		mobility = new ArrayList<>();
 		oppMobility = new ArrayList<>();
-		while (System.currentTimeMillis() < timeout) {
-			heuristicUsed = false;
-			// alpha-beta heuristic: analyze previous best move first
-			int score = minscore(machine, state, role, bestMove, MyPlayer.MIN_SCORE,
-					MyPlayer.MAX_SCORE, level, timeout);
-			if (score == FAIL) break;
-			bestScore = score;
-			for (Move move : moves) {
-				if (move == bestMove) continue;
-				score = minscore(machine, state, role, move, bestScore, MyPlayer.MAX_SCORE, level,
-						timeout);
+		if (moves.size() > 1) {
+			while (System.currentTimeMillis() < timeout) {
+				heuristicUsed = false;
+				// alpha-beta heuristic: analyze previous best move first
+				int score = minscore(machine, state, role, bestMove, MyPlayer.MIN_SCORE,
+						MyPlayer.MAX_SCORE, level, timeout);
 				if (score == FAIL) break;
-				if (score > bestScore) {
-					bestMove = move;
-					bestScore = score;
-					if (score == MyPlayer.MAX_SCORE) break;
+				bestScore = score;
+				for (Move move : moves) {
+					if (move == bestMove) continue;
+					score = minscore(machine, state, role, move, bestScore, MyPlayer.MAX_SCORE,
+							level,
+							timeout);
+					if (score == FAIL) break;
+					if (score > bestScore) {
+						bestMove = move;
+						bestScore = score;
+						if (score == MyPlayer.MAX_SCORE) break;
+					}
 				}
-			}
-			if (!heuristicUsed && startLevel != level) break; // game fully analyzed
-			if (level == 5) break; // limit depth
-			Log.printf("bestmove=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
-					bestMove, bestScore, level, nNodes, nCacheHits, cache.size());
-			level++;
+				if (!heuristicUsed && startLevel != level) break; // game fully analyzed
+				if (level == 5) break; // limit depth
+				Log.printf("bestmove=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
+						bestMove, bestScore, level, nNodes, nCacheHits, cache.size());
+				level++;
 
+			}
 		}
 		Log.printf("played=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n", bestMove,
 				bestScore, level, nNodes, nCacheHits, cache.size());

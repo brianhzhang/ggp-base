@@ -72,6 +72,7 @@ public class Experiment extends Method {
 
 	private int queueSize = MyPlayer.N_THREADS - 1;
 	private int depthChargeThreadWaitingCount = 0;
+	private int depthChargesPerState = 1;
 
 	// heuristics
 	// GdlTerm --> index into heuristicCalcs
@@ -481,7 +482,8 @@ public class Experiment extends Method {
 				sum += thread.timeCalc[i].getSlope();
 			}
 			Log.println(heuristicNames.get(i) + " time correlation: " + sum / 4);
-			if (sum < 0) canUseHeuristic.add(i + 1);
+			if (sum < 0)
+				canUseHeuristic.add(i + 1);
 		}
 
 		Log.println("states explored: " + heuristicRegression.getN());
@@ -670,18 +672,20 @@ public class Experiment extends Method {
 				timers[2] += System.currentTimeMillis();
 			} else {
 				// EXPLORE
-				timers[1] -= System.currentTimeMillis();
-				if (!input.offerFirst(tree)) {
-					if (depthChargeThreadWaitingCount > nthread) {
-						depthChargeThreadWaitingCount = 0;
-						input.increaseCapacity();
-					}
-					timers[1] += System.currentTimeMillis();
-					timers[2] -= System.currentTimeMillis();
-					backpropogate(tree, 0, false, false);
-					timers[2] += System.currentTimeMillis();
+				for (int i = 0; i < depthChargesPerState; i++) {
+					timers[1] -= System.currentTimeMillis();
+					if (!input.offerFirst(tree)) {
+						if (depthChargeThreadWaitingCount > nthread) {
+							depthChargeThreadWaitingCount = 0;
+							input.increaseCapacity();
+						}
+						timers[1] += System.currentTimeMillis();
+						timers[2] -= System.currentTimeMillis();
+						backpropogate(tree, 0, false, false);
+						timers[2] += System.currentTimeMillis();
 
-				} else timers[1] += System.currentTimeMillis();
+					} else timers[1] += System.currentTimeMillis();
+				}
 				// BACKPROP
 				timers[2] -= System.currentTimeMillis();
 				while (true) {
@@ -708,7 +712,6 @@ public class Experiment extends Method {
 				bestChild.move, bestChild.visits, root.visits, root.depth);
 		Log.printf("time=%d breakdown=%s\n", (System.currentTimeMillis() - timestart),
 				Arrays.toString(timers));
-		root = null; // allow gc
 
 		input.clear();
 		int totalTimeWaiting = 0;
@@ -717,6 +720,14 @@ public class Experiment extends Method {
 		}
 		Log.println("depth charge inactive time: " + totalTimeWaiting + " ms");
 		Log.println("depth charge queue capacity: " + (queueSize = input.getCapacity()));
+
+		if (root.visits == root.heuristicVisits && !root.isLooselyProven()) {
+			depthChargesPerState++;
+			Log.printf("depth charges too fast. ");
+			Log.printf("will now do %d depth charges per state\n", depthChargesPerState);
+		}
+
+		root = null; // allow gc
 
 		Move chosen = bestChild.move;
 		if (chosen == USELESS_MOVE) {
@@ -1105,7 +1116,8 @@ public class Experiment extends Method {
 
 		// dynamic score: multiplies by standard deviation
 		public double score(double c, MTreeNode parent) {
-			double heuristicEffVisits = heuristicWeight * visits;
+			double heuristicEffVisits = heuristicWeight * visits
+					* parent.heuristicVisits / parent.visits;
 			double eff_sum = sum_utility + heuristic * heuristicEffVisits;
 			double eff_visits = visits + heuristicEffVisits;
 			double eff_sumsq = sum_sq + 100 * heuristic * heuristicEffVisits;
