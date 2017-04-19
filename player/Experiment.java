@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.Stack;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -69,10 +70,6 @@ public class Experiment extends Method {
 	private double oppWeight;
 	private Role[] roles;
 	private int ourRoleIndex = -1;
-
-	private int queueSize = MyPlayer.N_THREADS - 1;
-	private int depthChargeThreadWaitingCount = 0;
-	private int depthChargesPerState = 1;
 
 	// heuristics
 	// GdlTerm --> index into heuristicCalcs
@@ -650,7 +647,7 @@ public class Experiment extends Method {
 		dagMap.put(rootstate, root);
 
 		DepthChargeThread[] threads = new DepthChargeThread[nthread];
-		ResizableBlockingDeque<Stack<MTreeNode>> input = new ResizableBlockingDeque<>(queueSize);
+		ArrayBlockingQueue<Stack<MTreeNode>> input = new ArrayBlockingQueue<>(1);
 
 		BlockingQueue<DCOut> output = new LinkedBlockingQueue<>();
 		for (int i = 0; i < nthread; i++) {
@@ -658,7 +655,6 @@ public class Experiment extends Method {
 			threads[i].start();
 		}
 		int[] timers = new int[3];
-		depthChargeThreadWaitingCount = 0;
 
 		while (System.currentTimeMillis() < timeout) {
 			if (root.isLooselyProven()) break;
@@ -672,20 +668,13 @@ public class Experiment extends Method {
 				timers[2] += System.currentTimeMillis();
 			} else {
 				// EXPLORE
-				for (int i = 0; i < depthChargesPerState; i++) {
-					timers[1] -= System.currentTimeMillis();
-					if (!input.offerFirst(tree)) {
-						if (depthChargeThreadWaitingCount > nthread) {
-							depthChargeThreadWaitingCount = 0;
-							input.increaseCapacity();
-						}
-						timers[1] += System.currentTimeMillis();
-						timers[2] -= System.currentTimeMillis();
-						backpropogate(tree, 0, false, false);
-						timers[2] += System.currentTimeMillis();
-
-					} else timers[1] += System.currentTimeMillis();
-				}
+				timers[1] -= System.currentTimeMillis();
+				if (!input.offer(tree)) {
+					timers[1] += System.currentTimeMillis();
+					timers[2] -= System.currentTimeMillis();
+					backpropogate(tree, 0, false, false);
+					timers[2] += System.currentTimeMillis();
+				} else timers[1] += System.currentTimeMillis();
 				// BACKPROP
 				timers[2] -= System.currentTimeMillis();
 				while (true) {
@@ -718,14 +707,8 @@ public class Experiment extends Method {
 		for (DepthChargeThread thread : threads) {
 			totalTimeWaiting += thread.timeSpentWaiting;
 		}
-		Log.println("depth charge inactive time: " + totalTimeWaiting + " ms");
-		Log.println("depth charge queue capacity: " + (queueSize = input.getCapacity()));
 
-		if (root.visits == root.heuristicVisits && !root.isLooselyProven()) {
-			depthChargesPerState++;
-			Log.printf("depth charges too fast. ");
-			Log.printf("will now do %d depth charges per state\n", depthChargesPerState);
-		}
+		Log.println("depth charge inactive time: " + totalTimeWaiting + " ms");
 
 		root = null; // allow gc
 
@@ -932,16 +915,16 @@ public class Experiment extends Method {
 		private StateMachine machine;
 		private Role role;
 		private long timeout;
-		private ResizableBlockingDeque<Stack<MTreeNode>> input;
+		private BlockingQueue<Stack<MTreeNode>> input;
 		private BlockingQueue<DCOut> output;
 		private int timeSpentWaiting;
 
 		public DepthChargeThread(StateMachine machine, Role role, long timeout,
-				ResizableBlockingDeque<Stack<MTreeNode>> input, BlockingQueue<DCOut> output) {
+				BlockingQueue<Stack<MTreeNode>> input2, BlockingQueue<DCOut> output) {
 			this.machine = machine;
 			this.role = role;
 			this.timeout = timeout;
-			this.input = input;
+			this.input = input2;
 			this.output = output;
 		}
 
@@ -968,15 +951,14 @@ public class Experiment extends Method {
 		public void run() {
 			try {
 				while (true) {
-					Stack<MTreeNode> node = input.pollFirst();
+					Stack<MTreeNode> node = input.poll();
 					if (node == null) {
 						long start = System.currentTimeMillis();
-						node = input.pollFirst(
+						node = input.poll(
 								timeout - System.currentTimeMillis() + MyPlayer.TIMEOUT_BUFFER,
 								TimeUnit.MILLISECONDS);
 						if (node == null) return;
 						timeSpentWaiting += System.currentTimeMillis() - start;
-						depthChargeThreadWaitingCount++;
 					}
 					output.offer(simulate(node));
 				}

@@ -172,10 +172,7 @@ public class ResizableBlockingDeque<E>
 	 */
 	public ResizableBlockingDeque(int capacity) {
 		if (capacity <= 0) throw new IllegalArgumentException();
-		this.capacity = 1;
-		while (this.capacity < capacity) {
-			this.capacity *= 2; // force power of 2 as capacity
-		}
+		this.capacity = capacity;
 	}
 
 	/**

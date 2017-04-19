@@ -49,19 +49,19 @@ public class AlphaBeta extends Method {
 			throws GoalDefinitionException, MoveDefinitionException, TransitionDefinitionException {
 		stats_nnodes++;
 		if (machine.isTerminal(state)) return machine.findReward(role, state);
-		Bound bound = cache.get(state);
-		if (bound == null) {
-			bound = new Bound();
-			cache.put(state, bound);
-		} else { // retrieve cache value
-			stats_ncachehits++;
-			if (bound.lower >= beta) return beta;
-			if (bound.upper <= alpha) return alpha;
-			if (bound.lower == bound.upper) return bound.lower;
-			// stats_ncachehits--;
-			alpha = Math.max(alpha, bound.lower);
-			beta = Math.min(beta, bound.upper);
-		}
+//		Bound bound = cache.get(state);
+//		if (bound == null) {
+//			bound = new Bound();
+//			cache.put(state, bound);
+//		} else { // retrieve cache value
+//			stats_ncachehits++;
+//			if (bound.lower >= beta) return beta;
+//			if (bound.upper <= alpha) return alpha;
+//			if (bound.lower == bound.upper) return bound.lower;
+//			// stats_ncachehits--;
+//			alpha = Math.max(alpha, bound.lower);
+//			beta = Math.min(beta, bound.upper);
+//		}
 		List<Move> actions = machine.findLegals(role, state);
 
 		int a = alpha; // store original alpha value
@@ -70,8 +70,8 @@ public class AlphaBeta extends Method {
 			a = Math.max(a, score);
 			if (a >= beta) break;
 		}
-		if (a < beta) bound.upper = a;
-		if (a > alpha) bound.lower = a;
+//		if (a < beta) bound.upper = a;
+//		if (a > alpha) bound.lower = a;
 		return a;
 	}
 
