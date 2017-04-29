@@ -66,7 +66,7 @@ public class Experiment extends Method {
 	private boolean[] ignoreProps;
 
 	// for weighted depth charge results
-	private static final double OUR_WEIGHT = 2. / 3;
+	private static final double OUR_WEIGHT = 0.9;
 	private double oppWeight;
 	private Role[] roles;
 	private int ourRoleIndex = -1;
@@ -84,6 +84,7 @@ public class Experiment extends Method {
 	private double heuristicWeight;
 	private MTreeNode root;
 	private Map<MachineState, MTreeNode> dagMap;
+	private int depthChargesPerState = 1;
 
 	public Experiment(MyPlayer gamer, List<Gdl> description) {
 		this.player = gamer;
@@ -197,6 +198,7 @@ public class Experiment extends Method {
 		solution = null;
 		opponents = new ArrayList<>();
 		heuristics = null;
+		depthChargesPerState = 1;
 
 		StateMachine machine = gamer.getStateMachine();
 		roles = machine.findRoles().toArray(new Role[0]);
@@ -455,7 +457,7 @@ public class Experiment extends Method {
 			throws MoveDefinitionException, TransitionDefinitionException {
 		Role role = player.getRole();
 		List<MetaGameDCThread> pool = new ArrayList<>();
-		int n_thread = 1; // MyPlayer.N_THREADS;
+		int n_thread = MyPlayer.N_THREADS;
 
 		Log.println("begin random exploration...");
 		for (int i = 0; i < n_thread; i++) {
@@ -581,6 +583,11 @@ public class Experiment extends Method {
 			Log.println("one legal move: " + moves.get(0));
 			return moves.get(0);
 		}
+		try {
+			System.out.println(machine.findReward(role, rootstate));
+		} catch (GoalDefinitionException e) {
+
+		}
 		Log.println("threads running: " + Thread.activeCount());
 		Map<Role, Set<Move>> oldUseless = null;
 		Log.println("number of legal moves: " + moves.size());
@@ -691,7 +698,8 @@ public class Experiment extends Method {
 		for (MTreeNode child : root.children) {
 			Log.printf(
 					"v=(%d, %d) s=(%.1f, %.1f, %.1f) b=(%.0f, %.0f) d=%d %s\n",
-					child.visits, child.heuristicVisits - child.visits,
+					child.visits,
+					child.heuristicVisits / depthChargesPerState - child.visits,
 					child.sum_utility / child.visits, child.heuristic,
 					child.utility(),
 					child.lower, child.upper, child.depth, child.move);
@@ -699,7 +707,8 @@ public class Experiment extends Method {
 		MTreeNode bestChild = root.children.get(root.children.size() - 1);
 		Log.printf("played=%s visits=%d/%d depth=%d\n",
 				bestChild.move, bestChild.visits, root.visits, root.depth);
-		Log.printf("time=%d breakdown=%s\n", (System.currentTimeMillis() - timestart),
+		long elapsed_time = (System.currentTimeMillis() - timestart);
+		Log.printf("time=%d breakdown=%s\n", elapsed_time,
 				Arrays.toString(timers));
 
 		input.clear();
@@ -709,6 +718,11 @@ public class Experiment extends Method {
 		}
 
 		Log.println("depth charge inactive time: " + totalTimeWaiting + " ms");
+		if (System.currentTimeMillis() >= timeout
+				&& totalTimeWaiting > elapsed_time * threads.length / 2) {
+			Log.printf("depth charges too slow. now doing %d per state\n",
+					depthChargesPerState *= 2);
+		}
 
 		root = null; // allow gc
 
@@ -928,7 +942,18 @@ public class Experiment extends Method {
 			this.output = output;
 		}
 
-		private DCOut simulate(Stack<MTreeNode> tree) throws MoveDefinitionException,
+		private double averageSimulate(Stack<MTreeNode> tree) throws MoveDefinitionException,
+				TransitionDefinitionException, GoalDefinitionException {
+			double total = 0;
+			for (int i = 0; i < depthChargesPerState; i++) {
+				double next = simulate(tree);
+				if (next == FAIL) return FAIL;
+				total += next;
+			}
+			return total / depthChargesPerState;
+		}
+
+		private double simulate(Stack<MTreeNode> tree) throws MoveDefinitionException,
 				TransitionDefinitionException, GoalDefinitionException {
 			MTreeNode node = tree.peek();
 			MachineState state = node.state;
@@ -939,28 +964,28 @@ public class Experiment extends Method {
 				score = findReward(pnsm.internalDC((PropNetMachineState) state));
 			} else {
 				while (!machine.isTerminal(state)) {
-					if (System.currentTimeMillis() > timeout) return new DCOut(tree, FAIL);
+					if (System.currentTimeMillis() > timeout) return FAIL;
 					state = machine.getRandomNextState(state);
 				}
 				score = findReward(machine, role, state);
 			}
-			return new DCOut(tree, score);
+			return score;
 		}
 
 		@Override
 		public void run() {
 			try {
 				while (true) {
-					Stack<MTreeNode> node = input.poll();
-					if (node == null) {
+					Stack<MTreeNode> tree = input.poll();
+					if (tree == null) {
 						long start = System.currentTimeMillis();
-						node = input.poll(
+						tree = input.poll(
 								timeout - System.currentTimeMillis() + MyPlayer.TIMEOUT_BUFFER,
 								TimeUnit.MILLISECONDS);
-						if (node == null) return;
+						if (tree == null) return;
 						timeSpentWaiting += System.currentTimeMillis() - start;
 					}
-					output.offer(simulate(node));
+					output.offer(new DCOut(tree, averageSimulate(tree)));
 				}
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -1114,9 +1139,9 @@ public class Experiment extends Method {
 
 		public void addData(double eval, int newDepth, boolean isScore) {
 			if (isScore) {
-				visits++;
-				sum_utility += eval;
-				sum_sq += eval * eval;
+				visits += depthChargesPerState;
+				sum_utility += eval * depthChargesPerState;
+				sum_sq += eval * eval * depthChargesPerState;
 				depth = Math.max(depth, newDepth);
 			}
 			heuristicVisits++;

@@ -11,8 +11,14 @@ import java.util.Set;
 
 import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.gdl.grammar.GdlConstant;
+import org.ggp.base.util.gdl.grammar.GdlDistinct;
+import org.ggp.base.util.gdl.grammar.GdlFunction;
+import org.ggp.base.util.gdl.grammar.GdlLiteral;
+import org.ggp.base.util.gdl.grammar.GdlPool;
 import org.ggp.base.util.gdl.grammar.GdlRelation;
+import org.ggp.base.util.gdl.grammar.GdlRule;
 import org.ggp.base.util.gdl.grammar.GdlSentence;
+import org.ggp.base.util.gdl.grammar.GdlTerm;
 import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.PropNet;
 import org.ggp.base.util.propnet.architecture.components.And;
@@ -122,14 +128,54 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		return false;
 	}
 
-	protected void setPropNet(List<Gdl> description) throws InterruptedException {
-		long start = System.currentTimeMillis();
-		long time = 0;
-		p = OptimizingPropNetFactory.create(description, false);
-		time = System.currentTimeMillis() - start;
-		Log.println("propnet factory finished in " + time + " ms.");
-		Log.println("number of comps: " + p.getSize());
-		// trim unnecessary propositions
+	private void sanitizeRule(Gdl gdl, List<Gdl> in, List<Gdl> out) {
+		if (!(gdl instanceof GdlRule)) {
+			out.add(gdl);
+			return;
+		}
+		GdlRule rule = (GdlRule) gdl;
+		for (GdlLiteral lit : rule.getBody()) {
+			if (lit instanceof GdlDistinct) {
+				GdlDistinct d = (GdlDistinct) lit;
+				GdlTerm a = d.getArg1();
+				GdlTerm b = d.getArg2();
+				if (!(a instanceof GdlFunction) && !(b instanceof GdlFunction)) continue;
+				if (!(a instanceof GdlFunction && b instanceof GdlFunction)) return;
+				GdlSentence af = ((GdlFunction) a).toSentence();
+				GdlSentence bf = ((GdlFunction) b).toSentence();
+				if (!af.getName().equals(bf.getName())) return;
+				if (af.arity() != bf.arity()) return;
+				for (int i = 0; i < af.arity(); i++) {
+					List<GdlLiteral> ruleBody = new ArrayList<>();
+					for (GdlLiteral newLit : rule.getBody()) {
+						if (newLit != lit) ruleBody.add(newLit);
+						else ruleBody.add(GdlPool.getDistinct(af.get(i), bf.get(i)));
+					}
+					GdlRule newRule = GdlPool.getRule(rule.getHead(), ruleBody);
+					Log.println("new rule: " + newRule);
+					in.add(newRule);
+				}
+				return;
+			}
+		}
+		for (GdlLiteral lit : rule.getBody()) {
+			if (lit instanceof GdlDistinct) {
+				System.out.println("distinct rule added: " + rule);
+				break;
+			}
+		}
+		out.add(rule);
+	}
+
+	private List<Gdl> fix(List<Gdl> description) {
+		List<Gdl> out = new ArrayList<>();
+		for (int i = 0; i < description.size(); i++) {
+			sanitizeRule(description.get(i), description, out);
+		}
+		return out;
+	}
+
+	private void optimizePropnet() {
 		int oldSize = 0;
 		for (int round = 1; oldSize != p.getSize(); round++) {
 			oldSize = p.getSize();
@@ -197,8 +243,22 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			Log.println("\tmerged " + ntrimmed + " duplicate comps");
 
 			Log.println("\tcomps remaining: " + p.getSize());
+			Log.println("\tbase props remaining: " + p.getBasePropositions().size());
 		}
+	}
 
+	protected void setPropNet(List<Gdl> description) throws InterruptedException {
+
+		long start = System.currentTimeMillis();
+		long time = 0;
+		description = fix(description);
+		p = OptimizingPropNetFactory.create(description, false);
+		time = System.currentTimeMillis() - start;
+		Log.println("propnet factory finished in " + time + " ms.");
+		Log.println("number of comps: " + p.getSize());
+		Log.println("number of base props: " + p.getBasePropositions().size());
+		// trim unnecessary propositions
+		optimizePropnet();
 		// cycle detection
 		use_propnet_reset = isCyclic(p);
 		if (use_propnet_reset) {
@@ -234,7 +294,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
-
 		if (kill) return;
 		components = getOrdering(new ArrayList<Component>(p.getComponents()),
 				new HashSet<Proposition>(p.getBasePropositions().values()),

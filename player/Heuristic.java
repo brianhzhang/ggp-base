@@ -54,12 +54,12 @@ public class Heuristic extends Method {
 
 		Log.println("");
 		Log.println("begin random exploration");
-		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+		for (int i = 0; i < 1; i++) {
 			HThread t = new HThread(gamer, opps, timeout, this, gamer.getStateMachine(), data);
 			threads.add(t);
 			t.start();
 		}
-		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+		for (int i = 0; i < 1; i++) {
 			try {
 				threads.get(i).join();
 			} catch (InterruptedException e) {
@@ -151,7 +151,7 @@ public class Heuristic extends Method {
 					}
 				}
 				if (!heuristicUsed && startLevel != level) break; // game fully analyzed
-				if (level == 5) break; // limit depth
+				//if (level == 5) break; // limit depth
 				Log.printf("bestmove=%s score=%d depth=%d nodes=%d cachehits=%d cachesize=%d\n",
 						bestMove, bestScore, level, nNodes, nCacheHits, cache.size());
 				level++;
