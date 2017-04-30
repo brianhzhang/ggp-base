@@ -66,7 +66,7 @@ public class MCTS extends Method {
 	private boolean[] ignoreProps;
 
 	// for weighted depth charge results
-	private static final double OUR_WEIGHT = 2. / 3;
+	private static final double OUR_WEIGHT = 0.9;
 	private double oppWeight;
 	private Role[] roles;
 	private int ourRoleIndex = -1;
@@ -84,6 +84,7 @@ public class MCTS extends Method {
 	private double heuristicWeight;
 	private MTreeNode root;
 	private Map<MachineState, MTreeNode> dagMap;
+	private int depthChargesPerState = 1;
 
 	public MCTS(MyPlayer gamer, List<Gdl> description) {
 		this.player = gamer;
@@ -197,6 +198,7 @@ public class MCTS extends Method {
 		solution = null;
 		opponents = new ArrayList<>();
 		heuristics = null;
+		depthChargesPerState = 1;
 
 		StateMachine machine = gamer.getStateMachine();
 		roles = machine.findRoles().toArray(new Role[0]);
@@ -479,8 +481,7 @@ public class MCTS extends Method {
 				sum += thread.timeCalc[i].getSlope();
 			}
 			Log.println(heuristicNames.get(i) + " time correlation: " + sum / 4);
-			if (sum < 0)
-				canUseHeuristic.add(i + 1);
+			if (sum < 0) canUseHeuristic.add(i + 1);
 		}
 
 		Log.println("states explored: " + heuristicRegression.getN());
@@ -581,11 +582,6 @@ public class MCTS extends Method {
 			Log.println("one legal move: " + moves.get(0));
 			return moves.get(0);
 		}
-		try {
-			System.out.println(machine.findReward(role, rootstate));
-		} catch (GoalDefinitionException e) {
-
-		}
 		Log.println("threads running: " + Thread.activeCount());
 		Map<Role, Set<Move>> oldUseless = null;
 		Log.println("number of legal moves: " + moves.size());
@@ -669,7 +665,8 @@ public class MCTS extends Method {
 			MTreeNode node = tree.peek();
 			if (node.isMaxNode() && machine.isTerminal(node.state)) {
 				timers[2] -= System.currentTimeMillis();
-				backpropogate(tree, findReward(machine, role, node.state), true, true);
+				double reward = findReward(machine, role, node.state);
+				backpropogate(tree, reward, reward * reward, true, true);
 				timers[2] += System.currentTimeMillis();
 			} else {
 				// EXPLORE
@@ -677,7 +674,7 @@ public class MCTS extends Method {
 				if (!input.offer(tree)) {
 					timers[1] += System.currentTimeMillis();
 					timers[2] -= System.currentTimeMillis();
-					backpropogate(tree, 0, false, false);
+					backpropogate(tree, 0, 0, false, false);
 					timers[2] += System.currentTimeMillis();
 				} else timers[1] += System.currentTimeMillis();
 				// BACKPROP
@@ -686,7 +683,7 @@ public class MCTS extends Method {
 					DCOut out = output.poll();
 					if (out == null) break;
 					if (out.eval == FAIL) continue;
-					backpropogate(out.node, out.eval, false, true);
+					backpropogate(out.node, out.eval, out.avgsq, false, true);
 				}
 				timers[2] += System.currentTimeMillis();
 			}
@@ -696,24 +693,33 @@ public class MCTS extends Method {
 		for (MTreeNode child : root.children) {
 			Log.printf(
 					"v=(%d, %d) s=(%.1f, %.1f, %.1f) b=(%.0f, %.0f) d=%d %s\n",
-					child.visits, child.heuristicVisits - child.visits,
+					child.visits,
+					child.heuristicVisits - child.visits / depthChargesPerState,
 					child.sum_utility / child.visits, child.heuristic,
 					child.utility(),
 					child.lower, child.upper, child.depth, child.move);
 		}
 		MTreeNode bestChild = root.children.get(root.children.size() - 1);
 		Log.printf("played=%s visits=%d/%d depth=%d\n",
-				bestChild.move, bestChild.visits, root.visits, root.depth);
-		Log.printf("time=%d breakdown=%s\n", (System.currentTimeMillis() - timestart),
+				bestChild.move, bestChild.visits,
+				root.visits, root.depth);
+		long elapsed_time = (System.currentTimeMillis() - timestart);
+		Log.printf("time=%d breakdown=%s\n", elapsed_time,
 				Arrays.toString(timers));
 
 		input.clear();
-		int totalTimeWaiting = 0;
+		long totalTimeWaiting = 0;
 		for (DepthChargeThread thread : threads) {
 			totalTimeWaiting += thread.timeSpentWaiting;
 		}
 
 		Log.println("depth charge inactive time: " + totalTimeWaiting + " ms");
+		double factor = (double) totalTimeWaiting / (elapsed_time * threads.length);
+		factor = 1 / (1 - factor);
+		if (System.currentTimeMillis() >= timeout && factor >= 2) {
+			Log.printf("depth charges too slow. now doing %d per state\n",
+					depthChargesPerState *= factor);
+		}
 
 		root = null; // allow gc
 
@@ -807,12 +813,12 @@ public class MCTS extends Method {
 		}
 	}
 
-	private void backpropogate(Stack<MTreeNode> stack, double eval, boolean proven,
-			boolean isScore) throws TransitionDefinitionException {
+	private void backpropogate(Stack<MTreeNode> stack, double eval, double avgsq,
+			boolean proven, boolean isScore) throws TransitionDefinitionException {
 		int index = stack.size() - 1;
 		MTreeNode node = stack.get(index--);
 		if (proven) {
-			node.lower = node.upper = Math.round(eval);
+			node.lower = node.upper = eval;
 			for (MTreeNode parent : node.parents) {
 				propagateBound(parent);
 			}
@@ -823,7 +829,7 @@ public class MCTS extends Method {
 		Set<MTreeNode> visited = new HashSet<>();
 		while (!q.isEmpty()) {
 			node = q.poll();
-			node.addData(eval, depth, isScore);
+			node.addData(eval, avgsq, depth, isScore);
 			for (MTreeNode parent : node.parents) {
 				if (visited.contains(parent)) continue;
 				visited.add(parent);
@@ -933,7 +939,22 @@ public class MCTS extends Method {
 			this.output = output;
 		}
 
-		private DCOut simulate(Stack<MTreeNode> tree) throws MoveDefinitionException,
+		private DCOut averageSimulate(Stack<MTreeNode> tree) throws MoveDefinitionException,
+				TransitionDefinitionException, GoalDefinitionException {
+			double total = 0;
+			double sumsq = 0;
+			for (int i = 0; i < depthChargesPerState; i++) {
+				double next = simulate(tree);
+				if (next == FAIL) return new DCOut(tree, FAIL, 0);
+				total += next;
+				sumsq += next * next;
+			}
+			total /= depthChargesPerState;
+			sumsq /= depthChargesPerState;
+			return new DCOut(tree, total, sumsq);
+		}
+
+		private double simulate(Stack<MTreeNode> tree) throws MoveDefinitionException,
 				TransitionDefinitionException, GoalDefinitionException {
 			MTreeNode node = tree.peek();
 			MachineState state = node.state;
@@ -944,28 +965,28 @@ public class MCTS extends Method {
 				score = findReward(pnsm.internalDC((PropNetMachineState) state));
 			} else {
 				while (!machine.isTerminal(state)) {
-					if (System.currentTimeMillis() > timeout) return new DCOut(tree, FAIL);
+					if (System.currentTimeMillis() > timeout) return FAIL;
 					state = machine.getRandomNextState(state);
 				}
 				score = findReward(machine, role, state);
 			}
-			return new DCOut(tree, score);
+			return score;
 		}
 
 		@Override
 		public void run() {
 			try {
 				while (true) {
-					Stack<MTreeNode> node = input.poll();
-					if (node == null) {
+					Stack<MTreeNode> tree = input.poll();
+					if (tree == null) {
 						long start = System.currentTimeMillis();
-						node = input.poll(
+						tree = input.poll(
 								timeout - System.currentTimeMillis() + MyPlayer.TIMEOUT_BUFFER,
 								TimeUnit.MILLISECONDS);
-						if (node == null) return;
+						if (tree == null) return;
 						timeSpentWaiting += System.currentTimeMillis() - start;
 					}
-					output.offer(simulate(node));
+					output.offer(averageSimulate(tree));
 				}
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -1117,11 +1138,11 @@ public class MCTS extends Method {
 			return util + var;
 		}
 
-		public void addData(double eval, int newDepth, boolean isScore) {
+		public void addData(double eval, double avgsq, int newDepth, boolean isScore) {
 			if (isScore) {
-				visits++;
-				sum_utility += eval;
-				sum_sq += eval * eval;
+				visits += depthChargesPerState;
+				sum_utility += eval * depthChargesPerState;
+				sum_sq += avgsq * depthChargesPerState;
 				depth = Math.max(depth, newDepth);
 			}
 			heuristicVisits++;
@@ -1181,12 +1202,14 @@ public class MCTS extends Method {
 	}
 
 	private static class DCOut {
-		double eval;
-		Stack<MTreeNode> node;
+		public double eval;
+		public double avgsq;
+		public Stack<MTreeNode> node;
 
-		public DCOut(Stack<MTreeNode> node, double eval) {
+		public DCOut(Stack<MTreeNode> node, double eval, double avgsq) {
 			this.eval = eval;
 			this.node = node;
+			this.avgsq = avgsq;
 		}
 	}
 
