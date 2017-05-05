@@ -82,6 +82,7 @@ public class MCTS extends Method {
 	// for each heuristic in heuristicCalcs, contains the props that affect
 	private List<List<Integer>> heuristicProps;
 	private double heuristicWeight;
+	private double heuristicMaxVisits;
 	private MTreeNode root;
 	private Map<MachineState, MTreeNode> dagMap;
 	private int depthChargesPerState = 1;
@@ -515,7 +516,9 @@ public class MCTS extends Method {
 		double dcRsq = dcRegression.getRSquare();
 		Log.println("depth charge rsq: " + dcRsq);
 		heuristicWeight = heuristicRsq / dcRsq;
-		if (heuristicWeight < 0 || !Double.isFinite(heuristicWeight)) {
+		heuristicMaxVisits = 1 / dcRsq;
+		Log.println("heuristic max visits: " + heuristicMaxVisits);
+		if (!Double.isFinite(heuristicWeight)) {
 			heuristicWeight = 0;
 		}
 		Log.println("heuristic weight: " + heuristicWeight);
@@ -693,7 +696,7 @@ public class MCTS extends Method {
 		for (MTreeNode child : root.children) {
 			Log.printf(
 					"v=(%d, %d) s=(%.1f, %.1f, %.1f) b=(%.0f, %.0f) d=%d %s\n",
-					child.visits,
+					child.visits - MTREENODE_PRIOR_VISITS,
 					child.heuristicVisits - child.visits / depthChargesPerState,
 					child.sum_utility / child.visits, child.heuristic,
 					child.utility(),
@@ -856,7 +859,7 @@ public class MCTS extends Method {
 	}
 
 	private class LazyExpander {
-		private int index = -1;
+		private int index = 0;
 		private MTreeNode node;
 		private List<List<Move>> allMoves;
 		private List<Move> moves;
@@ -881,8 +884,11 @@ public class MCTS extends Method {
 			}
 		}
 
-		public MTreeNode next() throws TransitionDefinitionException {
-			if (++index == maxIndex) return null;
+		public boolean hasNext() {
+			return index < maxIndex;
+		}
+
+		private MTreeNode nextHelper() throws TransitionDefinitionException {
 			if (node.isMaxNode()) {
 				Move move = moves.get(index);
 				MTreeNode newnode = new MTreeNode(node.state, move, node);
@@ -918,6 +924,13 @@ public class MCTS extends Method {
 				node.children.add(newnode);
 				return newnode;
 			}
+		}
+
+		public MTreeNode next() throws TransitionDefinitionException {
+			assert hasNext();
+			MTreeNode next = nextHelper();
+			index++;
+			return next;
 		}
 	}
 
@@ -1066,15 +1079,22 @@ public class MCTS extends Method {
 				}
 				assert expander == null;
 			} else {
-				upper = MyPlayer.MAX_SCORE;
-				lower = MyPlayer.MAX_SCORE;
-				heuristic = MyPlayer.MAX_SCORE;
-				for (MTreeNode c : children) {
-					upper = Math.min(upper, c.upper);
-					lower = Math.min(lower, c.lower);
-					heuristic = Math.min(heuristic, c.heuristic);
+				assert!children.isEmpty();
+				if (expander == null) {
+					upper = MyPlayer.MAX_SCORE;
+					lower = MyPlayer.MAX_SCORE;
+					heuristic = MyPlayer.MAX_SCORE;
+					for (MTreeNode c : children) {
+						upper = Math.min(upper, c.upper);
+						lower = Math.min(lower, c.lower);
+						heuristic = Math.min(heuristic, c.heuristic);
+					}
+				} else { // still nodes left: only do upper
+					upper = MyPlayer.MAX_SCORE;
+					for (MTreeNode c : children) {
+						upper = Math.min(upper, c.upper);
+					}
 				}
-				if (expander != null) lower = oldlow;
 			}
 
 			heuristic = putInBounds(heuristic);
@@ -1126,6 +1146,7 @@ public class MCTS extends Method {
 		public double score(double c, MTreeNode parent) {
 			double heuristicEffVisits = heuristicWeight * visits
 					* parent.heuristicVisits / parent.visits;
+			heuristicEffVisits = Math.min(heuristicEffVisits, heuristicMaxVisits);
 			double eff_sum = sum_utility + heuristic * heuristicEffVisits;
 			double eff_visits = visits + heuristicEffVisits;
 			double eff_sumsq = sum_sq + 100 * heuristic * heuristicEffVisits;
@@ -1158,10 +1179,11 @@ public class MCTS extends Method {
 			}
 			while (expander != null) {
 				MTreeNode next = expander.next();
-				if (next == null) {
+				if (!expander.hasNext()) {
 					expander = null;
 					propagateBound(this);
-				} else if (!next.isProven()) return bestChildCached = next;
+				}
+				if (!next.isProven()) return bestChildCached = next;
 			}
 
 			MTreeNode best = null;
