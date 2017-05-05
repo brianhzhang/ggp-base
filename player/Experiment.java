@@ -46,8 +46,7 @@ public class Experiment extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	private static final boolean USE_MULTIPLAYER_FACTORING = true;
-	private static final double EXPLORATION_BIAS_FACTOR = 1.0;
-	private double exploration_bias = 1.0;
+	private static final double EXPLORATION_BIAS = 1.0;
 
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
@@ -81,7 +80,6 @@ public class Experiment extends Method {
 	private double[] heuristics;
 	// for each heuristic in heuristicCalcs, contains the props that affect
 	private List<List<Integer>> heuristicProps;
-	private double heuristicWeight;
 	private double heuristicMaxVisits;
 	private MTreeNode root;
 	private Map<MachineState, MTreeNode> dagMap;
@@ -511,19 +509,10 @@ public class Experiment extends Method {
 			}
 		}
 
-		double heuristicRsq = results.getAdjustedRSquared();
-		Log.println("heuristic rsq: " + heuristicRsq);
 		double dcRsq = dcRegression.getRSquare();
 		Log.println("depth charge rsq: " + dcRsq);
-		heuristicWeight = heuristicRsq / dcRsq;
 		heuristicMaxVisits = 1 / dcRsq;
 		Log.println("heuristic max visits: " + heuristicMaxVisits);
-		if (!Double.isFinite(heuristicWeight)) {
-			heuristicWeight = 0;
-		}
-		Log.println("heuristic weight: " + heuristicWeight);
-		exploration_bias = EXPLORATION_BIAS_FACTOR * Math.sqrt(1 + heuristicWeight);
-		Log.println("exploration bias: " + exploration_bias);
 	}
 
 	private int findReward(int[] rewards) {
@@ -1144,7 +1133,7 @@ public class Experiment extends Method {
 
 		// dynamic score: multiplies by standard deviation
 		public double score(double c, MTreeNode parent) {
-			double heuristicEffVisits = heuristicWeight * visits
+			double heuristicEffVisits = (double) visits
 					* parent.heuristicVisits / parent.visits;
 			heuristicEffVisits = Math.min(heuristicEffVisits, heuristicMaxVisits);
 			double eff_sum = sum_utility + heuristic * heuristicEffVisits;
@@ -1154,7 +1143,7 @@ public class Experiment extends Method {
 			double util = eff_sum / eff_visits;
 			double var = eff_sumsq / eff_visits - util * util;
 
-			eff_visits -= (1 + heuristicWeight);
+			eff_visits -= 2;
 			var = c * Math.sqrt(Math.log(parent.visits) / eff_visits * var);
 			return util + var;
 		}
@@ -1192,7 +1181,7 @@ public class Experiment extends Method {
 				double score = Double.NEGATIVE_INFINITY;
 				for (MTreeNode child : children) {
 					if (child.isProven()) continue;
-					double newscore = child.score(exploration_bias, this);
+					double newscore = child.score(EXPLORATION_BIAS, this);
 					if (newscore > score) {
 						score = newscore;
 						best = child;
@@ -1207,7 +1196,7 @@ public class Experiment extends Method {
 				double score = Double.POSITIVE_INFINITY;
 				for (MTreeNode child : children) {
 					if (child.isProven()) continue;
-					double newscore = child.score(-exploration_bias, this);
+					double newscore = child.score(-EXPLORATION_BIAS, this);
 					if (newscore < score) {
 						score = newscore;
 						best = child;
