@@ -91,7 +91,7 @@ public class MyPlayer extends StateMachineGamer {
 	public void switchToNewPropnets(JustKiddingPropNetStateMachine machine,
 			StateMachine[] machines) {
 		switchStateMachine(machine);
-		for (int i = 0; i < N_THREADS; i++) {
+		for (int i = 0; i < machines.length; i++) {
 			machines[i] = copyMachine(machine);
 		}
 	}
@@ -100,7 +100,7 @@ public class MyPlayer extends StateMachineGamer {
 		StateMachine machine = m.getNewMachine();
 		machine.initialize(gameDescription);
 		switchStateMachine(machine);
-		for (int i = 0; i < N_THREADS; i++) {
+		for (int i = 0; i < machines.length; i++) {
 			machines[i] = m.getNewMachine();
 			machines[i].initialize(gameDescription);
 		}

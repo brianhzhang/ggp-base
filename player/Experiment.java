@@ -65,8 +65,9 @@ public class Experiment extends Method {
 	private boolean[] ignoreProps;
 
 	// for weighted depth charge results
-	private static final double OUR_WEIGHT = 0.9;
-	private double oppWeight;
+	private static final double OUR_WEIGHT_FACTOR = 2.;
+	private double totalWeight;
+	private double ourWeight;
 	private Role[] roles;
 	private int ourRoleIndex = -1;
 
@@ -87,8 +88,9 @@ public class Experiment extends Method {
 
 	public Experiment(MyPlayer gamer, List<Gdl> description) {
 		this.player = gamer;
-		machines = new StateMachine[MyPlayer.N_THREADS];
-		for (int i = 0; i < MyPlayer.N_THREADS; i++) {
+		int n_machine = MyPlayer.N_THREADS + 1;
+		machines = new StateMachine[n_machine];
+		for (int i = 0; i < n_machine; i++) {
 			machines[i] = gamer.getStateMachine();
 			machines[i].initialize(description);
 		}
@@ -125,7 +127,7 @@ public class Experiment extends Method {
 
 	});
 
-	private Set<GdlConstant> findClocks(JustKiddingPropNetStateMachine machine) {
+	private Set<GdlConstant> findClocks(long timeout, JustKiddingPropNetStateMachine machine) {
 		// find clock
 		// a clock is
 		Set<GdlConstant> possibleClocks = new HashSet<>();
@@ -136,7 +138,10 @@ public class Experiment extends Method {
 		Map<Pair<GdlConstant, Integer>, GdlSentence> backward = new HashMap<>();
 		double totLegalMoves = 0;
 		double nPly = 0;
-		while (iter < 40 * totLegalMoves / nPly || changing) {
+		timeout = (System.currentTimeMillis() + timeout) / 2;
+		while ((iter < 40 * totLegalMoves / nPly
+				&& System.currentTimeMillis() < timeout)
+				|| changing) {
 			MachineState state = machine.getInitialState();
 			int step = 0;
 			Map<GdlSentence, Integer> oldForward = new HashMap<>(forward);
@@ -209,7 +214,9 @@ public class Experiment extends Method {
 		}
 		Log.println("roles: " + Arrays.toString(roles) + " | our role: " + ourRoleIndex);
 		Log.println("method: " + this.getClass().getCanonicalName());
-		oppWeight = opponents.size() == 0 ? 0 : (1 - OUR_WEIGHT) / opponents.size();
+		ourWeight = opponents.size() * OUR_WEIGHT_FACTOR;
+		totalWeight = ourWeight + opponents.size();
+		Log.println("our weight: " + ourWeight + " / " + totalWeight);
 
 		try {
 			smthread.join(timeout - System.currentTimeMillis());
@@ -238,7 +245,8 @@ public class Experiment extends Method {
 		List<Proposition> bases = smthread.m.props;
 
 		boolean[] ignoreProps = new boolean[bases.size()];
-		Set<GdlConstant> possibleClocks = findClocks((JustKiddingPropNetStateMachine) machine);
+		Set<GdlConstant> possibleClocks = findClocks(timeout,
+				(JustKiddingPropNetStateMachine) machine);
 		if (possibleClocks.size() == 0) Log.println("no clock");
 		else if (possibleClocks.size() > 1)
 			Log.println("too many possible clocks: " + possibleClocks);
@@ -515,24 +523,24 @@ public class Experiment extends Method {
 		Log.println("heuristic max visits: " + heuristicMaxVisits);
 	}
 
-	private int findReward(int[] rewards) {
+	private double findReward(int[] rewards) {
 		if (opponents.size() == 0) return rewards[ourRoleIndex];
-		double reward = OUR_WEIGHT * rewards[ourRoleIndex];
+		double reward = ourWeight * rewards[ourRoleIndex];
 		for (int i = 0; i < roles.length; i++) {
 			if (i == ourRoleIndex) continue;
-			reward += (MyPlayer.MAX_SCORE - rewards[i]) * oppWeight;
+			reward += (MyPlayer.MAX_SCORE - rewards[i]);
 		}
-		return (int) Math.round(reward);
+		return reward / totalWeight;
 	}
 
-	private int findReward(StateMachine machine, Role role, MachineState state) {
+	private double findReward(StateMachine machine, Role role, MachineState state) {
 		try {
 			if (opponents.size() == 0) return machine.findReward(role, state);
-			double reward = OUR_WEIGHT * machine.findReward(role, state);
+			double reward = ourWeight * machine.findReward(role, state);
 			for (Role opp : opponents) {
-				reward += (MyPlayer.MAX_SCORE - machine.findReward(opp, state)) * oppWeight;
+				reward += (MyPlayer.MAX_SCORE - machine.findReward(opp, state));
 			}
-			return (int) Math.round(reward);
+			return reward / totalWeight;
 		} catch (GoalDefinitionException e) {
 			return 0;
 		}
@@ -684,12 +692,13 @@ public class Experiment extends Method {
 		Collections.sort(root.children);
 		for (MTreeNode child : root.children) {
 			Log.printf(
-					"v=(%d, %d) s=(%.1f, %.1f, %.1f) b=(%.0f, %.0f) d=%d %s\n",
+					"v=(%d, %d) s=(%.1f, %.1f, %.1f) b=(%.2f, %.2f) d=%d %s\n",
 					child.visits - MTREENODE_PRIOR_VISITS,
 					child.heuristicVisits - child.visits / depthChargesPerState,
 					child.sum_utility / child.visits, child.heuristic,
 					child.utility(),
-					child.lower, child.upper, child.depth, child.move);
+					child.lower, child.upper,
+					child.depth, child.move);
 		}
 		MTreeNode bestChild = root.children.get(root.children.size() - 1);
 		Log.printf("played=%s visits=%d/%d depth=%d\n",
@@ -1143,8 +1152,7 @@ public class Experiment extends Method {
 			double util = eff_sum / eff_visits;
 			double var = eff_sumsq / eff_visits - util * util;
 
-			eff_visits -= 2;
-			var = c * Math.sqrt(Math.log(parent.visits) / eff_visits * var);
+			var = c * Math.sqrt(Math.log(parent.visits) / (visits - 1) * var);
 			return util + var;
 		}
 
