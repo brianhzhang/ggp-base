@@ -19,6 +19,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.apache.commons.math3.stat.regression.MillerUpdatingRegression;
 import org.apache.commons.math3.stat.regression.RegressionResults;
 import org.apache.commons.math3.stat.regression.SimpleRegression;
@@ -46,7 +47,7 @@ public class Experiment extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	private static final boolean USE_MULTIPLAYER_FACTORING = true;
-	private static final double EXPLORATION_BIAS = 1.0;
+	private double exploration_bias;
 
 	private StateMachine[] machines;
 	private boolean propNetInitialized = false;
@@ -138,7 +139,8 @@ public class Experiment extends Method {
 		Map<Pair<GdlConstant, Integer>, GdlSentence> backward = new HashMap<>();
 		double totLegalMoves = 0;
 		double nPly = 0;
-		timeout = (System.currentTimeMillis() + timeout) / 2;
+
+		timeout = System.currentTimeMillis() + (timeout - System.currentTimeMillis()) / 10;
 		while ((iter < 40 * totLegalMoves / nPly
 				&& System.currentTimeMillis() < timeout)
 				|| changing) {
@@ -203,6 +205,7 @@ public class Experiment extends Method {
 		opponents = new ArrayList<>();
 		heuristics = null;
 		depthChargesPerState = 1;
+		exploration_bias = 1.0;
 
 		StateMachine machine = gamer.getStateMachine();
 		roles = machine.findRoles().toArray(new Role[0]);
@@ -381,14 +384,19 @@ public class Experiment extends Method {
 		private JustKiddingPropNetStateMachine machine;
 		private long timeout;
 		private Role role;
-		public SimpleRegression[] timeCalc = new SimpleRegression[heuristicNames.size()];
+		public SimpleRegression[] goal = new SimpleRegression[1 + heuristicNames.size()];
+		public SummaryStatistics[] control = new SummaryStatistics[1 + heuristicNames.size()];
+		public SummaryStatistics[] variance = new SummaryStatistics[1 + heuristicNames.size()];
+		public SummaryStatistics gameLen = new SummaryStatistics();
 
 		public MetaGameDCThread(StateMachine machine, Role role, long timeout) {
 			this.machine = (JustKiddingPropNetStateMachine) machine;
 			this.role = role;
 			this.timeout = timeout;
-			for (int i = 0; i < timeCalc.length; i++) {
-				timeCalc[i] = new SimpleRegression();
+			for (int i = 0; i < goal.length; i++) {
+				goal[i] = new SimpleRegression();
+				control[i] = new SummaryStatistics();
+				variance[i] = new SummaryStatistics();
 			}
 		}
 
@@ -401,45 +409,72 @@ public class Experiment extends Method {
 			}
 		}
 
+		private double[] getvstate(MachineState state) {
+			PropNetMachineState pstate = (PropNetMachineState) state;
+			int n_heuristic = heuristicNames.size();
+			double[] vstate = new double[1 + n_heuristic];
+			for (int i = 0; i < n_heuristic; i++) {
+				for (int j : heuristicProps.get(i)) {
+					if (pstate.props[j]) vstate[i]++;
+				}
+			}
+			vstate[n_heuristic] = findReward(machine, role, pstate);
+			for (int i = 0; i <= n_heuristic; i++) {
+				vstate[i] += 1e-8 * (Math.random() - 0.5);
+			}
+			return vstate;
+		}
+
 		public void run_() throws MoveDefinitionException, TransitionDefinitionException {
 			MachineState initial = machine.getInitialState();
-			int n_heuristic = heuristicNames.size();
 			while (System.currentTimeMillis() < timeout) {
 				MachineState state = initial;
-				int nstep = 0;
 				List<double[]> states = new ArrayList<>();
 				List<PropNetMachineState> pstates = new ArrayList<>();
-
+				int nstep = 0;
 				while (!machine.isTerminal(state)) {
-					double[] vstate = new double[1 + n_heuristic];
-					if (System.currentTimeMillis() > timeout) return;
-					PropNetMachineState pstate = (PropNetMachineState) state;
-					for (int i = 0; i < n_heuristic; i++) {
-						int icount = 0;
-						for (int j : heuristicProps.get(i)) {
-							if (pstate.props[j]) {
-								vstate[i]++;
-								icount++;
-							}
-						}
-						timeCalc[i].addData(nstep, icount);
-					}
-					vstate[n_heuristic] = findReward(machine, role, state);
-					for (int i = 0; i < vstate.length; i++) {
-						vstate[i] += 1e-8 * (Math.random() - 0.5);
-					}
 					nstep++;
-					state = machine.getRandomNextState(state);
+					if (System.currentTimeMillis() > timeout) return;
+
+					double[] vstate = getvstate(state);
 					states.add(vstate);
-					pstates.add(pstate);
+					pstates.add((PropNetMachineState) state);
+					try {
+						MachineState next = machine.getRandomNextState(state);
+						state = next;
+					} catch (IllegalArgumentException e) {
+						System.out.println("last valid state: " +
+								pstates.get(pstates.size() - 1).pnContents(smthread.m.props));
+						System.out.println("invalid state: " +
+								((PropNetMachineState) state).pnContents(smthread.m.props));
+						throw e;
+					}
 				}
+				gameLen.addValue(nstep);
 				double eval = findReward(machine, role, state);
-				int randomIndex = (int) (Math.random() * pstates.size());
+				int randomIndex = (int) (Math.random() * (pstates.size() - 1));
 				PropNetMachineState randomState = pstates.get(randomIndex);
+
+				MachineState randomNextMS = machine.getRandomNextState(randomState);
+				if (!machine.isTerminal(randomNextMS)) {
+					PropNetMachineState randomNext = (PropNetMachineState) randomNextMS;
+					double[] randomNextV = getvstate(randomNext);
+
+					double[] actualCurV = states.get(randomIndex);
+					double[] actualNextV = states.get(randomIndex + 1);
+					for (int i = 0; i < randomNextV.length; i++) {
+						control[i].addValue(randomNextV[i] - actualNextV[i]);
+						variance[i].addValue(actualCurV[i] - actualNextV[i]);
+					}
+				}
+
 				double randomEval = findReward(machine.internalDC(randomState));
 				synchronized (heuristicRegression) {
 					for (double[] s : states) {
 						heuristicRegression.addObservation(s, eval);
+						for (int i = 0; i < s.length; i++) {
+							goal[i].addData(s[i], eval);
+						}
 					}
 					dcRegression.addData(randomEval, eval);
 				}
@@ -462,6 +497,7 @@ public class Experiment extends Method {
 
 	public void multiPlayerMetaGame(long timeout)
 			throws MoveDefinitionException, TransitionDefinitionException {
+		double HEURISTIC_FACTOR = 32.0;
 		Role role = player.getRole();
 		List<MetaGameDCThread> pool = new ArrayList<>();
 		int n_thread = MyPlayer.N_THREADS;
@@ -481,17 +517,34 @@ public class Experiment extends Method {
 		}
 		List<Integer> canUseHeuristic = new ArrayList<>();
 		canUseHeuristic.add(0);
-		canUseHeuristic.add(1 + heuristicNames.size()); // goal
-		for (int i = 0; i < heuristicNames.size(); i++) {
+		double dcRsq = dcRegression.getRSquare() / HEURISTIC_FACTOR;
+		Log.println("weighted depth charge rsq: " + dcRsq);
+		if (dcRsq == 0) {
+			Log.println("no heuristic");
+			return;
+		}
+		double totalSum = 0;
+		for (int i = 0; i <= heuristicNames.size(); i++) {
 			double sum = 0;
+			double controlDiff = 0;
 			for (MetaGameDCThread thread : pool) {
-				sum += thread.timeCalc[i].getSlope();
+				sum += thread.goal[i].getRSquare() / n_thread / dcRsq;
+				controlDiff += thread.control[i].getVariance();
+				controlDiff -= thread.variance[i].getVariance();
 			}
-			Log.println(heuristicNames.get(i) + " time correlation: " + sum / 4);
-			if (sum < 0) canUseHeuristic.add(i + 1);
+			String name = i == heuristicNames.size() ? "goal" : heuristicNames.get(i);
+			Log.printf("\t%s control: %f, correlation: %f\n", name, controlDiff, sum);
+			if (controlDiff > 1e-4 && Double.isFinite(sum)) {
+				canUseHeuristic.add(i + 1);
+				totalSum += sum;
+			}
 		}
 
 		Log.println("states explored: " + heuristicRegression.getN());
+		if (totalSum < 1) {
+			Log.println("no heuristic");
+			return;
+		}
 
 		int[] canUseArr = new int[canUseHeuristic.size()];
 		for (int i = 0; i < canUseHeuristic.size(); i++) {
@@ -516,10 +569,7 @@ public class Experiment extends Method {
 				Log.printf("\t%s : %.3f\n", heuristicNames.get(i - 1), est);
 			}
 		}
-
-		double dcRsq = dcRegression.getRSquare();
-		Log.println("depth charge rsq: " + dcRsq);
-		heuristicMaxVisits = 1 / dcRsq;
+		heuristicMaxVisits = 1.0 / dcRsq;
 		Log.println("heuristic max visits: " + heuristicMaxVisits);
 	}
 
@@ -904,7 +954,7 @@ public class Experiment extends Method {
 					}
 				}
 				MachineState newstate = mainThreadMachine.findNext(jmove, node.state);
-				if (propNetInitialized) {
+				if (propNetInitialized && USE_MULTIPLAYER_FACTORING) {
 					PropNetMachineState oldstate = (PropNetMachineState) node.state;
 					PropNetMachineState newpstate = (PropNetMachineState) newstate;
 					for (int i = 0; i < ignoreProps.length; i++) {
@@ -1142,9 +1192,7 @@ public class Experiment extends Method {
 
 		// dynamic score: multiplies by standard deviation
 		public double score(double c, MTreeNode parent) {
-			double heuristicEffVisits = (double) visits
-					* parent.heuristicVisits / parent.visits;
-			heuristicEffVisits = Math.min(heuristicEffVisits, heuristicMaxVisits);
+			double heuristicEffVisits = heuristicMaxVisits;
 			double eff_sum = sum_utility + heuristic * heuristicEffVisits;
 			double eff_visits = visits + heuristicEffVisits;
 			double eff_sumsq = sum_sq + 100 * heuristic * heuristicEffVisits;
@@ -1189,7 +1237,7 @@ public class Experiment extends Method {
 				double score = Double.NEGATIVE_INFINITY;
 				for (MTreeNode child : children) {
 					if (child.isProven()) continue;
-					double newscore = child.score(EXPLORATION_BIAS, this);
+					double newscore = child.score(exploration_bias, this);
 					if (newscore > score) {
 						score = newscore;
 						best = child;
@@ -1204,7 +1252,7 @@ public class Experiment extends Method {
 				double score = Double.POSITIVE_INFINITY;
 				for (MTreeNode child : children) {
 					if (child.isProven()) continue;
-					double newscore = child.score(-EXPLORATION_BIAS, this);
+					double newscore = child.score(-exploration_bias, this);
 					if (newscore < score) {
 						score = newscore;
 						best = child;
@@ -1330,11 +1378,40 @@ public class Experiment extends Method {
 			Map<String, Integer> heuristicMap = new HashMap<>();
 			heuristicProps = new ArrayList<>();
 			heuristicNames = new ArrayList<>();
-			// find heurisitics
+			// find heuristics
+
+			Map<GdlTerm, Map<Integer, Set<GdlTerm>>> cardinality = new HashMap<>();
 			for (int i = 0; i < m.props.size(); i++) {
 				GdlSentence base = m.props.get(i).getName().get(0).toSentence();
-				if (base.arity() != 3) continue;
-				String name = base.getBody().subList(2, base.arity()).toString();
+				for (int j = 0; j < base.arity(); j++) {
+					GdlTerm bkey = base.getName();
+					cardinality.putIfAbsent(bkey, new HashMap<>());
+					Map<Integer, Set<GdlTerm>> bmap = cardinality.get(bkey);
+					bmap.putIfAbsent(j, new HashSet<>());
+					bmap.get(j).add(base.get(j));
+				}
+			}
+			Map<GdlTerm, Integer> bestIndices = new HashMap<>();
+			for (int i = 0; i < m.props.size(); i++) {
+				GdlSentence base = m.props.get(i).getName().get(0).toSentence();
+				int bestsize = Integer.MAX_VALUE;
+				int bestj = -1;
+				Map<Integer, Set<GdlTerm>> bmap = cardinality.get(base.getName());
+				for (int j = 0; j < base.arity(); j++) {
+					int thissize = bmap.get(j).size();
+					if (thissize < bestsize) {
+						bestsize = thissize;
+						bestj = j;
+					}
+				}
+				if (bestsize > 3) continue;
+				bestIndices.put(base.getName(), bestj);
+			}
+			for (int i = 0; i < m.props.size(); i++) {
+				GdlSentence base = m.props.get(i).getName().get(0).toSentence();
+				if (!bestIndices.containsKey(base.getName())) continue;
+				int j = bestIndices.get(base.getName());
+				String name = Arrays.asList(base.getName(), base.get(j)).toString();
 				if (!heuristicMap.containsKey(name)) {
 					heuristicMap.put(name, heuristicProps.size());
 					heuristicNames.add(name);

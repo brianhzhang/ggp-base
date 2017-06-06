@@ -2,10 +2,8 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
 
@@ -92,19 +90,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 	}
 
-	private void findComponentsBackwards(Component current, Set<Component> visited) {
-		Queue<Component> queue = new LinkedList<>();
-		queue.add(current);
-		while (!queue.isEmpty()) {
-			current = queue.poll();
-			if (visited.contains(current)) continue;
-			visited.add(current);
-			for (Component parent : current.getInputs()) {
-				queue.offer(parent);
-			}
-		}
-	}
-
 	private boolean isCyclic(PropNet p) {
 		Set<Component> visited = new HashSet<>();
 		Set<Component> stackSet = new HashSet<>();
@@ -128,7 +113,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		return false;
 	}
 
-	private void sanitizeRule(Gdl gdl, List<Gdl> in, List<Gdl> out) {
+	private void sanitizeDistinctHelper(Gdl gdl, List<Gdl> in, List<Gdl> out) {
 		if (!(gdl instanceof GdlRule)) {
 			out.add(gdl);
 			return;
@@ -160,105 +145,42 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 		for (GdlLiteral lit : rule.getBody()) {
 			if (lit instanceof GdlDistinct) {
-				System.out.println("distinct rule added: " + rule);
+				Log.println("distinct rule added: " + rule);
 				break;
 			}
 		}
 		out.add(rule);
 	}
 
-	private List<Gdl> fix(List<Gdl> description) {
+	private List<Gdl> sanitizeDistinct(List<Gdl> description) {
 		List<Gdl> out = new ArrayList<>();
 		for (int i = 0; i < description.size(); i++) {
-			sanitizeRule(description.get(i), description, out);
+			sanitizeDistinctHelper(description.get(i), description, out);
 		}
 		return out;
-	}
-
-	private void optimizePropnet() {
-		int oldSize = 0;
-		for (int round = 1; oldSize != p.getSize(); round++) {
-			oldSize = p.getSize();
-
-			Log.println("optimizing propnet: round " + round);
-			Set<Component> critical = new HashSet<>();
-			critical.add(p.getTerminalProposition());
-			critical.addAll(p.getInputPropositions().values());
-			for (Role role : p.getRoles()) {
-				critical.addAll(p.getGoalPropositions().get(role));
-				critical.addAll(p.getLegalPropositions().get(role));
-			}
-			Set<Component> important = new HashSet<>();
-			for (Component comp : critical) {
-				findComponentsBackwards(comp, important);
-			}
-			Set<Component> unimportant = new HashSet<>(p.getComponents());
-			unimportant.removeAll(important);
-			for (Component comp : unimportant) {
-				p.removeComponent(comp);
-			}
-			Log.println("\ttrimmed " + unimportant.size() + " irrelevant comps");
-
-			// removing single-input components
-			// i.e. are anything that has one input (i.e. anon, view props)
-			// exceptions: NOT, TRANSITION, CONSTANT, and non-view propositions.
-
-			critical.addAll(p.getBasePropositions().values());
-			critical.add(p.getInitProposition());
-
-			int ntrimmed = 0;
-			Set<Component> compsCopy = new HashSet<>(p.getComponents());
-			for (Component c : compsCopy) {
-				if (c instanceof Not) continue;
-				if (c instanceof Transition) continue;
-				if (c instanceof Constant) continue;
-				if (critical.contains(c)) continue;
-				if (c.getInputs().size() != 1) continue;
-				Component in = c.getSingleInput();
-				for (Component out : c.getOutputs()) {
-					in.addOutput(out);
-					out.addInput(in);
-				}
-				p.removeComponent(c);
-				ntrimmed++;
-			}
-			Log.println("\ttrimmed " + ntrimmed + " single-input comps");
-
-			// if two components have the same inputs and are the same type,
-			// then we can condense them
-			compsCopy = new HashSet<>(p.getComponents());
-			ntrimmed = 0;
-			Map<Set<Component>, List<Component>> inputMaps = new HashMap<>();
-			for (Component c : compsCopy) {
-				if (c instanceof Transition) continue;
-				if (c instanceof Constant) continue;
-				if (critical.contains(c)) continue;
-				if (!inputMaps.containsKey(c.getInputs())) {
-					inputMaps.put(c.getInputs(), new ArrayList<>());
-				}
-				List<Component> possibles = inputMaps.get(c.getInputs());
-				if (condenseDuplicates(c, possibles)) ntrimmed++;
-			}
-
-			Log.println("\tmerged " + ntrimmed + " duplicate comps");
-
-			Log.println("\tcomps remaining: " + p.getSize());
-			Log.println("\tbase props remaining: " + p.getBasePropositions().size());
-		}
 	}
 
 	protected void setPropNet(List<Gdl> description) throws InterruptedException {
 
 		long start = System.currentTimeMillis();
 		long time = 0;
-		description = fix(description);
+		description = sanitizeDistinct(description);
 		p = OptimizingPropNetFactory.create(description, false);
 		time = System.currentTimeMillis() - start;
 		Log.println("propnet factory finished in " + time + " ms.");
 		Log.println("number of comps: " + p.getSize());
-		Log.println("number of base props: " + p.getBasePropositions().size());
+		Log.println("number of links: " + p.getNumLinks());
+		Log.println("number of props: " + p.getPropositions().size());
+		Log.println("number of bases: " + p.getBasePropositions().size());
 		// trim unnecessary propositions
-		optimizePropnet();
+
+		try {
+			PropNetOptimizer.optimizePropnet(p);
+		} catch (InstantiationException | IllegalAccessException e) {
+			e.printStackTrace();
+		}
+		p.renderToFile("graph.dot");
+
 		// cycle detection
 		use_propnet_reset = isCyclic(p);
 		if (use_propnet_reset) {
@@ -269,21 +191,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 		time = System.currentTimeMillis() - start;
 		Log.println("propnet created in " + time + " ms");
-	}
-
-	public boolean condenseDuplicates(Component c, List<Component> possibles) {
-		for (Component poss : possibles) {
-			if (!c.getClass().equals(poss.getClass())) continue;
-			for (Component next : c.getOutputs()) {
-				poss.addOutput(next);
-				next.addInput(poss);
-			}
-			p.removeComponent(c);
-			return true;
-		}
-		// failed
-		possibles.add(c);
-		return false;
 	}
 
 	@Override

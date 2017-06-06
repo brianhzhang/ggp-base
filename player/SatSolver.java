@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
 import java.util.concurrent.BlockingQueue;
+import java.util.stream.Collectors;
 
 import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
@@ -146,43 +147,18 @@ public class SatSolver extends Solver {
 				solver.not(key, compMap.get(comp.getSingleInput()));
 				solver.not(nkey, nextCompMap.get(comp.getSingleInput()));
 			} else if (comp instanceof And || comp instanceof Or) {
-				Set<Component> ands = new HashSet<>();
-				Set<Component> ors = new HashSet<>();
-				if (isOredDoesesInDisguise(comp, ands, ors)) {
-					VecInt andvec = new VecInt();
-					for (Component and : ands) {
-						andvec.push(compMap.get(and));
-					}
-					Set<Component> otherMoves = new HashSet<>(ourInputs);
-					otherMoves.removeAll(ors);
-					for (Component move : otherMoves) {
-						andvec.push(-compMap.get(move));
-					}
-					solver.and(key, andvec);
-					continue;
-				}
-				boolean isAnd = comp instanceof And;
 				Set<Component> inputComps = comp.getInputs();
 				VecInt vec = new VecInt(inputComps.size());
 				VecInt nvec = new VecInt(inputComps.size());
-				if (isAllDoes(comp)) {
-					Set<Component> otherMoves = new HashSet<>(ourInputs);
-					otherMoves.removeAll(inputComps);
-					for (Component in : otherMoves) {
-						vec.push(-compMap.get(in));
-						nvec.push(-nextCompMap.get(in));
-					}
-					isAnd = true;
-				} else {
-					for (Component in : inputComps) {
-						vec.push(compMap.get(in));
-						nvec.push(nextCompMap.get(in));
-					}
+				for (Component in : inputComps) {
+					vec.push(compMap.get(in));
+					nvec.push(nextCompMap.get(in));
 				}
-				if (isAnd) {
+				if (comp instanceof And) {
 					solver.and(key, vec);
 					solver.and(nkey, nvec);
 				} else {
+//					printComponent(comp, "");
 					solver.or(key, vec);
 					solver.or(nkey, nvec);
 				}
@@ -261,7 +237,9 @@ public class SatSolver extends Solver {
 
 	private void printComponent(Component component, String indent) {
 		if (component instanceof Transition) return;
-		System.out.println(indent + getName(component));
+		System.out.println(
+				indent + getName(component) + component.getOutputs().stream().map(this::getName)
+						.collect(Collectors.toList()));
 		indent += " ";
 		for (Component inp : component.getInputs()) {
 			printComponent(inp, indent);
@@ -278,39 +256,6 @@ public class SatSolver extends Solver {
 			output.add(move);
 		}
 		return machine.isTerminal(state) && machine.findReward(role, state) == MyPlayer.MAX_SCORE;
-	}
-
-	private boolean isOredDoesesInDisguise(Component root, Set<Component> andOut,
-			Set<Component> orOut) {
-		if (!(root instanceof Or)) return false;
-		boolean foundAndClause = false;
-		for (Component child : root.getInputs()) {
-			child = sanitize(child);
-			if (!(child instanceof And)) return false;
-			Set<Component> inputs = new HashSet<>();
-			for (Component child2 : child.getInputs()) {
-				child2 = sanitize(child2);
-				if (isAllDoes(child2)) {
-					for (Component does : child2.getInputs()) {
-						orOut.add(does);
-					}
-				} else if (isDoes(child2)) {
-					orOut.add(child2);
-				} else inputs.add(child2);
-			}
-			if (foundAndClause && !inputs.equals(andOut)) return false;
-			andOut.addAll(inputs);
-		}
-		return true;
-	}
-
-	private Component sanitize(Component root) {
-		while (!(root instanceof Not) && root.getInputs().size() == 1) {
-			Component next = root.getSingleInput();
-			if (next instanceof Transition) return root;
-			root = root.getSingleInput();
-		}
-		return root;
 	}
 
 	private Set<Proposition> toProps(int[] model, List<Component> compList,
@@ -349,19 +294,5 @@ public class SatSolver extends Solver {
 
 	private boolean impliesIllegal(Component legal, Component does) {
 		return backpropagate(legal, does, false, false);
-	}
-
-	private boolean isDoes(Component in) {
-		if (!(in instanceof Proposition)) return false;
-		if (!(((Proposition) in).getName().getName().toString().equals("does"))) return false;
-		return true;
-	}
-
-	private boolean isAllDoes(Component comp) {
-		if (!(comp instanceof Or)) return false;
-		for (Component in : comp.getInputs()) {
-			if (!isDoes(in)) return false;
-		}
-		return true;
 	}
 }

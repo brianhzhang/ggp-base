@@ -112,7 +112,6 @@ public class MyPlayer extends StateMachineGamer {
 		Log.setFile(getMatch().getMatchId() + "_" + getRole());
 		Log.println("");
 		gameDescription = ((GDLGetter) getStateMachine()).getDescription();
-
 		StateMachine m = new CachedStateMachine(new ProverStateMachine());
 		m.initialize(gameDescription);
 		switchStateMachine(m);
@@ -134,6 +133,7 @@ public class MyPlayer extends StateMachineGamer {
 		MachineState state = getCurrentState();
 		Role role = getRole();
 		List<Move> moves = machine.findLegals(role, state);
+		System.out.println("most recent move: " + getMatch().getMostRecentMoves());
 
 		/** legal player **/
 		// legal player #1: 8432
