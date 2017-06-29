@@ -1,5 +1,5 @@
 /bin
-/logs/
+/logs/*
 /ggp-base.jar
 /Logs/
 /Game-Logs.txt
