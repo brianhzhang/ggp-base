@@ -33,6 +33,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int HEURISTIC = 4;
 	public static final int MONTECARLO = 5;
 	public static final int MCTS = 6;
+	public static final int ML = 7;
 
 	public static final int N_OPTIONS = 10;
 	public static final int TIMEOUT_BUFFER = 2500; // time for network
@@ -40,9 +41,9 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int N_THREADS = 4;
 
 	public static final PrintWriter gamelog = getGameLog();
-	public static int method = EXPERIMENTAL;
+	public static int method = ML;
 	private Method player;
-	List<Gdl> gameDescription;
+	public List<Gdl> gameDescription;
 
 	private static PrintWriter getGameLog() {
 		try {
@@ -122,6 +123,7 @@ public class MyPlayer extends StateMachineGamer {
 		if (method == MONTECARLO) player = new MonteCarlo();
 		if (method == MCTS) player = new MCTS(this, gameDescription);
 		if (method == EXPERIMENTAL) player = new Experiment(this, gameDescription);
+		if (method == ML) player = new MLExperiment();
 		player.metaGame(this, timeout - TIMEOUT_BUFFER);
 		return;
 	}
