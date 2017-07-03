@@ -125,7 +125,7 @@ public abstract class StateMachineGamer extends Gamer
      *
      * @param newStateMachine the new state machine
      */
-    protected final void switchStateMachine(StateMachine newStateMachine) {
+    public final void switchStateMachine(StateMachine newStateMachine) {
         try {
             MachineState newCurrentState = newStateMachine.getInitialState();
             Role newRole = newStateMachine.getRoleFromConstant(getRoleName());
