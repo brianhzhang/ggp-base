@@ -269,7 +269,7 @@ public abstract class StateMachineGamer extends Gamer
     }
 
     // Internal state about the current state of the state machine.
-    private Role role;
-    private MachineState currentState;
-    private StateMachine stateMachine;
+    public Role role;
+    public MachineState currentState;
+    public StateMachine stateMachine;
 }

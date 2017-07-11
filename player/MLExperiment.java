@@ -33,7 +33,7 @@ public class MLExperiment extends Method {
 	private int nNodes;
 	private int nCacheHits;
 
-	YeahWasntTheLastOnePropNetStateMachine machine;
+	JustKiddingPropNetStateMachine machine;
 	static Jep jep;
 	boolean usingJep = true;
 
@@ -50,9 +50,11 @@ public class MLExperiment extends Method {
 		gen = new Random();
 		
 		this.gamer = (MyPlayer) gamer;
-		machine = new YeahWasntTheLastOnePropNetStateMachine();
+		machine = new JustKiddingPropNetStateMachine();
 		machine.initialize(this.gamer.gameDescription);
-		gamer.switchStateMachine(machine);
+		gamer.role = gamer.getRole();
+		gamer.currentState = machine.getInitialState();
+		gamer.stateMachine = machine;
 		Log.println("propnets initialized");
 		try {
 			if (jep == null) {
@@ -78,7 +80,7 @@ public class MLExperiment extends Method {
 			System.exit(0);
 		}
 		PropNetMachineState init = (PropNetMachineState) machine.getInitialState();
-		for(int i = 0; timeout - System.currentTimeMillis() > MyPlayer.TIMEOUT_BUFFER; i ++) {
+		for(int i = 0; timeout - System.currentTimeMillis() > MyPlayer.TIMEOUT_BUFFER * 2; i ++) {
 			try {
 				trainOnce(init, i);
 			} catch (TransitionDefinitionException | MoveDefinitionException | GoalDefinitionException e) {
@@ -124,6 +126,8 @@ public class MLExperiment extends Method {
 	public Move run(StateMachine machine, MachineState state, Role role, List<Move> moves, long timeout)
 			throws GoalDefinitionException, MoveDefinitionException, TransitionDefinitionException {
 		Log.println("--------------------");
+		System.out.println(state.getClass());
+		System.out.println(machine.getClass());
 		moves = new ArrayList<>(moves);
 		Collections.shuffle(moves);
 		Move bestMove = moves.get(0);
@@ -173,7 +177,8 @@ public class MLExperiment extends Method {
 					TransitionDefinitionException {
 		if (System.currentTimeMillis() > timeout) return FAIL;
 		nNodes++;
-		if (machine.isTerminal(state)) return machine.findReward(role, state);
+		if (machine.isTerminal(state)) {
+			return machine.findReward(role, state);}
 		HCacheEnt cacheEnt = cache.get(state);
 		if (cacheEnt != null && cacheEnt.depth >= level) {
 			nCacheHits++;
@@ -188,7 +193,8 @@ public class MLExperiment extends Method {
 			//xxxxxxx NOTE TO LATER, THIS IS THE MAIN DIFFERENCE FROM HEURISTIC PLAYER
 			double heuristic = 0;
 			try {
-				heuristic += (Double) jep.invoke("test", ((PropNetMachineState) state).props);
+//				heuristic += 100 * gen.nextDouble();
+				heuristic += Math.max(1, Math.min(99, (Double) jep.invoke("test", ((PropNetMachineState) state).props)));
 			} catch (JepException e) {
 				e.printStackTrace();
 			}
@@ -230,6 +236,7 @@ public class MLExperiment extends Method {
 		}
 		return beta;
 	}
+	
 
 	@Override
 	public void cleanUp() {

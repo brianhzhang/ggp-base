@@ -23,6 +23,7 @@ def make(inputsize, hiddensize):
 		out = tf.nn.relu(out)
 	out = tf.layers.dense(out, 1)
 	out = tf.reshape(out, [-1])
+	# out = tf.multiply(tf.sigmoid(out), 100)
 	model = out
 
 def mean():
@@ -33,7 +34,7 @@ def mean():
 def opt():
 	global mean_loss
 	global train_step
-	optimizer = tf.train.AdamOptimizer()
+	optimizer = tf.train.AdamOptimizer(0.01)
 	extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 	with tf.control_dependencies(extra_update_ops):
 		train_step = optimizer.minimize(mean_loss, tf.Variable(0.0, trainable = False))
@@ -61,5 +62,5 @@ def test(X_test):
 	feed_dict = {X: np.array([X_test]),
 				 y: np.zeros(X[0].shape)}
 	result = sess.run([model], feed_dict)
-	System.out.println(result[0][0])
+	# System.out.println(result[0][0])
 	return result[0][0]
