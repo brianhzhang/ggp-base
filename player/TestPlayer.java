@@ -37,7 +37,7 @@ public class TestPlayer extends StateMachineGamer {
 		prop = new JustKiddingPropNetStateMachine();
 		prover.initialize(((GDLGetter) getStateMachine()).getDescription());
 		prop.initialize(((GDLGetter) getStateMachine()).getDescription());
-		int total = 0;
+//		int total = 0;
 
 		MachineState state = prover.getInitialState();
 		// System.out.println(prop.getInitialState());
@@ -55,7 +55,7 @@ public class TestPlayer extends StateMachineGamer {
 		// System.out.println("Prover: " + Arrays.toString(((PropNetMachineState)state).props));
 		// }
 		while (!prover.isTerminal(state)) {
-			total++;
+//			total++;
 			// if (total > 7) break;
 			List<Move> moves = prover.getRandomJointMove(state);
 			List<Move> legals = prover.getLegalMoves(state, getRole());

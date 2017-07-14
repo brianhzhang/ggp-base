@@ -213,12 +213,12 @@ public class PropNetOptimizer {
 		return ntrimmed;
 	}
 
-	private static String getName(Component comp) {
-		String toParse = comp.toString();
-		int start = toParse.indexOf("label=\"") + 7;
-		int end = toParse.indexOf("\"", start);
-		return toParse.substring(start, end);
-	}
+//	private static String getName(Component comp) {
+//		String toParse = comp.toString();
+//		int start = toParse.indexOf("label=\"") + 7;
+//		int end = toParse.indexOf("\"", start);
+//		return toParse.substring(start, end);
+//	}
 
 	private static Map<String, Set<Component>> createInputMap(PropNet p, Set<Component> inputs) {
 		Map<String, Set<Component>> inMap = new HashMap<>();

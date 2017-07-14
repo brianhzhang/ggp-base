@@ -6,8 +6,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
 import java.util.concurrent.BlockingQueue;
-import java.util.stream.Collectors;
-
 import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.PropNet;
@@ -228,23 +226,23 @@ public class SatSolver extends Solver {
 		}
 	}
 
-	private String getName(Component comp) {
-		String toParse = comp.toString();
-		int start = toParse.indexOf("label=\"") + 7;
-		int end = toParse.indexOf("\"", start);
-		return toParse.substring(start, end);
-	}
+//	private String getName(Component comp) {
+//		String toParse = comp.toString();
+//		int start = toParse.indexOf("label=\"") + 7;
+//		int end = toParse.indexOf("\"", start);
+//		return toParse.substring(start, end);
+//	}
 
-	private void printComponent(Component component, String indent) {
-		if (component instanceof Transition) return;
-		System.out.println(
-				indent + getName(component) + component.getOutputs().stream().map(this::getName)
-						.collect(Collectors.toList()));
-		indent += " ";
-		for (Component inp : component.getInputs()) {
-			printComponent(inp, indent);
-		}
-	}
+//	private void printComponent(Component component, String indent) {
+//		if (component instanceof Transition) return;
+//		System.out.println(
+//				indent + getName(component) + component.getOutputs().stream().map(this::getName)
+//						.collect(Collectors.toList()));
+//		indent += " ";
+//		for (Component inp : component.getInputs()) {
+//			printComponent(inp, indent);
+//		}
+//	}
 
 	private boolean checkSolution(Set<Proposition> moves, List<Move> output)
 			throws GoalDefinitionException, MoveDefinitionException, TransitionDefinitionException {

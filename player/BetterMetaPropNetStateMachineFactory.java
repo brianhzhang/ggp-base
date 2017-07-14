@@ -1,17 +1,10 @@
-import java.io.IOException;
-import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -27,16 +20,12 @@ import org.ggp.base.util.gdl.grammar.GdlRelation;
 import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.PropNet;
-import org.ggp.base.util.propnet.architecture.components.And;
 import org.ggp.base.util.propnet.architecture.components.Constant;
 import org.ggp.base.util.propnet.architecture.components.Not;
-import org.ggp.base.util.propnet.architecture.components.Or;
 import org.ggp.base.util.propnet.architecture.components.Proposition;
-import org.ggp.base.util.propnet.architecture.components.Transition;
 import org.ggp.base.util.propnet.factory.OptimizingPropNetFactory;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
-import org.ggp.base.util.statemachine.implementation.prover.query.ProverQueryBuilder;
 
 public class BetterMetaPropNetStateMachineFactory {
 	List<Proposition> bases;
@@ -213,19 +202,19 @@ public class BetterMetaPropNetStateMachineFactory {
 		}
 	}
 
-	private String createComponent(Component c) {
-		if (c instanceof Or) {
-			return "0x7FFFFFFF";
-		} else if (c instanceof And) {
-			return "0x" + Integer.toString(0x80000000 - c.getInputs().size(), 16).toUpperCase();
-		} else if (c instanceof Not) {
-			return "0xFFFFFFFF";
-		} else if (c instanceof Transition) {
-			return "0x7FFFFFFF";
-		} else { //  instanceof Constant
-			return (c.getValue()) ? "0xF0000000" : "0x0F000000";
-		}
-	}
+//	private String createComponent(Component c) {
+//		if (c instanceof Or) {
+//			return "0x7FFFFFFF";
+//		} else if (c instanceof And) {
+//			return "0x" + Integer.toString(0x80000000 - c.getInputs().size(), 16).toUpperCase();
+//		} else if (c instanceof Not) {
+//			return "0xFFFFFFFF";
+//		} else if (c instanceof Transition) {
+//			return "0x7FFFFFFF";
+//		} else { //  instanceof Constant
+//			return (c.getValue()) ? "0xF0000000" : "0x0F000000";
+//		}
+//	}
 
 	//boolean terminal(boolean[] bases)
 	private void createTerminal(StringBuilder file, PropNet p) {

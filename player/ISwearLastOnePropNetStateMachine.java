@@ -1,7 +1,5 @@
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -9,7 +7,6 @@ import java.util.Set;
 import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.gdl.grammar.GdlConstant;
 import org.ggp.base.util.gdl.grammar.GdlRelation;
-import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.PropNet;
 import org.ggp.base.util.propnet.architecture.components.And;
@@ -25,7 +22,6 @@ import org.ggp.base.util.statemachine.StateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
-import org.python.core.packagecache.SysPackageManager;
 
 public class ISwearLastOnePropNetStateMachine extends StateMachine {
 
@@ -175,33 +171,33 @@ public class ISwearLastOnePropNetStateMachine extends StateMachine {
 		//		System.out.println(Arrays.toString(structure));
 	}
 
-	private void optimizePropNet(List<Component> comps, PropNet p) {
-		List<Component> toremove = new ArrayList<Component>();
-		for (Component c : comps) {
-			if (c instanceof Proposition && !c.equals(p.getInitProposition()) && !c.equals(p.getTerminalProposition()) &&
-					!p.getGoalPropositions().containsValue(c)) {
-				if (!(p.getBasePropositions().values().contains(c) || p.getLegalPropositions().values().contains(c) ||
-						p.getInputPropositions().values().contains(c) || p.getGoalPropositions().values().contains(c))) {
-					for (Component before : c.getInputs()) {
-						before.getOutputs().addAll(c.getOutputs());
-						before.removeOutput(c);
-					}
-					toremove.add(c);
-				}
-			} else if (c instanceof Not) {
-				if (c.getInputs().size() == 1 && c.getSingleInput().getOutputs().size() == 1) {
-					if (c.getSingleInput() instanceof And) {
-						((And)c.getSingleInput()).nand = true;
-						toremove.add(c);
-					} else if (c.getSingleInput() instanceof Or) {
-						((Or)c.getSingleInput()).nor = true;
-						toremove.add(c);
-					}
-				}
-			}
-		}
-		comps.removeAll(toremove);
-	}
+//	private void optimizePropNet(List<Component> comps, PropNet p) {
+//		List<Component> toremove = new ArrayList<Component>();
+//		for (Component c : comps) {
+//			if (c instanceof Proposition && !c.equals(p.getInitProposition()) && !c.equals(p.getTerminalProposition()) &&
+//					!p.getGoalPropositions().containsValue(c)) {
+//				if (!(p.getBasePropositions().values().contains(c) || p.getLegalPropositions().values().contains(c) ||
+//						p.getInputPropositions().values().contains(c) || p.getGoalPropositions().values().contains(c))) {
+//					for (Component before : c.getInputs()) {
+//						before.getOutputs().addAll(c.getOutputs());
+//						before.removeOutput(c);
+//					}
+//					toremove.add(c);
+//				}
+//			} else if (c instanceof Not) {
+//				if (c.getInputs().size() == 1 && c.getSingleInput().getOutputs().size() == 1) {
+//					if (c.getSingleInput() instanceof And) {
+//						((And)c.getSingleInput()).nand = true;
+//						toremove.add(c);
+//					} else if (c.getSingleInput() instanceof Or) {
+//						((Or)c.getSingleInput()).nor = true;
+//						toremove.add(c);
+//					}
+//				}
+//			}
+//		}
+//		comps.removeAll(toremove);
+//	}
 
 	private List<Move> propToMoves(Set<Proposition> set, boolean any) {
 		List<Move> moves = new ArrayList<Move>(set.size());

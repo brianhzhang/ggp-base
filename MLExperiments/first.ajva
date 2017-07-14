@@ -9,8 +9,11 @@ import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 
-public class MLExperiment extends Method {
+import jep.Jep;
+import jep.JepException;
 
+public class MLExperiment extends Method {
+	
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 	public static final int MIN_HEURISTIC = MyPlayer.MIN_SCORE + 1;
 	public static final int MAX_HEURISTIC = MyPlayer.MAX_SCORE - 1;
@@ -31,31 +34,51 @@ public class MLExperiment extends Method {
 	private int nCacheHits;
 
 	JustKiddingPropNetStateMachine machine;
-	AYearLaterMachineLearningPropNet pileOfML;
+	static Jep jep;
+	boolean usingJep = true;
 
 	MyPlayer gamer;
 	int[] modelShape = {150, 150, 150};
 	double loss = 0;
 	int losscount = 0;
-
+	
 	Random gen;
 
 	@Override
 	public void metaGame(StateMachineGamer gamer, long timeout) {
 		cache = new HashMap<MachineState, HCacheEnt>();
 		gen = new Random();
-
+		
 		this.gamer = (MyPlayer) gamer;
 		machine = new JustKiddingPropNetStateMachine();
 		machine.initialize(this.gamer.gameDescription);
-		pileOfML = new AYearLaterMachineLearningPropNet();
-		pileOfML.initialize(machine.p);
 		gamer.role = gamer.getRole();
 		gamer.currentState = machine.getInitialState();
 		gamer.stateMachine = machine;
-
+		Log.println("propnets initialized");
+		try {
+			if (jep == null) {
+				jep = new Jep(false);
+				jep.runScript("player/MLTest.py");
+			}
+			jep.invoke("make", machine.p.getBasePropositions().size(), modelShape);
+			Log.println("machine learning model initialized");
+		} catch (JepException e) {
+			Log.println("python unable to be initialized");
+			usingJep = false;
+			e.printStackTrace();
+		}
 		int count = 0;
 		Log.println("begin random exploration");
+		try {
+			jep.eval("sess = tf.Session()");
+			jep.invoke("mean");
+			jep.invoke("opt");
+			jep.invoke("init");
+		} catch (JepException e) {
+			e.printStackTrace();
+			System.exit(0);
+		}
 		PropNetMachineState init = (PropNetMachineState) machine.getInitialState();
 		for(int i = 0; timeout - System.currentTimeMillis() > MyPlayer.TIMEOUT_BUFFER * 2; i ++) {
 			try {
@@ -65,24 +88,37 @@ public class MLExperiment extends Method {
 			}
 			count ++;
 		}
-		Log.println(count + " games explored");
+		Log.println(count * 50 + " games explored");
 	}
 
 	private void trainOnce(PropNetMachineState init, int count)
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
-		ArrayList<PropNetMachineState> states = new ArrayList<PropNetMachineState>();
-		PropNetMachineState current = init;
-		while (!machine.isTerminal(current)) {
-			current = (PropNetMachineState) machine.getNextState(current, machine.getRandomJointMove(current));
-			states.add(current);
+		int[] data = new int[50 * init.props.length];
+		int[] results = new int[50];
+		for (int i = 0; i < 50; i ++) {
+			ArrayList<boolean[]> states = new ArrayList<boolean[]>();
+			PropNetMachineState current = init;
+			while (!machine.isTerminal(current)) {
+				current = (PropNetMachineState) machine.getNextState(current, machine.getRandomJointMove(current));
+				states.add(current.props);
+			}
+			boolean[] chosen = states.get(gen.nextInt(states.size()));
+			for (int j = 0; j < init.props.length; j ++) {
+				data[j + init.props.length * i] = chosen[j] ? 1 : 0;
+			}
+			results[i] = machine.getGoal(current, gamer.getRole());
 		}
-		double[] results = machine.getAllGoals(current);
-		loss += pileOfML.trainOnce(states.get(gen.nextInt(states.size())), machine, results);
-		losscount ++;
-		if ((count + 1) % 1000 == 0) {
-			Log.println("loss: " + (loss/losscount));
-			losscount = 0;
-			loss = 0;
+		try {
+			loss += Double.parseDouble((String) jep.invoke("train", data, results));
+			losscount ++;
+			if ((count + 1) % 1000 == 0) {
+				Log.println("loss: " + (loss/losscount));
+				losscount = 0;
+				loss = 0;
+			}
+		} catch (JepException e) {
+			e.printStackTrace();
+			System.exit(0);
 		}
 	}
 
@@ -135,10 +171,10 @@ public class MLExperiment extends Method {
 				bestScore, level, nNodes, nCacheHits, cache.size());
 		return bestMove;
 	}
-
+	
 	private double maxscore(StateMachine machine, MachineState state, Role role, double alpha, double beta,
 			int level, long timeout) throws GoalDefinitionException, MoveDefinitionException,
-	TransitionDefinitionException {
+					TransitionDefinitionException {
 		if (System.currentTimeMillis() > timeout) return FAIL;
 		nNodes++;
 		if (machine.isTerminal(state)) {
@@ -156,8 +192,12 @@ public class MLExperiment extends Method {
 		if (level <= 0) {
 			//xxxxxxx NOTE TO LATER, THIS IS THE MAIN DIFFERENCE FROM HEURISTIC PLAYER
 			double heuristic = 0;
-			heuristic += pileOfML.forwardPass((PropNetMachineState) state,
-					(JustKiddingPropNetStateMachine) machine)[machine.getRoles().indexOf(gamer.getRole())];
+			try {
+//				heuristic += 100 * gen.nextDouble();
+				heuristic += Math.max(1, Math.min(99, (Double) jep.invoke("test", ((PropNetMachineState) state).props)));
+			} catch (JepException e) {
+				e.printStackTrace();
+			}
 			heuristicUsed = true;
 			return heuristic;
 		}
@@ -184,7 +224,7 @@ public class MLExperiment extends Method {
 	// as seen in notes ch 6
 	private double minscore(StateMachine machine, MachineState state, Role role, Move move, double alpha,
 			double beta, int level, long timeout) throws GoalDefinitionException,
-	MoveDefinitionException, TransitionDefinitionException {
+					MoveDefinitionException, TransitionDefinitionException {
 		if (System.currentTimeMillis() > timeout) return FAIL;
 		// use joint moves so that we can deal with n-player games; n != 2
 		for (List<Move> jmove : machine.getLegalJointMoves(state, role, move)) {
@@ -196,13 +236,13 @@ public class MLExperiment extends Method {
 		}
 		return beta;
 	}
-
+	
 
 	@Override
 	public void cleanUp() {
 		//		jep.close();
 	}
-
+	
 	private class HCacheEnt {
 		public double lower = MyPlayer.MIN_SCORE;
 		public double upper = MyPlayer.MAX_SCORE;

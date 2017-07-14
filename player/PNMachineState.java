@@ -1,8 +1,4 @@
 import java.util.BitSet;
-import java.util.HashSet;
-import java.util.Set;
-
-import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.statemachine.MachineState;
 
 public class PNMachineState extends MachineState {

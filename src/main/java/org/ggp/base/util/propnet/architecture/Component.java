@@ -3,7 +3,10 @@ package org.ggp.base.util.propnet.architecture;
 import java.io.Serializable;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
+
+import org.ggp.base.util.propnet.architecture.components.Transition;
 
 /**
  * The root class of the Component hierarchy, which is designed to represent
@@ -14,7 +17,7 @@ import java.util.Set;
 public abstract class Component implements Serializable
 {
 
-	protected boolean value = false;
+	public boolean value = false;
 	private static final long serialVersionUID = 352524175700224447L;
 	/** The inputs to the component. */
 	private Set<Component> inputs;
@@ -34,12 +37,53 @@ public abstract class Component implements Serializable
 		this.inputs = new HashSet<Component>();
 		this.outputs = new HashSet<Component>();
 	}
+	
+	public double[] weights;
+	public double[] inputval;
+	public double outputval;
+	public boolean visited = false;
+	public double bias;
+	
+	public double calcValue() {
+		if (this instanceof Transition) {
+			return getSingleOutput().value ? 1. : 0.;
+		}
+		if (visited) {
+			return outputval;
+		}
+		for (int i = 0; i < inputarr.length; i ++) {
+			inputval[i] = inputarr[i].calcValue();
+		}
+		double sum = 0;
+		for (int i = 0; i < inputarr.length; i ++) {
+			sum += inputval[i] * weights[i];
+		}
+		visited = true;
+		outputval = Math.max(0, sum + bias);
+		return outputval;
+	}
+	
+	public void passgradient(double dx, double lr) {
+		if (this instanceof Transition) return;
+		bias += dx * lr;
+		for (int i = 0; i < inputarr.length; i ++) {
+			if (inputval[i] > 0) inputarr[i].passgradient(weights[i] * dx, lr);
+			weights[i] += inputval[i] * dx * lr;
+		}
+	}
 
 	public void crystalize() {
+		Random gen = new Random();
 		inputarr = new Component[inputs.size()];
 		inputs.toArray(inputarr);
 		outputarr = new Component[outputs.size()];
 		outputs.toArray(outputarr);
+		inputval = new double[inputarr.length];
+		weights = new double[inputarr.length];
+		for (int i = 0; i < weights.length; i ++) {
+			weights[i] = gen.nextDouble() * 0.1;
+		}
+		bias = gen.nextDouble() * 0.1;
 	}
 
 	/**

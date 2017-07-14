@@ -41,7 +41,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int N_THREADS = 4;
 
 	public static final PrintWriter gamelog = getGameLog();
-	public static int method = ML;
+	public int method = ML;
 	private Method player;
 	public List<Gdl> gameDescription;
 

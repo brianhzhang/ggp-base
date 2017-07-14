@@ -44,7 +44,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	List<Role> roles;
 	Map<Role, List<Move>> actions;
 	int term;
-	int[] basearr;
+	public int[] basearr;
 	int[] inputarr;
 	Map<RoleMove, Integer> inputmap;
 	Move[] legals;
@@ -62,7 +62,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	PropNet p;
 	ArrayList<Proposition> props;
-	List<Component> components;
+	public List<Component> components;
 
 	class RoleMove implements Serializable {
 		private static final long serialVersionUID = 1L;
@@ -412,6 +412,17 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 		return -1;
 	}
+	
+	public double[] getAllGoals(PropNetMachineState state) {
+		markbases(state);
+		double[] values = new double[roles.size()];
+		for (int i = 0; i < goals.length; i++) {
+			if (((comps[goals[i][0]] >> 31) & 1) == 1) {
+				values[goals[i][1]] = goals[i][2];
+			}
+		}
+		return values;
+	}
 
 	@Override
 	public boolean isTerminal(MachineState state) {
@@ -551,8 +562,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		for (int i = 0; i < legals.length; i++) {
 			if (((comps[legalarr[i][0]] >> 31) & 1) == 1) {
 				counts[legalarr[i][1]]++;
-				int random = (int) randomLong(counts[legalarr[i][1]]);
-				if (random == 0) indicies[legalarr[i][1]] = i;
+				if (randomLong(counts[legalarr[i][1]]) == 0) indicies[legalarr[i][1]] = i;
 			}
 		}
 		for (int i = 0; i < indicies.length; i++) {

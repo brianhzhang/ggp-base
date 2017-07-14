@@ -1,16 +1,11 @@
-import java.io.IOException;
-import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
@@ -36,7 +31,6 @@ import org.ggp.base.util.propnet.architecture.components.Transition;
 import org.ggp.base.util.propnet.factory.OptimizingPropNetFactory;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
-import org.ggp.base.util.statemachine.implementation.prover.query.ProverQueryBuilder;
 
 public class LolAnotherMetaPropNetStateMachineFactory {
 	List<Proposition> bases;
@@ -184,32 +178,32 @@ public class LolAnotherMetaPropNetStateMachineFactory {
 		}
 	}
 	
-	private void optimizePropNet(List<Component> comps) {
-		List<Component> toremove = new ArrayList<Component>();
-		for (Component c : comps) {
-			if (c instanceof Proposition) {
-				if (!(p.getBasePropositions().values().contains(c) || p.getLegalPropositions().values().contains(c) ||
-						p.getInputPropositions().values().contains(c) || p.getGoalPropositions().values().contains(c))) {
-					for (Component before : c.getInputs()) {
-						before.getOutputs().addAll(c.getOutputs());
-						before.removeOutput(c);
-					}
-					toremove.add(c);
-				}
-			} else if (c instanceof Not) {
-				if (c.getInputs().size() == 1 && c.getSingleInput().getOutputs().size() == 1) {
-					if (c.getSingleInput() instanceof And) {
-						((And)c.getSingleInput()).nand = true;
-						toremove.add(c);
-					} else if (c.getSingleInput() instanceof Or) {
-						((Or)c.getSingleInput()).nor = true;
-						toremove.add(c);
-					}
-				}
-			}
-		}
-		comps.removeAll(toremove);
-	}
+//	private void optimizePropNet(List<Component> comps) {
+//		List<Component> toremove = new ArrayList<Component>();
+//		for (Component c : comps) {
+//			if (c instanceof Proposition) {
+//				if (!(p.getBasePropositions().values().contains(c) || p.getLegalPropositions().values().contains(c) ||
+//						p.getInputPropositions().values().contains(c) || p.getGoalPropositions().values().contains(c))) {
+//					for (Component before : c.getInputs()) {
+//						before.getOutputs().addAll(c.getOutputs());
+//						before.removeOutput(c);
+//					}
+//					toremove.add(c);
+//				}
+//			} else if (c instanceof Not) {
+//				if (c.getInputs().size() == 1 && c.getSingleInput().getOutputs().size() == 1) {
+//					if (c.getSingleInput() instanceof And) {
+//						((And)c.getSingleInput()).nand = true;
+//						toremove.add(c);
+//					} else if (c.getSingleInput() instanceof Or) {
+//						((Or)c.getSingleInput()).nor = true;
+//						toremove.add(c);
+//					}
+//				}
+//			}
+//		}
+//		comps.removeAll(toremove);
+//	}
 
 	static SimpleJavaFileObject getJavaFileContentsAsString(StringBuilder javaFileContents){
 		JavaObjectFromString javaFileObject = null;
