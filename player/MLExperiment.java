@@ -34,7 +34,7 @@ public class MLExperiment extends Method {
 	AYearLaterMachineLearningPropNet pileOfML;
 
 	MyPlayer gamer;
-	int[] modelShape = {150, 150, 150};
+//	int[] modelShape = {150, 150, 150};
 	double loss = 0;
 	int losscount = 0;
 
@@ -57,7 +57,7 @@ public class MLExperiment extends Method {
 		int count = 0;
 		Log.println("begin random exploration");
 		PropNetMachineState init = (PropNetMachineState) machine.getInitialState();
-		for(int i = 0; timeout - System.currentTimeMillis() > MyPlayer.TIMEOUT_BUFFER * 2; i ++) {
+		for(int i = 0; System.currentTimeMillis() - timeout > MyPlayer.TIMEOUT_BUFFER; i ++) {
 			try {
 				trainOnce(init, i);
 			} catch (TransitionDefinitionException | MoveDefinitionException | GoalDefinitionException e) {
@@ -77,7 +77,7 @@ public class MLExperiment extends Method {
 			states.add(current);
 		}
 		double[] results = machine.getAllGoals(current);
-		loss += pileOfML.trainOnce(states.get(gen.nextInt(states.size())), machine, results);
+		loss += pileOfML.trainOnce(states.get(gen.nextInt(states.size())), machine, results); //CHANGED FOR TESTING xxxxxxx
 		losscount ++;
 		if ((count + 1) % 1000 == 0) {
 			Log.println("loss: " + (loss/losscount));

@@ -40,8 +40,10 @@ public abstract class Component implements Serializable
 	
 	public double[] weights;
 	public double[] inputval;
-	public double outputval;
+	public double outputval = 0;
 	public boolean visited = false;
+	public boolean isbase = false;
+	public boolean trainvisited = false;
 	public double bias;
 	
 	public double calcValue() {
@@ -51,25 +53,31 @@ public abstract class Component implements Serializable
 		if (visited) {
 			return outputval;
 		}
+		double sum = 0;
+		visited = true;
 		for (int i = 0; i < inputarr.length; i ++) {
 			inputval[i] = inputarr[i].calcValue();
 		}
-		double sum = 0;
 		for (int i = 0; i < inputarr.length; i ++) {
-			sum += inputval[i] * weights[i];
+			sum += inputval[i] * (weights[i]);
 		}
-		visited = true;
-		outputval = Math.max(0, sum + bias);
+		outputval = sum/weights.length + bias;//Math.max(0, sum + bias);
 		return outputval;
 	}
 	
-	public void passgradient(double dx, double lr) {
-		if (this instanceof Transition) return;
+	public int passgradient(double dx, double lr) {
+		if (trainvisited) return 1;
+		if (this instanceof Transition) {
+			return 1;
+		}
+		trainvisited = true;
+		int count = 1;
 		bias += dx * lr;
 		for (int i = 0; i < inputarr.length; i ++) {
-			if (inputval[i] > 0) inputarr[i].passgradient(weights[i] * dx, lr);
-			weights[i] += inputval[i] * dx * lr;
+			count += inputarr[i].passgradient((weights[i]) * dx, lr);
+			weights[i] += inputval[i] * dx * lr / weights.length;
 		}
+		return count;
 	}
 
 	public void crystalize() {
@@ -81,9 +89,9 @@ public abstract class Component implements Serializable
 		inputval = new double[inputarr.length];
 		weights = new double[inputarr.length];
 		for (int i = 0; i < weights.length; i ++) {
-			weights[i] = gen.nextDouble() * 0.1;
+			weights[i] = gen.nextDouble() * 0.01 + 0.995;
 		}
-		bias = gen.nextDouble() * 0.1;
+		bias = gen.nextDouble() * 0.01 - 0.005;
 	}
 
 	/**
