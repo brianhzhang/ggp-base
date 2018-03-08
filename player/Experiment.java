@@ -95,6 +95,7 @@ public class Experiment extends Method {
 			machines[i] = gamer.getStateMachine();
 			machines[i].initialize(description);
 		}
+		//new ASPSolver(description).run();
 		smthread = new StateMachineCreatorThread(gamer.getRole(), description);
 		smthread.start();
 	}
@@ -599,7 +600,7 @@ public class Experiment extends Method {
 	@Override
 	public Move run(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
-					TransitionDefinitionException {
+			TransitionDefinitionException {
 
 		if (solution != null && !solution.isEmpty()) {
 			Move move = solution.pop();
@@ -626,7 +627,7 @@ public class Experiment extends Method {
 
 	public Move run_(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
-					TransitionDefinitionException {
+			TransitionDefinitionException {
 		// we don't cache anyway. might as well...
 		if (moves.size() == 1) {
 			Log.println("one legal move: " + moves.get(0));
@@ -1114,7 +1115,7 @@ public class Experiment extends Method {
 		}
 
 		public boolean setBounds() {
-			assert!children.isEmpty();
+			assert !children.isEmpty();
 			double oldupp = upper, oldlow = lower, oldH = heuristic;
 			if (isMaxNode()) {
 				upper = MyPlayer.MIN_SCORE;
@@ -1127,7 +1128,7 @@ public class Experiment extends Method {
 				}
 				assert expander == null;
 			} else {
-				assert!children.isEmpty();
+				assert !children.isEmpty();
 				if (expander == null) {
 					upper = MyPlayer.MAX_SCORE;
 					lower = MyPlayer.MAX_SCORE;
@@ -1243,9 +1244,7 @@ public class Experiment extends Method {
 						best = child;
 						countBest = 1;
 					} else if (newscore == score) {
-						if (Math.random() < 1.0 / (++countBest)) {
-							best = child;
-						}
+						if (Math.random() < 1.0 / (++countBest)) best = child;
 					}
 				}
 			} else {
@@ -1258,9 +1257,7 @@ public class Experiment extends Method {
 						best = child;
 						countBest = 1;
 					} else if (newscore == score) {
-						if (Math.random() < 1.0 / (++countBest)) {
-							best = child;
-						}
+						if (Math.random() < 1.0 / (++countBest)) best = child;
 					}
 				}
 			}
