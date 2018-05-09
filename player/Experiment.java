@@ -702,9 +702,11 @@ public class Experiment extends Method {
 		ArrayBlockingQueue<Stack<MTreeNode>> input = new ArrayBlockingQueue<>(1);
 
 		BlockingQueue<DCOut> output = new LinkedBlockingQueue<>();
+		Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
 		for (int i = 0; i < nthread; i++) {
 			threads[i] = new DepthChargeThread(machines[i], role, timeout, input, output);
 			threads[i].start();
+			threads[i].setPriority(Thread.MIN_PRIORITY);
 		}
 		int[] timers = new int[3];
 
@@ -744,7 +746,7 @@ public class Experiment extends Method {
 		for (MTreeNode child : root.children) {
 			Log.printf(
 					"v=(%d, %d) s=(%.1f, %.1f, %.1f) b=(%.2f, %.2f) d=%d %s\n",
-					child.visits - MTREENODE_PRIOR_VISITS,
+					child.visits,
 					child.heuristicVisits - child.visits / depthChargesPerState,
 					child.sum_utility / child.visits, child.heuristic,
 					child.utility(),
@@ -769,7 +771,7 @@ public class Experiment extends Method {
 		double factor = (double) totalTimeWaiting / (elapsed_time * threads.length);
 		factor = 1 / (1 - factor);
 		if (System.currentTimeMillis() >= timeout && factor >= 2) {
-			Log.printf("depth charges too slow. now doing %d per state\n",
+			Log.printf("depth charges too fast. now doing %d per state\n",
 					depthChargesPerState *= factor);
 		}
 
@@ -1063,9 +1065,9 @@ public class Experiment extends Method {
 	private class MTreeNode implements Comparable<MTreeNode> {
 		// prior: sum squares = 10000 so that stdev != 0
 		public int heuristicVisits = MTREENODE_PRIOR_VISITS;
-		public int visits = MTREENODE_PRIOR_VISITS;
-		public double sum_utility = MTREENODE_PRIOR_UTIL;
-		public double sum_sq = MTREENODE_PRIOR_SUMSQ;
+		public int visits = MTREENODE_PRIOR_VISITS * depthChargesPerState;
+		public double sum_utility = MTREENODE_PRIOR_UTIL * depthChargesPerState;
+		public double sum_sq = MTREENODE_PRIOR_SUMSQ * depthChargesPerState * depthChargesPerState;
 		// bounds
 		public double lower = MyPlayer.MIN_SCORE;
 		public double upper = MyPlayer.MAX_SCORE;
@@ -1202,6 +1204,7 @@ public class Experiment extends Method {
 			double var = eff_sumsq / eff_visits - util * util;
 
 			var = c * Math.sqrt(Math.log(parent.visits) / (visits - 1) * var);
+			//var = c * Math.sqrt(parent.visits * var) / (visits - 1);
 			return util + var;
 		}
 

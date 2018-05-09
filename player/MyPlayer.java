@@ -38,18 +38,25 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int N_OPTIONS = 10;
 	public static final int TIMEOUT_BUFFER = 2500; // time for network
 	// communication in ms
-	public static final int N_THREADS = 4;
+	public static final int N_THREADS = Runtime.getRuntime().availableProcessors();
+	public static final boolean USE_LOGGING = false;
 
 	public static final PrintWriter gamelog = getGameLog();
-	public int method = ML;
+	public int method = EXPERIMENTAL;
 	private Method player;
 	public List<Gdl> gameDescription;
 
+	public MyPlayer() {
+		System.out.println("Player instance started with " + N_THREADS + " threads");
+	}
+
 	private static PrintWriter getGameLog() {
-		try {
-			return new PrintWriter(new FileWriter("logs/gamelogs.csv", true), true);
-		} catch (IOException e) {
-			e.printStackTrace();
+		if (USE_LOGGING) {
+			try {
+				return new PrintWriter(new FileWriter("logs/gamelogs.csv", true), true);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
 		}
 		return null;
 	}
@@ -154,24 +161,26 @@ public class MyPlayer extends StateMachineGamer {
 
 	@Override
 	public void stateMachineStop() {
-		Match m = getMatch();
-		// Log.println(m);
-		StateMachine machine = getStateMachine();
-		MachineState state = getCurrentState();
-		Role role = getRole();
-		List<Role> roles = machine.getRoles();
-		String save = "";
-		try {
-			save = String.format("%s,%s,%s,%s", m.getMatchId(), role, method,
-					machine.getGoal(state, role));
-			for (Role r : roles) {
-				if (r.equals(role)) continue;
-				save += "," + machine.getGoal(state, r);
+		if (USE_LOGGING) {
+			Match m = getMatch();
+			// Log.println(m);
+			StateMachine machine = getStateMachine();
+			MachineState state = getCurrentState();
+			Role role = getRole();
+			List<Role> roles = machine.getRoles();
+			String save = "";
+			try {
+				save = String.format("%s,%s,%s,%s", m.getMatchId(), role, method,
+						machine.getGoal(state, role));
+				for (Role r : roles) {
+					if (r.equals(role)) continue;
+					save += "," + machine.getGoal(state, r);
+				}
+			} catch (GoalDefinitionException e) {
+				save = m.getMatchId();
 			}
-		} catch (GoalDefinitionException e) {
-			save = m.getMatchId();
+			gamelog.println(save);
 		}
-		gamelog.println(save);
 		player.cleanUp();
 		player = null;
 	}
