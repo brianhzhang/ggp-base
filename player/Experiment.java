@@ -770,12 +770,14 @@ public class Experiment extends Method {
 		Log.println("depth charge inactive time: " + totalTimeWaiting + " ms");
 		double factor = (double) totalTimeWaiting / (elapsed_time * threads.length);
 		factor = 1 / (1 - factor);
-		if (System.currentTimeMillis() >= timeout && factor >= 2) {
-			Log.printf("depth charges too fast. now doing %d per state\n",
-					depthChargesPerState *= factor);
-		}
+//		if (System.currentTimeMillis() >= timeout && factor >= 2) {
+//			Log.printf("depth charges too fast. now doing %d per state\n",
+//					depthChargesPerState *= factor);
+//		}
 
-		root = null; // allow gc
+		// allow gc
+		dagMap = new HashMap<>();
+		root = null;
 
 		Move chosen = bestChild.move;
 		if (chosen == USELESS_MOVE) {
@@ -920,6 +922,7 @@ public class Experiment extends Method {
 			this.node = node;
 			if (node.isMaxNode()) {
 				moves = getUsefulMoves(mainThreadMachine, roles[ourRoleIndex], node.state);
+				Collections.shuffle(moves);
 				maxIndex = moves.size();
 			} else {
 				allMoves = new ArrayList<>();
@@ -928,6 +931,7 @@ public class Experiment extends Method {
 						allMoves.add(null);
 					} else {
 						List<Move> moves = getUsefulMoves(mainThreadMachine, roles[i], node.state);
+						Collections.shuffle(moves);
 						allMoves.add(moves);
 						maxIndex *= moves.size();
 					}
@@ -1203,7 +1207,7 @@ public class Experiment extends Method {
 			double util = eff_sum / eff_visits;
 			double var = eff_sumsq / eff_visits - util * util;
 
-			var = c * Math.sqrt(Math.log(parent.visits) / (visits - 1) * var);
+			var = c * Math.sqrt(Math.log(parent.visits) / visits * var);
 			//var = c * Math.sqrt(parent.visits * var) / (visits - 1);
 			return util + var;
 		}
