@@ -54,7 +54,7 @@ public final class StartRequest extends Request {
 			if (moveL < receptionTime) {
 				new AbortRequest(gamer, id).process(receptionTime);
 				GamerLogger.logError("GamePlayer",
-						"[WARN] Got start message while in an inactive"
+						"[WARN] Got start message while in an inactive "
 								+ "game: switching to new game");
 			} else {
 				GamerLogger.logError("GamePlayer",
@@ -68,6 +68,7 @@ public final class StartRequest extends Request {
 		// in the gamer to indicate that we're starting a new match.
 		Match match = new Match(matchId, -1, startClock, playClock, game, null);
 		gamer.setMatch(match);
+		System.out.println("role: " + roleName);
 		gamer.setRoleName(roleName);
 		gamer.notifyObservers(new GamerNewMatchEvent(match, roleName));
 

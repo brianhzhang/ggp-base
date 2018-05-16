@@ -166,7 +166,29 @@ public class MyPlayer extends StateMachineGamer {
 
 	@Override
 	public void stateMachineAbort() {
-		stateMachineStop();
+		Log.println("game stopped");
+		if (USE_LOGGING) {
+			Match m = getMatch();
+			// Log.println(m);
+			StateMachine machine = getStateMachine();
+			MachineState state = getCurrentState();
+			Role role = getRole();
+			List<Role> roles = machine.getRoles();
+			String save = "";
+			try {
+				save = String.format("%s,%s,%s,%s", m.getMatchId(), role, method,
+						machine.getGoal(state, role));
+				for (Role r : roles) {
+					if (r.equals(role)) continue;
+					save += "," + machine.getGoal(state, r);
+				}
+			} catch (GoalDefinitionException e) {
+				save = m.getMatchId();
+			}
+			gamelog.println(save);
+		}
+		player.cleanUp();
+		player = null;
 	}
 
 	@Override
@@ -216,28 +238,7 @@ public class MyPlayer extends StateMachineGamer {
 
 	@Override
 	public void stateMachineStop() {
-		if (USE_LOGGING) {
-			Match m = getMatch();
-			// Log.println(m);
-			StateMachine machine = getStateMachine();
-			MachineState state = getCurrentState();
-			Role role = getRole();
-			List<Role> roles = machine.getRoles();
-			String save = "";
-			try {
-				save = String.format("%s,%s,%s,%s", m.getMatchId(), role, method,
-						machine.getGoal(state, role));
-				for (Role r : roles) {
-					if (r.equals(role)) continue;
-					save += "," + machine.getGoal(state, r);
-				}
-			} catch (GoalDefinitionException e) {
-				save = m.getMatchId();
-			}
-			gamelog.println(save);
-		}
-		player.cleanUp();
-		player = null;
+		stateMachineAbort();
 		GdlPool.drainPool();
 	}
 

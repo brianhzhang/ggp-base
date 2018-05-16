@@ -1064,13 +1064,15 @@ public class Experiment extends Method {
 
 		StateMachine machine = gamer.getStateMachine();
 		roles = machine.findRoles().toArray(new Role[0]);
+
 		for (int i = 0; i < roles.length; i++) {
 			Role role = roles[i];
 			if (!role.equals(gamer.getRole())) opponents.add(role);
 			else ourRoleIndex = i;
 			useless.put(role, new HashSet<>());
 		}
-		Log.println("roles: " + Arrays.toString(roles) + " | our role: " + ourRoleIndex);
+		Log.printf("roles: " + Arrays.toString(roles) + " | our role: ");
+		Log.println(gamer.getRole() + " (" + ourRoleIndex + ")");
 		Log.println("method: " + this.getClass().getCanonicalName());
 		ourWeight = opponents.size() * OUR_WEIGHT_FACTOR;
 		totalWeight = ourWeight + opponents.size();
