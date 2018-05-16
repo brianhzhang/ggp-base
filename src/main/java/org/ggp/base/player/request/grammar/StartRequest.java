@@ -1,8 +1,12 @@
 package org.ggp.base.player.request.grammar;
 
+import java.util.Date;
+import java.util.List;
+
 import org.ggp.base.player.event.PlayerTimeEvent;
 import org.ggp.base.player.gamer.Gamer;
 import org.ggp.base.player.gamer.event.GamerNewMatchEvent;
+import org.ggp.base.player.gamer.event.GamerUnrecognizedMatchEvent;
 import org.ggp.base.player.gamer.exception.MetaGamingException;
 import org.ggp.base.util.game.Game;
 import org.ggp.base.util.gdl.grammar.GdlConstant;
@@ -34,14 +38,30 @@ public final class StartRequest extends Request {
 
 	@Override
 	public String process(long receptionTime) {
-		// Ensure that we aren't already playing a match. If we are,
+		// Ensure that we aren't already playing a match.
+		// If we are, check to see if we have been responsive
+		// and choose to either abort the unresponsive match or
 		// ignore the message, saying that we're busy.
 		if (gamer.getMatch() != null) {
 			String id = gamer.getMatch().getMatchId();
-			new AbortRequest(gamer, id).process(receptionTime);
-			GamerLogger.logError("GamePlayer",
-					"[WARN] Got start message while already busy "
-							+ "playing a game: switching to new game");
+			List<Date> moveTimes = gamer.getMatch().getStateTimeHistory();
+			long moveL = (gamer.getMatch().getPlayClock() + gamer.getMatch().getStartClock()) * 1000;
+			if (!moveTimes.isEmpty()) {
+				Date lastMove = moveTimes.get(moveTimes.size() - 1);
+				moveL += lastMove.getTime();
+			}
+			//if we are stuck in our old match and haven't moved in a while, abort it
+			if (moveL < receptionTime) {
+				new AbortRequest(gamer, id).process(receptionTime);
+				GamerLogger.logError("GamePlayer",
+						"[WARN] Got start message while in an inactive"
+								+ "game: switching to new game");
+			} else {
+				GamerLogger.logError("GamePlayer",
+						"[WARN] Got start message while already busy playing a game: ignoring.");
+				gamer.notifyObservers(new GamerUnrecognizedMatchEvent(matchId));
+				return "busy";
+			}
 		}
 
 		// Create the new match, and handle all of the associated logistics
