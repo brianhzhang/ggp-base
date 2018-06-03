@@ -126,7 +126,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		} catch (InstantiationException | IllegalAccessException e) {
 			e.printStackTrace();
 		}
-		p.renderToFile("graph.dot");
 
 		// cycle detection
 		use_propnet_reset = isCyclic(p);
