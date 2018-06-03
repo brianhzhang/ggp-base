@@ -108,11 +108,6 @@ public class MyPlayer extends StateMachineGamer {
 		return null;
 	}
 
-	public int method = EXPERIMENTAL;
-	private Method player;
-
-	public List<Gdl> gameDescription;
-
 	public MyPlayer() {
 		System.out.println("Player instance started with " + N_THREADS + " threads");
 	}
