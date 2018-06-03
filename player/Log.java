@@ -27,4 +27,9 @@ public class Log {
 		file.print(s);
 		System.out.print(s);
 	}
+	
+	public static void printerr(Object s) {
+		file.println(s);
+		System.err.println(s);
+	}
 }

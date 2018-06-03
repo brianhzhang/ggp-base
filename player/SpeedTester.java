@@ -107,6 +107,8 @@ public class SpeedTester extends StateMachineGamer {
 		// LolAnotherMetaPropNetStateMachineFactory l =
 		// new LolAnotherMetaPropNetStateMachineFactory(((GDLGetter)
 		// getStateMachine()).getDescription());
+		Log.setFile(getMatch().getMatchId() + "_" + getRole());
+		Log.println("");
 		StateMachine m1 = new JustKiddingPropNetStateMachine();
 		StateMachine m2 = new YeahWasntTheLastOnePropNetStateMachine();
 		m1.initialize(((GDLGetter) getStateMachine()).getDescription());
@@ -143,7 +145,7 @@ public class SpeedTester extends StateMachineGamer {
 	@Override
 	public Move stateMachineSelectMove(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
-		return getStateMachine().getLegalMoves(getCurrentState(), getRole()).get(0);
+		return null;
 	}
 
 	@Override

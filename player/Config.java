@@ -29,7 +29,7 @@ public class Config extends ConfigPanel {
 	public Config(LayoutManager layout, final MyPlayer m) {
 		super(layout);
 
-		current = new JLabel("Current Strategy: Machine Learning", (int) CENTER_ALIGNMENT);
+		current = new JLabel("Current Strategy: MCTS", (int) CENTER_ALIGNMENT);
 		current.setFont(new Font("Verdana", Font.BOLD, 24));
 
 		add(current);

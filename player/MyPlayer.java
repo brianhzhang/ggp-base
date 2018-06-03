@@ -41,7 +41,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int N_THREADS = 4;
 
 	public static final PrintWriter gamelog = getGameLog();
-	public int method = ML;
+	public int method = MCTS;
 	private Method player;
 	public List<Gdl> gameDescription;
 
@@ -70,7 +70,6 @@ public class MyPlayer extends StateMachineGamer {
 		JustKiddingPropNetStateMachine newp = new JustKiddingPropNetStateMachine();
 		newp.comps = p.comps.clone();
 		newp.initcomps = p.initcomps.clone();
-		newp.structure = p.structure;
 		newp.roles = p.roles;
 		newp.actions = p.actions;
 		newp.term = p.term;
