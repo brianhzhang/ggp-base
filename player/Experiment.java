@@ -525,6 +525,7 @@ public class Experiment extends Method {
 			for (MTreeNode child : children) {
 				if (child != bestChild && child.upper > bestChild.lower) return false;
 			}
+			Log.printf("loosely solved: %s\n", bestChild.move);
 			return true;
 		}
 
@@ -737,7 +738,7 @@ public class Experiment extends Method {
 						bestj = j;
 					}
 				}
-				if (bestsize > 3) continue;
+				if (bestsize > 3 || base.arity() < 3) continue;
 				bestIndices.put(base.getName(), bestj);
 			}
 			for (int i = 0; i < m.props.size(); i++) {
