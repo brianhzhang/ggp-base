@@ -93,6 +93,9 @@ public class MyPlayer extends StateMachineGamer {
 	public static final boolean USE_LOGGING = false;
 
 	public static final PrintWriter gamelog = getGameLog();
+	public int method = MCTS;
+	private Method player;
+	public List<Gdl> gameDescription;
 
 	private static PrintWriter getGameLog() {
 		if (USE_LOGGING) {
@@ -105,11 +108,6 @@ public class MyPlayer extends StateMachineGamer {
 		return null;
 	}
 
-	public int method = EXPERIMENTAL;
-	private Method player;
-
-	public List<Gdl> gameDescription;
-
 	public MyPlayer() {
 		System.out.println("Player instance started with " + N_THREADS + " threads");
 	}
@@ -118,7 +116,6 @@ public class MyPlayer extends StateMachineGamer {
 		JustKiddingPropNetStateMachine newp = new JustKiddingPropNetStateMachine();
 		newp.comps = p.comps.clone();
 		newp.initcomps = p.initcomps.clone();
-		newp.structure = p.structure;
 		newp.roles = p.roles;
 		newp.actions = p.actions;
 		newp.term = p.term;

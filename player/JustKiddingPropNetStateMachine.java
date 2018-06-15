@@ -1,5 +1,6 @@
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -34,7 +35,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 	int[] comps;
 	int[] initcomps;
-	int[][] structure;
 	List<Role> roles;
 	Map<Role, List<Move>> actions;
 	int term;
@@ -158,8 +158,6 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		if (kill) return;
 
 		props = new ArrayList<Proposition>();
-		comps = new int[components.size() * 2];
-		structure = new int[components.size()][];
 		roles = p.getRoles();
 		actions = new HashMap<Role, List<Move>>();
 		basearr = new int[p.getBasePropositions().values().size()];
@@ -186,27 +184,35 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		int input = 0;
 		int legal = 0;
 		int goal = 0;
+		int increment = 0;
 		Map<Component, Integer> indexMap = new HashMap<>();
-		for (int i = 0; i < components.size(); i++) {
-			indexMap.put(components.get(i), i);
+		Map<Integer, Component> paMxedni = new HashMap<>();
+		
+		for (int i = 0; i < components.size(); i ++) {
+			indexMap.put(components.get(i), i * 2 + increment);
+			paMxedni.put(i * 2 + increment, components.get(i));
+			increment += 1 + components.get(i).getOutputarr().length;
 		}
+		
+		comps = new int[increment + components.size() * 2];
+		
 		// Fill the components array
-		for (int i = 0; i < components.size() * 2; i += 2) {
+		for (Component component : components) {
 			if (kill) return;
-			Component component = components.get(i / 2);
+			int pos = indexMap.get(component);
 			if (!(component instanceof Proposition)) {
-				comps[i] = getComp(components.get(i / 2));
-				comps[i + 1] = -1;
+				comps[pos] = getComp(component);
+				comps[pos + 1] = -1;
 			} else if (basepropset.contains(component)) {
-				comps[i] = 0;
-				comps[i + 1] = indexMap.get(component.getSingleInput()) * 2;
-				basearr[base] = i;
+				comps[pos] = 0;
+				comps[pos + 1] = indexMap.get(component.getSingleInput());
+				basearr[base] = pos;
 				props.add((Proposition) component);
 				base++;
 			} else if (inputpropset.contains(component)) {
-				comps[i] = 0;
-				comps[i + 1] = 0;
-				inputarr[input] = i;
+				comps[pos] = 0;
+				comps[pos + 1] = 0;
+				inputarr[input] = pos;
 				for (Role r : roles) {
 					if (p.getLegalPropositions().get(r)
 							.contains(p.getLegalInputMap().get(component))) {
@@ -221,9 +227,9 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 				boolean isView = true;
 				for (Role r : roles) {
 					if (p.getGoalPropositions().get(r).contains(component)) {
-						comps[i] = 0x7FFFFFFF;
-						comps[i + 1] = -1;
-						goals[goal][0] = indexMap.get(component.getSingleInput()) * 2;
+						comps[pos] = 0x7FFFFFFF;
+						comps[pos + 1] = -1;
+						goals[goal][0] = indexMap.get(component.getSingleInput());
 						goals[goal][1] = roles.indexOf(r);
 						goals[goal][2] = getGoalValue((Proposition) component);
 						goal++;
@@ -231,10 +237,10 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 						break;
 					}
 					if (p.getLegalPropositions().get(r).contains(component)) {
-						comps[i] = 0x7FFFFFFF;
-						comps[i + 1] = -1;
+						comps[pos] = 0x7FFFFFFF;
+						comps[pos + 1] = -1;
 						legaltoinputhelper.add(p.getLegalInputMap().get(component));
-						legalarr[legal][0] = indexMap.get(component.getSingleInput()) * 2;
+						legalarr[legal][0] = indexMap.get(component.getSingleInput());
 						legalarr[legal][1] = roles.indexOf(r);
 						legals[legal] = new Move(((Proposition) component).getName().get(1));
 						legal++;
@@ -243,31 +249,31 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 					}
 				}
 				if (p.getTerminalProposition().equals(component)) {
-					comps[i] = 0x7FFFFFFF;
-					comps[i + 1] = indexMap.get(component.getSingleInput()) * 2;
-					term = i;
+					comps[pos] = 0x7FFFFFFF;
+					comps[pos + 1] = indexMap.get(component.getSingleInput());
+					term = pos;
 				} else if (p.getInitProposition() != null
 						&& p.getInitProposition().equals(component)) {
-					comps[i] = 0;
-					comps[i + 1] = -1;
+					comps[pos] = 0;
+					comps[pos + 1] = -1;
 				} else if (isView) {
-					comps[i] = 0x7FFFFFFF;
-					comps[i + 1] = -1;
+					comps[pos] = 0x7FFFFFFF;
+					comps[pos + 1] = -1;
 				}
 			}
-
-			// fill the structure array:
-			structure[i / 2] = new int[component.getOutputs().size()];
-			for (int j = 0; j < structure[i / 2].length; j++) {
-				Component out = component.getOutputarr()[j];
-				structure[i / 2][j] = indexMap.get(out) * 2;
+			
+			// fill the structure part of the array:
+			Component[] outputs = component.getOutputarr();
+			comps[pos + 2] = outputs.length;
+			for (int i = 0; i < outputs.length; i++) {
+				comps[pos + 3 + i] = indexMap.get(outputs[i]);
 			}
 		}
 
 		legaltoinput = new int[legal];
 		for (int i = 0; i < legaltoinputhelper.size(); i++) {
 			for (int j = 0; j < inputarr.length; j++) {
-				if (components.get(inputarr[j] / 2) == legaltoinputhelper.get(i)) {
+				if (paMxedni.get(inputarr[j]) == legaltoinputhelper.get(i)) {
 					legaltoinput[i] = j;
 					break;
 				}
@@ -276,14 +282,14 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 
 		for (Component c : components) {
 			if (c instanceof Proposition) continue;
-			int delta = getComp(c) - comps[indexMap.get(c) * 2];
+			int delta = getComp(c) - comps[indexMap.get(c)];
 			for (Component d : c.getInputs()) {
-				delta += ((comps[indexMap.get(d) * 2] >> 31) & 1);
+				delta += ((comps[indexMap.get(d)] >> 31) & 1);
 			}
-			propagate(indexMap.get(c) * 2, delta);
+			propagate(indexMap.get(c), delta);
 		}
 
-		initcomps = comps.clone();
+		initcomps = this.comps.clone();
 		Log.println("finding initial state...");
 		StateMachine prover = new CachedStateMachine(new ProverStateMachine());
 		prover.initialize(description);
@@ -422,8 +428,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		for (int i = 0; i < state.props.length; i++) {
 			if (state.props[i] != (((comps[basearr[i]] >> 31) & 1) == 1)) {
 				comps[basearr[i]] = state.props[i] ? 0xF0000000 : 0x0F000000;
-				for (int j = 0; j < structure[basearr[i] / 2].length; j++) {
-					propagate(structure[basearr[i] / 2][j], state.props[i] ? 1 : -1);
+				for (int j = 0; j < comps[basearr[i] + 2]; j++) {
+					propagate(comps[basearr[i] + 3 + j], state.props[i] ? 1 : -1);
 				}
 			}
 		}
@@ -433,8 +439,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		for (int i = 0; i < inputs.length; i++) {
 			if (inputs[i] != (((comps[inputarr[i]] >> 31) & 1) == 1)) {
 				comps[inputarr[i]] = inputs[i] ? 0xF0000000 : 0x0F000000;
-				for (int j = 0; j < structure[inputarr[i] / 2].length; j++) {
-					propagate(structure[inputarr[i] / 2][j], inputs[i] ? 1 : -1);
+				for (int j = 0; j < comps[inputarr[i] + 2]; j++) {
+					propagate(comps[inputarr[i] + 3 + j], inputs[i] ? 1 : -1);
 				}
 			}
 		}
@@ -446,8 +452,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			comps[index] += newValue;
 			if (old != ((comps[index] >> 31) & 1)) {
 				old = ((comps[index] >> 31) & 1) - old;
-				for (int i = 0; i < structure[index / 2].length; i++) {
-					propagate(structure[index / 2][i], old);
+				for (int i = 0; i < comps[index + 2]; i++) {
+					propagate(comps[index + 3 + i], old);
 				}
 			}
 		}
@@ -538,8 +544,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		for (int i = 0; i < bases.length; i++) {
 			if (bases[i] != (((comps[basearr[i]] >> 31) & 1) == 1)) {
 				comps[basearr[i]] = bases[i] ? 0xF0000000 : 0x0F000000;
-				for (int j = 0; j < structure[basearr[i] / 2].length; j++) {
-					propagate(structure[basearr[i] / 2][j], bases[i] ? 1 : -1);
+				for (int j = 0; j < comps[basearr[i] + 2]; j++) {
+					propagate(comps[basearr[i] + 3 + j], bases[i] ? 1 : -1);
 				}
 			}
 		}
