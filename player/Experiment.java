@@ -114,11 +114,12 @@ public class Experiment extends Method {
 				TransitionDefinitionException, GoalDefinitionException {
 			MTreeNode node = tree.peek();
 			MachineState state = node.state;
-			if (node.move != null) state = machine.getRandomNextState(state, role, node.move);
+			if (node.move != null) state = getRandomNextState(machine, state, node.move);
 			double score;
 			if (propNetInitialized) {
 				JustKiddingPropNetStateMachine pnsm = (JustKiddingPropNetStateMachine) machine;
-				score = findReward(pnsm.internalDC((PropNetMachineState) state));
+				int[] end = pnsm.internalDC((PropNetMachineState) state);
+				score = findReward(end, ourRoleIndex);
 			} else {
 				while (!machine.isTerminal(state)) {
 					if (System.currentTimeMillis() > timeout) return FAIL;
@@ -128,6 +129,17 @@ public class Experiment extends Method {
 			}
 			return score;
 		}
+	}
+
+	private MachineState getRandomNextState(StateMachine machine,
+			MachineState state, Move[] partialMove)
+			throws MoveDefinitionException, TransitionDefinitionException {
+		List<Move> move = new ArrayList<>();
+		for (int i = 0; i < partialMove.length; i++) {
+			if (partialMove[i] != null) move.add(partialMove[i]);
+			else move.add(machine.getRandomMove(state, roles[i]));
+		}
+		return machine.getNextState(state, move);
 	}
 
 	// a namespace for astar-related methods...or really just a DFS
@@ -264,26 +276,20 @@ public class Experiment extends Method {
 		private int index = 0;
 		private MTreeNode node;
 		private List<List<Move>> allMoves;
-		private List<Move> moves;
 		private int maxIndex = 1;
 
 		public LazyExpander(MTreeNode node) {
 			this.node = node;
-			if (node.isMaxNode()) {
-				moves = getUsefulMoves(mainThreadMachine, roles[ourRoleIndex], node.state);
-				Collections.shuffle(moves);
-				maxIndex = moves.size();
-			} else {
-				allMoves = new ArrayList<>();
-				for (int i = 0; i < roles.length; i++) {
-					if (i == ourRoleIndex) {
-						allMoves.add(null);
-					} else {
-						List<Move> moves = getUsefulMoves(mainThreadMachine, roles[i], node.state);
-						Collections.shuffle(moves);
-						allMoves.add(moves);
-						maxIndex *= moves.size();
-					}
+			allMoves = new ArrayList<>();
+			for (int i = 0; i < roles.length; i++) {
+				if ((friendRoles[i] && !node.isMaxNode()) ||
+						(!friendRoles[i] && node.isMaxNode())) {
+					allMoves.add(null);
+				} else {
+					List<Move> moves = getUsefulMoves(mainThreadMachine, roles[i], node.state);
+					Collections.shuffle(moves);
+					allMoves.add(moves);
+					maxIndex *= moves.size();
 				}
 			}
 		}
@@ -301,15 +307,24 @@ public class Experiment extends Method {
 
 		private MTreeNode nextHelper() throws TransitionDefinitionException {
 			if (node.isMaxNode()) {
-				Move move = moves.get(index);
-				MTreeNode newnode = new MTreeNode(node.state, move, node);
+				Move[] partialMove = new Move[roles.length];
+				int copyIndex = index;
+				for (int i = 0; i < roles.length; i++) {
+					if (!friendRoles[i]) partialMove[i] = null;
+					else {
+						List<Move> curMoves = allMoves.get(i);
+						partialMove[i] = curMoves.get(copyIndex % curMoves.size());
+						copyIndex /= curMoves.size();
+					}
+				}
+				MTreeNode newnode = new MTreeNode(node.state, partialMove, node);
 				node.children.add(newnode);
 				return newnode;
 			} else {
 				List<Move> jmove = new ArrayList<>();
 				int copyIndex = index;
 				for (int i = 0; i < roles.length; i++) {
-					if (i == ourRoleIndex) jmove.add(node.move);
+					if (friendRoles[i]) jmove.add(node.move[i]);
 					else {
 						List<Move> curMoves = allMoves.get(i);
 						jmove.add(curMoves.get(copyIndex % curMoves.size()));
@@ -346,6 +361,7 @@ public class Experiment extends Method {
 		public SimpleRegression[] goal = new SimpleRegression[1 + heuristicNames.size()];
 		public SummaryStatistics[] control = new SummaryStatistics[1 + heuristicNames.size()];
 		public SummaryStatistics[] variance = new SummaryStatistics[1 + heuristicNames.size()];
+		public SimpleRegression[] roleRegression = new SimpleRegression[roles.length];
 		public SummaryStatistics gameLen = new SummaryStatistics();
 
 		public MetaGameDCThread(StateMachine machine, Role role, long timeout) {
@@ -356,6 +372,9 @@ public class Experiment extends Method {
 				goal[i] = new SimpleRegression();
 				control[i] = new SummaryStatistics();
 				variance[i] = new SummaryStatistics();
+			}
+			for (int i = 0; i < roleRegression.length; i++) {
+				roleRegression[i] = new SimpleRegression();
 			}
 		}
 
@@ -411,6 +430,9 @@ public class Experiment extends Method {
 				}
 				gameLen.addValue(nstep);
 				double eval = findReward(machine, role, state);
+				for (int i = 0; i < roles.length; i++) {
+					roleRegression[i].addData(findReward(machine, roles[i], state), eval);
+				}
 				int randomIndex = (int) (Math.random() * (pstates.size() - 1));
 				PropNetMachineState randomState = pstates.get(randomIndex);
 
@@ -427,7 +449,7 @@ public class Experiment extends Method {
 					}
 				}
 
-				double randomEval = findReward(machine.internalDC(randomState));
+				double randomEval = findReward(machine.internalDC(randomState), ourRoleIndex);
 				synchronized (heuristicRegression) {
 					for (double[] s : states) {
 						heuristicRegression.addObservation(s, eval);
@@ -454,7 +476,7 @@ public class Experiment extends Method {
 		public List<MTreeNode> parents = new ArrayList<>();
 
 		public MachineState state;
-		public Move move; // null if max-node; non-null if min-node
+		public Move[] move; // null if max-node; non-null if min-node
 
 		public int depth = 0;
 		public boolean isMaxNode;
@@ -468,7 +490,7 @@ public class Experiment extends Method {
 			init(state, null, true);
 		}
 
-		public MTreeNode(MachineState state, Move move, MTreeNode parent) {
+		public MTreeNode(MachineState state, Move[] move, MTreeNode parent) {
 			this.move = move;
 			init(state, parent, false);
 		}
@@ -525,7 +547,7 @@ public class Experiment extends Method {
 			for (MTreeNode child : children) {
 				if (child != bestChild && child.upper > bestChild.lower) return false;
 			}
-			Log.printf("loosely solved: %s\n", bestChild.move);
+			Log.printf("loosely solved: %s\n", Arrays.toString(bestChild.move));
 			return true;
 		}
 
@@ -807,6 +829,7 @@ public class Experiment extends Method {
 	private double totalWeight;
 	private double ourWeight;
 	private Role[] roles;
+	private boolean[] friendRoles;
 	private int ourRoleIndex = -1;
 
 	// heuristics
@@ -994,11 +1017,11 @@ public class Experiment extends Method {
 		}
 	}
 
-	private double findReward(int[] rewards) {
-		if (opponents.size() == 0) return rewards[ourRoleIndex];
-		double reward = ourWeight * rewards[ourRoleIndex];
+	private double findReward(int[] rewards, int role) {
+		if (opponents.size() == 0) return rewards[role];
+		double reward = ourWeight * rewards[role];
 		for (int i = 0; i < roles.length; i++) {
-			if (i == ourRoleIndex) continue;
+			if (i == role) continue;
 			reward += (MyPlayer.MAX_SCORE - rewards[i]);
 		}
 		return reward / totalWeight;
@@ -1065,11 +1088,18 @@ public class Experiment extends Method {
 
 		StateMachine machine = gamer.getStateMachine();
 		roles = machine.findRoles().toArray(new Role[0]);
+		friendRoles = new boolean[roles.length];
 
 		for (int i = 0; i < roles.length; i++) {
 			Role role = roles[i];
-			if (!role.equals(gamer.getRole())) opponents.add(role);
-			else ourRoleIndex = i;
+			if (!role.equals(gamer.getRole())) {
+				opponents.add(role);
+				friendRoles[i] = false;
+			} else {
+				ourRoleIndex = i;
+				friendRoles[i] = true;
+			}
+
 			useless.put(role, new HashSet<>());
 		}
 		Log.printf("roles: " + Arrays.toString(roles) + " | our role: ");
@@ -1250,9 +1280,9 @@ public class Experiment extends Method {
 			pool.add(thread);
 			thread.start();
 		}
-		for (int i = 0; i < n_thread; i++) {
+		for (MetaGameDCThread thread : pool) {
 			try {
-				pool.get(i).join();
+				thread.join();
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			}
@@ -1283,6 +1313,20 @@ public class Experiment extends Method {
 		}
 
 		Log.println("states explored: " + heuristicRegression.getN());
+
+		double[] roleCorrelations = new double[roles.length];
+		double[] roleSignificances = new double[roles.length];
+		for (int i = 0; i < roles.length; i++) {
+			for (MetaGameDCThread thread : pool) {
+				roleCorrelations[i] += thread.roleRegression[i].getR() / n_thread;
+				roleSignificances[i] += thread.roleRegression[i].getSignificance() / n_thread;
+			}
+			friendRoles[i] = roleCorrelations[i] > (1 - 1e-4);
+		}
+		Log.println("role correlations: " + Arrays.toString(roleCorrelations));
+		Log.println("role significances: " + Arrays.toString(roleSignificances));
+		Log.println("friends: " + Arrays.toString(friendRoles));
+
 		if (totalSum < 1) {
 			Log.println("no heuristic");
 			return;
@@ -1372,12 +1416,16 @@ public class Experiment extends Method {
 			Set<Component> reachableBases = new HashSet<>();
 			Set<Component> reachableBasesBackwards = new HashSet<>();
 			Map<GdlSentence, Proposition> propMap = smthread.m.p.getInputPropositions();
-			for (Move move : moves) {
-				Component c = propMap.get(ProverQueryBuilder.toDoes(role, move));
-				findComponentsForwards(c, reachableBases);
-				c = smthread.m.p.getLegalInputMap().get(c);
-				findComponentsBackwards(c, reachableBasesBackwards);
+			for (int i = 0; i < roles.length; i++) {
+				if (!friendRoles[i]) continue;
+				for (Move move : machine.getLegalMoves(rootstate, roles[i])) {
+					Component c = propMap.get(ProverQueryBuilder.toDoes(roles[i], move));
+					findComponentsForwards(c, reachableBases);
+					c = smthread.m.p.getLegalInputMap().get(c);
+					findComponentsBackwards(c, reachableBasesBackwards);
+				}
 			}
+
 			reachableBases.addAll(reachableBasesBackwards);
 			reachableBases.retainAll(new HashSet<>(bases));
 			Log.printf("%d of %d props relevant\n", reachableBases.size(), bases.size());
@@ -1405,6 +1453,7 @@ public class Experiment extends Method {
 				if (ignore.contains(bases.get(i))) {
 					count++;
 					ignoreProps[i] = true;
+					System.out.println(bases.get(i));
 				}
 			}
 			Log.println("found " + count + " constant propositions");
@@ -1434,15 +1483,14 @@ public class Experiment extends Method {
 			threads[i].setPriority(Thread.MIN_PRIORITY);
 		}
 
-		while (System.currentTimeMillis() < timeout) {
-			if (root.isLooselyProven()) break;
+		while (System.currentTimeMillis() < timeout && !root.isLooselyProven()) {
 			Stack<MTreeNode> tree = select(root);
 			MTreeNode node = tree.peek();
 			if (node.isMaxNode() && machine.isTerminal(node.state)) {
 				double reward = findReward(machine, role, node.state);
 				backpropogate(tree, reward, reward * reward, true, true);
 			} else {
-				// EXPLOR
+				// EXPLORE
 				if (!input.offer(tree)) backpropogate(tree, 0, 0, false, false);
 				// BACKPROP
 				while (true) {
@@ -1463,12 +1511,12 @@ public class Experiment extends Method {
 					child.sum_utility / child.visits, child.heuristic,
 					child.utility(),
 					child.lower, child.upper,
-					child.depth, child.move);
+					child.depth, Arrays.toString(child.move));
 		}
 		MTreeNode bestChild = root.children.get(root.children.size() - 1);
 		long elapsed_time = (System.currentTimeMillis() - timestart);
 		Log.printf("time=%d played=%s visits=%d/%d depth=%d \n",
-				elapsed_time, bestChild.move, bestChild.visits,
+				elapsed_time, Arrays.toString(bestChild.move), bestChild.visits,
 				root.visits, root.depth);
 
 		input.clear();
@@ -1489,7 +1537,7 @@ public class Experiment extends Method {
 		dagMap = new HashMap<>();
 		root = null;
 
-		Move chosen = bestChild.move;
+		Move chosen = bestChild.move[ourRoleIndex];
 		if (chosen == USELESS_MOVE) {
 			int leastUseful = Integer.MAX_VALUE;
 			for (Move move : moves) {
@@ -1519,10 +1567,10 @@ public class Experiment extends Method {
 	private void sanitizeMoves(Role role, MTreeNode root, Collection<Move> legal) {
 		MTreeNode remove = null;
 		for (MTreeNode child : root.children) {
-			if (!legal.contains(child.move)) {
+			if (!legal.contains(child.move[ourRoleIndex])) {
 				Set<Move> uselessMoves = useless.get(role);
 				uselessMoves.retainAll(legal);
-				if (uselessMoves.size() > 0) child.move = USELESS_MOVE;
+				if (uselessMoves.size() > 0) child.move[ourRoleIndex] = USELESS_MOVE;
 				else remove = child;
 			}
 		}

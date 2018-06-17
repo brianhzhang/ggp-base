@@ -93,7 +93,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final boolean USE_LOGGING = false;
 
 	public static final PrintWriter gamelog = getGameLog();
-	public int method = MCTS;
+	public int method = EXPERIMENTAL;
 	private Method player;
 	public List<Gdl> gameDescription;
 
