@@ -1200,6 +1200,7 @@ public class MCTS extends Method {
 		for (int i = 0; i < solvers.length; i++) {
 			try {
 				Solver solver = returns.take();
+				solver.best = null;
 				if (solver.best == null) { // timeout
 					Log.println(solver + " found no solution");
 					if (solver instanceof DFSSolver) proven = false;

@@ -576,7 +576,7 @@ public class Experiment extends Method {
 			double var = eff_sumsq / eff_visits - util * util;
 
 			var = c * Math.sqrt(Math.log(parent.visits) / visits * var);
-			//var = c * Math.sqrt(parent.visits * var) / (visits - 1);
+//			var = c * Math.sqrt(parent.visits * var) / (visits - 1);
 			return util + var;
 		}
 
@@ -788,25 +788,7 @@ public class Experiment extends Method {
 	private static final boolean USE_MULTIPLAYER_FACTORING = true;
 	// for weighted depth charge results
 	private static final double OUR_WEIGHT_FACTOR = 2.;
-	@SuppressWarnings("serial")
-	private static final Move USELESS_MOVE = new Move(new GdlTerm() {
 
-		@Override
-		public boolean isGround() {
-			return false;
-		}
-
-		@Override
-		public GdlSentence toSentence() {
-			return null;
-		}
-
-		@Override
-		public String toString() {
-			return "[ noop ]";
-		}
-
-	});
 	private static final int MTREENODE_PRIOR_VISITS = 2;
 	private static final double MTREENODE_PRIOR_UTIL = 100;
 	private static final double MTREENODE_PRIOR_SUMSQ = 10000;
@@ -826,6 +808,7 @@ public class Experiment extends Method {
 	private Map<Proposition, Proposition> inputToLegalMap;
 	private int nUsefulRoles;
 	private boolean[] ignoreProps;
+	private boolean[] lastIgnoreProps;
 	private double totalWeight;
 	private double ourWeight;
 	private Role[] roles;
@@ -1048,20 +1031,21 @@ public class Experiment extends Method {
 			e.printStackTrace();
 		}
 		if (!propNetInitialized) return new ArrayList<>(actions);
-		if (!USE_MULTIPLAYER_FACTORING) return actions;
-		Set<Move> uselessMoves = useless.get(role);
-
-		List<Move> output = new ArrayList<>();
-		Move uselessMove = null;
-		for (Move move : actions) {
-			if (uselessMoves.contains(move)) {
-				uselessMove = move;
-				continue;
-			}
-			output.add(move);
-		}
-		if (uselessMove != null) output.add(null);
-		return output;
+		return actions;
+//		if (!USE_MULTIPLAYER_FACTORING) return actions;
+//		Set<Move> uselessMoves = useless.get(role);
+//
+//		List<Move> output = new ArrayList<>();
+//		Move uselessMove = null;
+//		for (Move move : actions) {
+//			if (uselessMoves.contains(move)) {
+//				uselessMove = move;
+//				continue;
+//			}
+//			output.add(move);
+//		}
+//		if (uselessMove != null) output.add(null);
+//		return output;
 	}
 
 	public double heuristic(MachineState state) {
@@ -1084,7 +1068,7 @@ public class Experiment extends Method {
 		opponents = new ArrayList<>();
 		heuristics = null;
 		depthChargesPerState = 1;
-		exploration_bias = 1.0;
+		exploration_bias = 1;
 
 		StateMachine machine = gamer.getStateMachine();
 		roles = machine.findRoles().toArray(new Role[0]);
@@ -1230,6 +1214,7 @@ public class Experiment extends Method {
 		for (int i = 0; i < solvers.length; i++) {
 			try {
 				Solver solver = returns.take();
+//				solver.best = null;
 				if (solver.best == null) { // timeout
 					Log.println(solver + " found no solution");
 					if (solver instanceof DFSSolver) proven = false;
@@ -1397,22 +1382,19 @@ public class Experiment extends Method {
 	public Move run_(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 			TransitionDefinitionException {
-		// we don't cache anyway. might as well...
 		if (moves.size() == 1) {
 			Log.println("one legal move: " + moves.get(0));
 			return moves.get(0);
 		}
 		Log.println("threads running: " + Thread.activeCount());
-		Map<Role, Set<Move>> oldUseless = null;
+
 		Log.println("number of legal moves: " + moves.size());
 		ignoreProps = null;
 		if (propNetInitialized) {
-			oldUseless = new HashMap<>();
+
 			List<Proposition> bases = smthread.m.props;
 			ignoreProps = new boolean[bases.size()];
-			for (Role r : machine.findRoles()) {
-				oldUseless.put(r, new HashSet<>(useless.get(r)));
-			}
+
 			Set<Component> reachableBases = new HashSet<>();
 			Set<Component> reachableBasesBackwards = new HashSet<>();
 			Map<GdlSentence, Proposition> propMap = smthread.m.p.getInputPropositions();
@@ -1440,20 +1422,14 @@ public class Experiment extends Method {
 					Component does = propMap.get(ProverQueryBuilder.toDoes(r, action));
 					if (does == null) continue;
 					findComponentsForwards(does, ignore);
-					if (!relevant.contains(does)) {
-						useless.get(r).add(action);
-						count++;
-					}
 				}
 			}
-			Log.println("found " + count + " locally irrelevant inputs");
 			ignore.removeAll(reachableBases);
 			count = 0;
 			for (int i = 0; i < bases.size(); i++) {
 				if (ignore.contains(bases.get(i))) {
 					count++;
 					ignoreProps[i] = true;
-					System.out.println(bases.get(i));
 				}
 			}
 			Log.println("found " + count + " constant propositions");
@@ -1466,11 +1442,28 @@ public class Experiment extends Method {
 		Log.println("depth charge threads: " + nthread);
 
 		// set up tree
-
+		boolean canUseOldNodes = false;
+		if (lastIgnoreProps != null) {
+			canUseOldNodes = true;
+			for (int i = 0; i < ignoreProps.length; i++) {
+				if (!ignoreProps[i] && lastIgnoreProps[i]) {
+					canUseOldNodes = false;
+					break;
+				}
+			}
+		}
+		if (canUseOldNodes) {
+			Log.println("attempting to use cached information");
+		}
+		if (canUseOldNodes && dagMap.containsKey(rootstate)) {
+			root = dagMap.get(rootstate);
+			root.parents.clear();
+			Log.println("recovered " + root.visits + " visits");
+		} else {
+			root = new MTreeNode(rootstate);
+		}
 		dagMap = new HashMap<>();
-
-		root = new MTreeNode(rootstate);
-		dagMap.put(rootstate, root);
+		addToDagMap(root);
 
 		DepthChargeThread[] threads = new DepthChargeThread[nthread];
 		ArrayBlockingQueue<Stack<MTreeNode>> input = new ArrayBlockingQueue<>(1);
@@ -1501,7 +1494,6 @@ public class Experiment extends Method {
 				}
 			}
 		}
-		sanitizeMoves(role, root, moves);
 		Collections.sort(root.children);
 		for (MTreeNode child : root.children) {
 			Log.printf(
@@ -1534,47 +1526,21 @@ public class Experiment extends Method {
 //		}
 
 		// allow gc
-		dagMap = new HashMap<>();
+		if (!root.isLooselyProven()) dagMap = new HashMap<>();
 		root = null;
+		lastIgnoreProps = ignoreProps;
 
-		Move chosen = bestChild.move[ourRoleIndex];
-		if (chosen == USELESS_MOVE) {
-			int leastUseful = Integer.MAX_VALUE;
-			for (Move move : moves) {
-				if (!useless.get(role).contains(move)) continue;
-				int usefulness = 0;
-				for (List<Move> jmove : machine.getLegalJointMoves(
-						rootstate, role, move)) {
-					PropNetMachineState next = (PropNetMachineState) machine.getNextState(
-							rootstate, jmove);
-					PropNetMachineState state = (PropNetMachineState) rootstate;
-					for (int i = 0; i < next.props.length; i++) {
-						if (next.props[i] != state.props[i]) usefulness++;
-					}
-				}
-				if (usefulness < leastUseful) {
-					leastUseful = usefulness;
-					chosen = move;
-				}
-			}
-			Log.println("noop chosen. playing most useless move: " + chosen);
-		}
-
-		if (oldUseless != null) useless = oldUseless;
-		return chosen;
+		return bestChild.move[ourRoleIndex];
 	}
 
-	private void sanitizeMoves(Role role, MTreeNode root, Collection<Move> legal) {
-		MTreeNode remove = null;
-		for (MTreeNode child : root.children) {
-			if (!legal.contains(child.move[ourRoleIndex])) {
-				Set<Move> uselessMoves = useless.get(role);
-				uselessMoves.retainAll(legal);
-				if (uselessMoves.size() > 0) child.move[ourRoleIndex] = USELESS_MOVE;
-				else remove = child;
-			}
+	private void addToDagMap(MTreeNode node) {
+		if (node.isMaxNode()) {
+			if (dagMap.containsKey(node.state)) return;
+			dagMap.put(node.state, node);
 		}
-		if (remove != null) root.children.remove(remove);
+		for (MTreeNode child : node.children) {
+			addToDagMap(child);
+		}
 	}
 
 	private Stack<MTreeNode> select(MTreeNode node) throws TransitionDefinitionException {
