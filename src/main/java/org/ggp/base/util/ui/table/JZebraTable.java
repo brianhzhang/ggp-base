@@ -15,7 +15,7 @@ public class JZebraTable extends javax.swing.JTable
         super(numRows, numColumns);
     }
 
-    public JZebraTable(java.util.Vector<?> rowData, java.util.Vector<?> columnNames)
+    public JZebraTable(java.util.Vector<java.util.Vector<?>> rowData, java.util.Vector<?> columnNames)
     {
         super(rowData, columnNames);
     }
