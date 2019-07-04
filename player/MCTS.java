@@ -1,24 +1,3 @@
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.PriorityQueue;
-import java.util.Queue;
-import java.util.Set;
-import java.util.Stack;
-import java.util.TreeMap;
-import java.util.TreeSet;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.apache.commons.math3.stat.regression.MillerUpdatingRegression;
 import org.apache.commons.math3.stat.regression.RegressionResults;
@@ -42,6 +21,12 @@ import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 import org.ggp.base.util.statemachine.implementation.prover.query.ProverQueryBuilder;
+
+import java.util.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 public class MCTS extends Method {
 
@@ -114,11 +99,12 @@ public class MCTS extends Method {
 				TransitionDefinitionException, GoalDefinitionException {
 			MTreeNode node = tree.peek();
 			MachineState state = node.state;
-			if (node.move != null) state = machine.getRandomNextState(state, role, node.move);
+			if (node.move != null) state = getRandomNextState(machine, state, node.move);
 			double score;
 			if (propNetInitialized) {
 				JustKiddingPropNetStateMachine pnsm = (JustKiddingPropNetStateMachine) machine;
-				score = findReward(pnsm.internalDC((PropNetMachineState) state));
+				int[] end = pnsm.internalDC((PropNetMachineState) state);
+				score = findReward(end, ourRoleIndex);
 			} else {
 				while (!machine.isTerminal(state)) {
 					if (System.currentTimeMillis() > timeout) return FAIL;
@@ -128,6 +114,17 @@ public class MCTS extends Method {
 			}
 			return score;
 		}
+	}
+
+	private MachineState getRandomNextState(StateMachine machine,
+			MachineState state, Move[] partialMove)
+			throws MoveDefinitionException, TransitionDefinitionException {
+		List<Move> move = new ArrayList<>();
+		for (int i = 0; i < partialMove.length; i++) {
+			if (partialMove[i] != null) move.add(partialMove[i]);
+			else move.add(machine.getRandomMove(state, roles[i]));
+		}
+		return machine.getNextState(state, move);
 	}
 
 	// a namespace for astar-related methods...or really just a DFS
@@ -264,26 +261,20 @@ public class MCTS extends Method {
 		private int index = 0;
 		private MTreeNode node;
 		private List<List<Move>> allMoves;
-		private List<Move> moves;
 		private int maxIndex = 1;
 
 		public LazyExpander(MTreeNode node) {
 			this.node = node;
-			if (node.isMaxNode()) {
-				moves = getUsefulMoves(mainThreadMachine, roles[ourRoleIndex], node.state);
-				Collections.shuffle(moves);
-				maxIndex = moves.size();
-			} else {
-				allMoves = new ArrayList<>();
-				for (int i = 0; i < roles.length; i++) {
-					if (i == ourRoleIndex) {
-						allMoves.add(null);
-					} else {
-						List<Move> moves = getUsefulMoves(mainThreadMachine, roles[i], node.state);
-						Collections.shuffle(moves);
-						allMoves.add(moves);
-						maxIndex *= moves.size();
-					}
+			allMoves = new ArrayList<>();
+			for (int i = 0; i < roles.length; i++) {
+				if ((friendRoles[i] && !node.isMaxNode()) ||
+						(!friendRoles[i] && node.isMaxNode())) {
+					allMoves.add(null);
+				} else {
+					List<Move> moves = getUsefulMoves(mainThreadMachine, roles[i], node.state);
+					Collections.shuffle(moves);
+					allMoves.add(moves);
+					maxIndex *= moves.size();
 				}
 			}
 		}
@@ -301,15 +292,24 @@ public class MCTS extends Method {
 
 		private MTreeNode nextHelper() throws TransitionDefinitionException {
 			if (node.isMaxNode()) {
-				Move move = moves.get(index);
-				MTreeNode newnode = new MTreeNode(node.state, move, node);
+				Move[] partialMove = new Move[roles.length];
+				int copyIndex = index;
+				for (int i = 0; i < roles.length; i++) {
+					if (!friendRoles[i]) partialMove[i] = null;
+					else {
+						List<Move> curMoves = allMoves.get(i);
+						partialMove[i] = curMoves.get(copyIndex % curMoves.size());
+						copyIndex /= curMoves.size();
+					}
+				}
+				MTreeNode newnode = new MTreeNode(node.state, partialMove, node);
 				node.children.add(newnode);
 				return newnode;
 			} else {
 				List<Move> jmove = new ArrayList<>();
 				int copyIndex = index;
 				for (int i = 0; i < roles.length; i++) {
-					if (i == ourRoleIndex) jmove.add(node.move);
+					if (friendRoles[i]) jmove.add(node.move[i]);
 					else {
 						List<Move> curMoves = allMoves.get(i);
 						jmove.add(curMoves.get(copyIndex % curMoves.size()));
@@ -346,6 +346,7 @@ public class MCTS extends Method {
 		public SimpleRegression[] goal = new SimpleRegression[1 + heuristicNames.size()];
 		public SummaryStatistics[] control = new SummaryStatistics[1 + heuristicNames.size()];
 		public SummaryStatistics[] variance = new SummaryStatistics[1 + heuristicNames.size()];
+		public SimpleRegression[] roleRegression = new SimpleRegression[roles.length];
 		public SummaryStatistics gameLen = new SummaryStatistics();
 
 		public MetaGameDCThread(StateMachine machine, Role role, long timeout) {
@@ -356,6 +357,9 @@ public class MCTS extends Method {
 				goal[i] = new SimpleRegression();
 				control[i] = new SummaryStatistics();
 				variance[i] = new SummaryStatistics();
+			}
+			for (int i = 0; i < roleRegression.length; i++) {
+				roleRegression[i] = new SimpleRegression();
 			}
 		}
 
@@ -411,6 +415,9 @@ public class MCTS extends Method {
 				}
 				gameLen.addValue(nstep);
 				double eval = findReward(machine, role, state);
+				for (int i = 0; i < roles.length; i++) {
+					roleRegression[i].addData(findReward(machine, roles[i], state), eval);
+				}
 				int randomIndex = (int) (Math.random() * (pstates.size() - 1));
 				PropNetMachineState randomState = pstates.get(randomIndex);
 
@@ -427,7 +434,7 @@ public class MCTS extends Method {
 					}
 				}
 
-				double randomEval = findReward(machine.internalDC(randomState));
+				double randomEval = findReward(machine.internalDC(randomState), ourRoleIndex);
 				synchronized (heuristicRegression) {
 					for (double[] s : states) {
 						heuristicRegression.addObservation(s, eval);
@@ -454,7 +461,7 @@ public class MCTS extends Method {
 		public List<MTreeNode> parents = new ArrayList<>();
 
 		public MachineState state;
-		public Move move; // null if max-node; non-null if min-node
+		public Move[] move; // null if max-node; non-null if min-node
 
 		public int depth = 0;
 		public boolean isMaxNode;
@@ -468,7 +475,7 @@ public class MCTS extends Method {
 			init(state, null, true);
 		}
 
-		public MTreeNode(MachineState state, Move move, MTreeNode parent) {
+		public MTreeNode(MachineState state, Move[] move, MTreeNode parent) {
 			this.move = move;
 			init(state, parent, false);
 		}
@@ -525,7 +532,7 @@ public class MCTS extends Method {
 			for (MTreeNode child : children) {
 				if (child != bestChild && child.upper > bestChild.lower) return false;
 			}
-			Log.printf("loosely solved: %s\n", bestChild.move);
+			Log.printf("loosely solved: %s\n", Arrays.toString(bestChild.move));
 			return true;
 		}
 
@@ -554,7 +561,7 @@ public class MCTS extends Method {
 			double var = eff_sumsq / eff_visits - util * util;
 
 			var = c * Math.sqrt(Math.log(parent.visits) / visits * var);
-			//var = c * Math.sqrt(parent.visits * var) / (visits - 1);
+//			var = c * Math.sqrt(parent.visits * var) / (visits - 1);
 			return util + var;
 		}
 
@@ -766,25 +773,7 @@ public class MCTS extends Method {
 	private static final boolean USE_MULTIPLAYER_FACTORING = true;
 	// for weighted depth charge results
 	private static final double OUR_WEIGHT_FACTOR = 2.;
-	@SuppressWarnings("serial")
-	private static final Move USELESS_MOVE = new Move(new GdlTerm() {
 
-		@Override
-		public boolean isGround() {
-			return false;
-		}
-
-		@Override
-		public GdlSentence toSentence() {
-			return null;
-		}
-
-		@Override
-		public String toString() {
-			return "[ noop ]";
-		}
-
-	});
 	private static final int MTREENODE_PRIOR_VISITS = 2;
 	private static final double MTREENODE_PRIOR_UTIL = 100;
 	private static final double MTREENODE_PRIOR_SUMSQ = 10000;
@@ -804,9 +793,11 @@ public class MCTS extends Method {
 	private Map<Proposition, Proposition> inputToLegalMap;
 	private int nUsefulRoles;
 	private boolean[] ignoreProps;
+	private boolean[] lastIgnoreProps;
 	private double totalWeight;
 	private double ourWeight;
 	private Role[] roles;
+	private boolean[] friendRoles;
 	private int ourRoleIndex = -1;
 
 	// heuristics
@@ -994,11 +985,11 @@ public class MCTS extends Method {
 		}
 	}
 
-	private double findReward(int[] rewards) {
-		if (opponents.size() == 0) return rewards[ourRoleIndex];
-		double reward = ourWeight * rewards[ourRoleIndex];
+	private double findReward(int[] rewards, int role) {
+		if (opponents.size() == 0) return rewards[role];
+		double reward = ourWeight * rewards[role];
 		for (int i = 0; i < roles.length; i++) {
-			if (i == ourRoleIndex) continue;
+			if (i == role) continue;
 			reward += (MyPlayer.MAX_SCORE - rewards[i]);
 		}
 		return reward / totalWeight;
@@ -1025,20 +1016,21 @@ public class MCTS extends Method {
 			e.printStackTrace();
 		}
 		if (!propNetInitialized) return new ArrayList<>(actions);
-		if (!USE_MULTIPLAYER_FACTORING) return actions;
-		Set<Move> uselessMoves = useless.get(role);
-
-		List<Move> output = new ArrayList<>();
-		Move uselessMove = null;
-		for (Move move : actions) {
-			if (uselessMoves.contains(move)) {
-				uselessMove = move;
-				continue;
-			}
-			output.add(move);
-		}
-		if (uselessMove != null) output.add(null);
-		return output;
+		return actions;
+//		if (!USE_MULTIPLAYER_FACTORING) return actions;
+//		Set<Move> uselessMoves = useless.get(role);
+//
+//		List<Move> output = new ArrayList<>();
+//		Move uselessMove = null;
+//		for (Move move : actions) {
+//			if (uselessMoves.contains(move)) {
+//				uselessMove = move;
+//				continue;
+//			}
+//			output.add(move);
+//		}
+//		if (uselessMove != null) output.add(null);
+//		return output;
 	}
 
 	public double heuristic(MachineState state) {
@@ -1061,15 +1053,22 @@ public class MCTS extends Method {
 		opponents = new ArrayList<>();
 		heuristics = null;
 		depthChargesPerState = 1;
-		exploration_bias = 1.0;
+		exploration_bias = 1;
 
 		StateMachine machine = gamer.getStateMachine();
 		roles = machine.findRoles().toArray(new Role[0]);
+		friendRoles = new boolean[roles.length];
 
 		for (int i = 0; i < roles.length; i++) {
 			Role role = roles[i];
-			if (!role.equals(gamer.getRole())) opponents.add(role);
-			else ourRoleIndex = i;
+			if (!role.equals(gamer.getRole())) {
+				opponents.add(role);
+				friendRoles[i] = false;
+			} else {
+				ourRoleIndex = i;
+				friendRoles[i] = true;
+			}
+
 			useless.put(role, new HashSet<>());
 		}
 		Log.printf("roles: " + Arrays.toString(roles) + " | our role: ");
@@ -1200,7 +1199,7 @@ public class MCTS extends Method {
 		for (int i = 0; i < solvers.length; i++) {
 			try {
 				Solver solver = returns.take();
-				solver.best = null;
+//				solver.best = null;
 				if (solver.best == null) { // timeout
 					Log.println(solver + " found no solution");
 					if (solver instanceof DFSSolver) proven = false;
@@ -1251,9 +1250,9 @@ public class MCTS extends Method {
 			pool.add(thread);
 			thread.start();
 		}
-		for (int i = 0; i < n_thread; i++) {
+		for (MetaGameDCThread thread : pool) {
 			try {
-				pool.get(i).join();
+				thread.join();
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			}
@@ -1284,6 +1283,20 @@ public class MCTS extends Method {
 		}
 
 		Log.println("states explored: " + heuristicRegression.getN());
+
+		double[] roleCorrelations = new double[roles.length];
+		double[] roleSignificances = new double[roles.length];
+		for (int i = 0; i < roles.length; i++) {
+			for (MetaGameDCThread thread : pool) {
+				roleCorrelations[i] += thread.roleRegression[i].getR() / n_thread;
+				roleSignificances[i] += thread.roleRegression[i].getSignificance() / n_thread;
+			}
+			friendRoles[i] = roleCorrelations[i] > (1 - 1e-4);
+		}
+		Log.println("role correlations: " + Arrays.toString(roleCorrelations));
+		Log.println("role significances: " + Arrays.toString(roleSignificances));
+		Log.println("friends: " + Arrays.toString(friendRoles));
+
 		if (totalSum < 1) {
 			Log.println("no heuristic");
 			return;
@@ -1354,31 +1367,32 @@ public class MCTS extends Method {
 	public Move run_(StateMachine machine, MachineState rootstate, Role role, List<Move> moves,
 			long timeout) throws GoalDefinitionException, MoveDefinitionException,
 			TransitionDefinitionException {
-		// we don't cache anyway. might as well...
 		if (moves.size() == 1) {
 			Log.println("one legal move: " + moves.get(0));
 			return moves.get(0);
 		}
 		Log.println("threads running: " + Thread.activeCount());
-		Map<Role, Set<Move>> oldUseless = null;
+
 		Log.println("number of legal moves: " + moves.size());
 		ignoreProps = null;
 		if (propNetInitialized) {
-			oldUseless = new HashMap<>();
+
 			List<Proposition> bases = smthread.m.props;
 			ignoreProps = new boolean[bases.size()];
-			for (Role r : machine.findRoles()) {
-				oldUseless.put(r, new HashSet<>(useless.get(r)));
-			}
+
 			Set<Component> reachableBases = new HashSet<>();
 			Set<Component> reachableBasesBackwards = new HashSet<>();
 			Map<GdlSentence, Proposition> propMap = smthread.m.p.getInputPropositions();
-			for (Move move : moves) {
-				Component c = propMap.get(ProverQueryBuilder.toDoes(role, move));
-				findComponentsForwards(c, reachableBases);
-				c = smthread.m.p.getLegalInputMap().get(c);
-				findComponentsBackwards(c, reachableBasesBackwards);
+			for (int i = 0; i < roles.length; i++) {
+				if (!friendRoles[i]) continue;
+				for (Move move : machine.getLegalMoves(rootstate, roles[i])) {
+					Component c = propMap.get(ProverQueryBuilder.toDoes(roles[i], move));
+					findComponentsForwards(c, reachableBases);
+					c = smthread.m.p.getLegalInputMap().get(c);
+					findComponentsBackwards(c, reachableBasesBackwards);
+				}
 			}
+
 			reachableBases.addAll(reachableBasesBackwards);
 			reachableBases.retainAll(new HashSet<>(bases));
 			Log.printf("%d of %d props relevant\n", reachableBases.size(), bases.size());
@@ -1393,13 +1407,8 @@ public class MCTS extends Method {
 					Component does = propMap.get(ProverQueryBuilder.toDoes(r, action));
 					if (does == null) continue;
 					findComponentsForwards(does, ignore);
-					if (!relevant.contains(does)) {
-						useless.get(r).add(action);
-						count++;
-					}
 				}
 			}
-			Log.println("found " + count + " locally irrelevant inputs");
 			ignore.removeAll(reachableBases);
 			count = 0;
 			for (int i = 0; i < bases.size(); i++) {
@@ -1418,11 +1427,28 @@ public class MCTS extends Method {
 		Log.println("depth charge threads: " + nthread);
 
 		// set up tree
-
+		boolean canUseOldNodes = false;
+		if (lastIgnoreProps != null) {
+			canUseOldNodes = true;
+			for (int i = 0; i < ignoreProps.length; i++) {
+				if (!ignoreProps[i] && lastIgnoreProps[i]) {
+					canUseOldNodes = false;
+					break;
+				}
+			}
+		}
+		if (canUseOldNodes) {
+			Log.println("attempting to use cached information");
+		}
+		if (canUseOldNodes && dagMap.containsKey(rootstate)) {
+			root = dagMap.get(rootstate);
+			root.parents.clear();
+			Log.println("recovered " + root.visits + " visits");
+		} else {
+			root = new MTreeNode(rootstate);
+		}
 		dagMap = new HashMap<>();
-
-		root = new MTreeNode(rootstate);
-		dagMap.put(rootstate, root);
+		addToDagMap(root);
 
 		DepthChargeThread[] threads = new DepthChargeThread[nthread];
 		ArrayBlockingQueue<Stack<MTreeNode>> input = new ArrayBlockingQueue<>(1);
@@ -1435,15 +1461,14 @@ public class MCTS extends Method {
 			threads[i].setPriority(Thread.MIN_PRIORITY);
 		}
 
-		while (System.currentTimeMillis() < timeout) {
-			if (root.isLooselyProven()) break;
+		while (System.currentTimeMillis() < timeout && !root.isLooselyProven()) {
 			Stack<MTreeNode> tree = select(root);
 			MTreeNode node = tree.peek();
 			if (node.isMaxNode() && machine.isTerminal(node.state)) {
 				double reward = findReward(machine, role, node.state);
 				backpropogate(tree, reward, reward * reward, true, true);
 			} else {
-				// EXPLOR
+				// EXPLORE
 				if (!input.offer(tree)) backpropogate(tree, 0, 0, false, false);
 				// BACKPROP
 				while (true) {
@@ -1454,7 +1479,6 @@ public class MCTS extends Method {
 				}
 			}
 		}
-		sanitizeMoves(role, root, moves);
 		Collections.sort(root.children);
 		for (MTreeNode child : root.children) {
 			Log.printf(
@@ -1464,12 +1488,12 @@ public class MCTS extends Method {
 					child.sum_utility / child.visits, child.heuristic,
 					child.utility(),
 					child.lower, child.upper,
-					child.depth, child.move);
+					child.depth, Arrays.toString(child.move));
 		}
 		MTreeNode bestChild = root.children.get(root.children.size() - 1);
 		long elapsed_time = (System.currentTimeMillis() - timestart);
 		Log.printf("time=%d played=%s visits=%d/%d depth=%d \n",
-				elapsed_time, bestChild.move, bestChild.visits,
+				elapsed_time, Arrays.toString(bestChild.move), bestChild.visits,
 				root.visits, root.depth);
 
 		input.clear();
@@ -1487,47 +1511,21 @@ public class MCTS extends Method {
 //		}
 
 		// allow gc
-		dagMap = new HashMap<>();
+		if (!root.isLooselyProven()) dagMap = new HashMap<>();
 		root = null;
+		lastIgnoreProps = ignoreProps;
 
-		Move chosen = bestChild.move;
-		if (chosen == USELESS_MOVE) {
-			int leastUseful = Integer.MAX_VALUE;
-			for (Move move : moves) {
-				if (!useless.get(role).contains(move)) continue;
-				int usefulness = 0;
-				for (List<Move> jmove : machine.getLegalJointMoves(
-						rootstate, role, move)) {
-					PropNetMachineState next = (PropNetMachineState) machine.getNextState(
-							rootstate, jmove);
-					PropNetMachineState state = (PropNetMachineState) rootstate;
-					for (int i = 0; i < next.props.length; i++) {
-						if (next.props[i] != state.props[i]) usefulness++;
-					}
-				}
-				if (usefulness < leastUseful) {
-					leastUseful = usefulness;
-					chosen = move;
-				}
-			}
-			Log.println("noop chosen. playing most useless move: " + chosen);
-		}
-
-		if (oldUseless != null) useless = oldUseless;
-		return chosen;
+		return bestChild.move[ourRoleIndex];
 	}
 
-	private void sanitizeMoves(Role role, MTreeNode root, Collection<Move> legal) {
-		MTreeNode remove = null;
-		for (MTreeNode child : root.children) {
-			if (!legal.contains(child.move)) {
-				Set<Move> uselessMoves = useless.get(role);
-				uselessMoves.retainAll(legal);
-				if (uselessMoves.size() > 0) child.move = USELESS_MOVE;
-				else remove = child;
-			}
+	private void addToDagMap(MTreeNode node) {
+		if (node.isMaxNode()) {
+			if (dagMap.containsKey(node.state)) return;
+			dagMap.put(node.state, node);
 		}
-		if (remove != null) root.children.remove(remove);
+		for (MTreeNode child : node.children) {
+			addToDagMap(child);
+		}
 	}
 
 	private Stack<MTreeNode> select(MTreeNode node) throws TransitionDefinitionException {
