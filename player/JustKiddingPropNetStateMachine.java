@@ -1,25 +1,7 @@
-import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-
-import org.ggp.base.util.gdl.grammar.Gdl;
-import org.ggp.base.util.gdl.grammar.GdlConstant;
-import org.ggp.base.util.gdl.grammar.GdlRelation;
-import org.ggp.base.util.gdl.grammar.GdlSentence;
+import org.ggp.base.util.gdl.grammar.*;
 import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.PropNet;
-import org.ggp.base.util.propnet.architecture.components.And;
-import org.ggp.base.util.propnet.architecture.components.Constant;
-import org.ggp.base.util.propnet.architecture.components.Not;
-import org.ggp.base.util.propnet.architecture.components.Or;
-import org.ggp.base.util.propnet.architecture.components.Proposition;
-import org.ggp.base.util.propnet.architecture.components.Transition;
+import org.ggp.base.util.propnet.architecture.components.*;
 import org.ggp.base.util.propnet.factory.OptimizingPropNetFactory;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
@@ -30,6 +12,9 @@ import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
+
+import java.io.Serializable;
+import java.util.*;
 
 public class JustKiddingPropNetStateMachine extends StateMachine {
 
@@ -57,6 +42,8 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 	PropNet p;
 	ArrayList<Proposition> props;
 	public List<Component> components;
+	public Map<Integer, Component> indexMapRev;
+	public Map<Component, Integer> indexMap;
 
 	class RoleMove implements Serializable {
 		private static final long serialVersionUID = 1L;
@@ -122,7 +109,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		// trim unnecessary propositions
 
 		try {
-			PropNetOptimizer.optimizePropnet(p);
+			new PropNetOptimizer(p).optimizePropnet(false);
 		} catch (InstantiationException | IllegalAccessException e) {
 			e.printStackTrace();
 		}
@@ -280,8 +267,11 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			}
 		}
 
+		this.indexMapRev = paMxedni;
+		this.indexMap = indexMap;
+
 		for (Component c : components) {
-			if (c instanceof Proposition) continue;
+			if (c.getInputs().isEmpty() || basepropset.contains(c)) continue;
 			int delta = getComp(c) - comps[indexMap.get(c)];
 			for (Component d : c.getInputs()) {
 				delta += ((comps[indexMap.get(d)] >> 31) & 1);
@@ -301,6 +291,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 		}
 		initial_state = new PropNetMachineState(initbases);
 		initInternalDC();
+
 	}
 
 	private List<Component> getOrdering(List<Component> comps, Set<Proposition> bases,
@@ -331,8 +322,12 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			return 0x7FFFFFFF;
 		} else if (c instanceof Constant) {
 			return (c.getValue()) ? 0xF0000000 : 0x0F000000;
+		} else if (c instanceof Proposition) {
+			return 0x7FFFFFFF;
+		} else {
+			System.out.println("unknown component " + c);
+			return 0x1337420;
 		}
-		return 0x1337420;
 	}
 
 	private List<Move> propToMoves(Set<Proposition> set) {
@@ -362,7 +357,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 				return goals[i][2];
 			}
 		}
-		return -1;
+		return 0; //throw new GoalDefinitionException(state, role);
 	}
 
 	public double[] getAllGoals(PropNetMachineState state) {
@@ -458,6 +453,7 @@ public class JustKiddingPropNetStateMachine extends StateMachine {
 			}
 		}
 	}
+
 
 	/* ########################################################################################## */
 

@@ -1,24 +1,3 @@
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.PriorityQueue;
-import java.util.Queue;
-import java.util.Set;
-import java.util.Stack;
-import java.util.TreeMap;
-import java.util.TreeSet;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.apache.commons.math3.stat.regression.MillerUpdatingRegression;
 import org.apache.commons.math3.stat.regression.RegressionResults;
@@ -42,6 +21,12 @@ import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 import org.ggp.base.util.statemachine.implementation.prover.query.ProverQueryBuilder;
+
+import java.util.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 public class Experiment extends Method {
 
@@ -463,7 +448,7 @@ public class Experiment extends Method {
 		}
 	}
 
-	private class MTreeNode implements Comparable<MTreeNode> {
+	private class MTreeNode implements Comparable<MTreeNode>, DirectWinFinderThread.StateContainer {
 		// prior: sum squares = 10000 so that stdev != 0
 		public int heuristicVisits = MTREENODE_PRIOR_VISITS;
 		public int visits = MTREENODE_PRIOR_VISITS * depthChargesPerState;
@@ -486,8 +471,14 @@ public class Experiment extends Method {
 		private LazyExpander expander;
 		private boolean first = true;
 
+		public DirectWinFinderThread.Output directWinResult;
+
 		public MTreeNode(MachineState state) {
 			init(state, null, true);
+		}
+
+		public MachineState getState() {
+			return this.state;
 		}
 
 		public MTreeNode(MachineState state, Move[] move, MTreeNode parent) {
@@ -568,14 +559,17 @@ public class Experiment extends Method {
 		// dynamic score: multiplies by standard deviation
 		public double score(double c, MTreeNode parent) {
 			double heuristicEffVisits = heuristicMaxVisits;
-			double eff_sum = sum_utility + heuristic * heuristicEffVisits;
+			double heuristicEff = heuristic;
+			heuristicEff += root.sum_utility / root.visits - root.heuristic;
+			heuristicEff = putInBounds(heuristicEff);
+			double eff_sum = sum_utility + heuristicEff * heuristicEffVisits;
 			double eff_visits = visits + heuristicEffVisits;
-			double eff_sumsq = sum_sq + 100 * heuristic * heuristicEffVisits;
+			double eff_sumsq = sum_sq + 100 * heuristicEff * heuristicEffVisits;
 
 			double util = eff_sum / eff_visits;
 			double var = eff_sumsq / eff_visits - util * util;
 
-			var = c * Math.sqrt(Math.log(parent.visits) / visits * var);
+			var = c * Math.sqrt(Math.log(parent.visits) / eff_visits * var);
 //			var = c * Math.sqrt(parent.visits * var) / (visits - 1);
 			return util + var;
 		}
@@ -630,18 +624,38 @@ public class Experiment extends Method {
 		}
 
 		public boolean setBounds() {
-			assert !children.isEmpty();
+//			assert !children.isEmpty();
 			double oldupp = upper, oldlow = lower, oldH = heuristic;
 			if (isMaxNode()) {
-				upper = MyPlayer.MIN_SCORE;
-				lower = MyPlayer.MIN_SCORE;
-				heuristic = MyPlayer.MIN_SCORE;
-				for (MTreeNode c : children) {
-					upper = Math.max(upper, c.upper);
-					lower = Math.max(lower, c.lower);
-					heuristic = Math.max(heuristic, c.heuristic);
+				if (expander != null || children.isEmpty()) {
+					lower = MyPlayer.MIN_SCORE;
+					for (MTreeNode c : children) {
+						lower = Math.max(lower, c.lower);
+					}
+				} else {
+					upper = MyPlayer.MIN_SCORE;
+					lower = MyPlayer.MIN_SCORE;
+					heuristic = MyPlayer.MIN_SCORE;
+					for (MTreeNode c : children) {
+						upper = Math.max(upper, c.upper);
+						lower = Math.max(lower, c.lower);
+						heuristic = Math.max(heuristic, c.heuristic);
+					}
 				}
-				assert expander == null;
+				// assert expander == null;
+				if (directWinResult != null) {
+					upper = Math.min(upper, directWinResult.upper);
+					lower = Math.max(lower, directWinResult.lower);
+//					if (directWinResult.lower == directWinResult.upper) {
+//						for (MTreeNode parent : this.parents) {
+//							for (MTreeNode gp : parent.parents) {
+//								if (gp != root && gp.expander == null) {
+//									directWinFinder.priorityInput.offer(gp.state);
+//								}
+//							}
+//						}
+//					}
+				}
 			} else {
 				assert !children.isEmpty();
 				if (expander == null) {
@@ -785,7 +799,7 @@ public class Experiment extends Method {
 
 	public static final int FAIL = MyPlayer.MIN_SCORE - 1;
 
-	private static final boolean USE_MULTIPLAYER_FACTORING = true;
+	private static final boolean USE_MULTIPLAYER_FACTORING = false;
 	// for weighted depth charge results
 	private static final double OUR_WEIGHT_FACTOR = 2.;
 
@@ -831,6 +845,8 @@ public class Experiment extends Method {
 	private MTreeNode root;
 	private Map<MachineState, MTreeNode> dagMap;
 	private int depthChargesPerState = 1;
+
+	private DirectWinFinderThread directWinFinder;
 
 	public Experiment(MyPlayer gamer, List<Gdl> description) {
 		this.player = gamer;
@@ -879,6 +895,11 @@ public class Experiment extends Method {
 		if (!propNetInitialized && !smthread.isAlive()) {
 			player.switchToNewPropnets(smthread.m, machines);
 			Log.println("propnets initialized");
+			directWinFinder = new DirectWinFinderThread(
+					(JustKiddingPropNetStateMachine) machines[machines.length - 1],
+					ourRoleIndex, ourWeight);
+			directWinFinder.setPriority(Thread.MAX_PRIORITY);
+			directWinFinder.start();
 			return propNetInitialized = true;
 		}
 		return false;
@@ -890,6 +911,14 @@ public class Experiment extends Method {
 			smthread.m.kill = true;
 			try {
 				smthread.join();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+		if (directWinFinder != null) {
+			try {
+				directWinFinder.finalKill = directWinFinder.kill = true;
+				directWinFinder.join();
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			}
@@ -1254,7 +1283,8 @@ public class Experiment extends Method {
 
 	public void multiPlayerMetaGame(long timeout)
 			throws MoveDefinitionException, TransitionDefinitionException {
-		double HEURISTIC_FACTOR = 32.0;
+		double HEURISTIC_FACTOR = 8;
+		double HEURISTIC_MAX_VISITS_FACTOR = 1.0 / 8;
 		Role role = player.getRole();
 		List<MetaGameDCThread> pool = new ArrayList<>();
 		int n_thread = MyPlayer.N_THREADS;
@@ -1306,11 +1336,13 @@ public class Experiment extends Method {
 				roleCorrelations[i] += thread.roleRegression[i].getR() / n_thread;
 				roleSignificances[i] += thread.roleRegression[i].getSignificance() / n_thread;
 			}
-			friendRoles[i] = roleCorrelations[i] > (1 - 1e-4);
+			friendRoles[i] = roleCorrelations[i] > 0.95;
 		}
 		Log.println("role correlations: " + Arrays.toString(roleCorrelations));
 		Log.println("role significances: " + Arrays.toString(roleSignificances));
 		Log.println("friends: " + Arrays.toString(friendRoles));
+
+		Log.println("heuristic significance: " + totalSum);
 
 		if (totalSum < 1) {
 			Log.println("no heuristic");
@@ -1340,7 +1372,7 @@ public class Experiment extends Method {
 				Log.printf("\t%s : %.3f\n", heuristicNames.get(i - 1), est);
 			}
 		}
-		heuristicMaxVisits = 1.0 / dcRsq;
+		heuristicMaxVisits = HEURISTIC_MAX_VISITS_FACTOR * HEURISTIC_FACTOR / dcRsq;
 		Log.println("heuristic max visits: " + heuristicMaxVisits);
 	}
 
@@ -1437,8 +1469,9 @@ public class Experiment extends Method {
 
 		long timestart = System.currentTimeMillis();
 
-		int nthread = MyPlayer.N_THREADS - 1;
-		if (!propNetInitialized) nthread--;
+		int nthread = MyPlayer.N_THREADS - 2;
+		// one main thread for expansions and solver
+		// one direct win finder thread or propnet builder thread
 		Log.println("depth charge threads: " + nthread);
 
 		// set up tree
@@ -1455,13 +1488,18 @@ public class Experiment extends Method {
 		if (canUseOldNodes) {
 			Log.println("attempting to use cached information");
 		}
+
+		root = null;
 		if (canUseOldNodes && dagMap.containsKey(rootstate)) {
 			root = dagMap.get(rootstate);
 			root.parents.clear();
 			Log.println("recovered " + root.visits + " visits");
-		} else {
-			root = new MTreeNode(rootstate);
+			if (root.directWinResult != null) {
+				Log.println("recovered state with direct win found. restarting search");
+				root = null;
+			}
 		}
+		if (root == null) root = new MTreeNode(rootstate);
 		dagMap = new HashMap<>();
 		addToDagMap(root);
 
@@ -1476,13 +1514,34 @@ public class Experiment extends Method {
 			threads[i].setPriority(Thread.MIN_PRIORITY);
 		}
 
+		if (directWinFinder != null) {
+			directWinFinder.setFriends(friendRoles);
+			directWinFinder.assertReady();
+		}
+
+
 		while (System.currentTimeMillis() < timeout && !root.isLooselyProven()) {
 			Stack<MTreeNode> tree = select(root);
 			MTreeNode node = tree.peek();
+
+			if (directWinFinder != null) {
+				if (node.isMaxNode && node != root) {
+					directWinFinder.input.offer(tree);
+				}
+				while (true) {
+					DirectWinFinderThread.Output out = directWinFinder.output.poll();
+					if (out == null) break;
+					MTreeNode outNode = dagMap.get(out.input);
+					outNode.directWinResult = out;
+					propagateBound(outNode);
+				}
+			}
+
 			if (node.isMaxNode() && machine.isTerminal(node.state)) {
 				double reward = findReward(machine, role, node.state);
 				backpropogate(tree, reward, reward * reward, true, true);
 			} else {
+
 				// EXPLORE
 				if (!input.offer(tree)) backpropogate(tree, 0, 0, false, false);
 				// BACKPROP
@@ -1529,6 +1588,9 @@ public class Experiment extends Method {
 		if (!root.isLooselyProven()) dagMap = new HashMap<>();
 		root = null;
 		lastIgnoreProps = ignoreProps;
+
+		// kill DirectWinFinder
+		if (directWinFinder != null) directWinFinder.kill = true;
 
 		return bestChild.move[ourRoleIndex];
 	}

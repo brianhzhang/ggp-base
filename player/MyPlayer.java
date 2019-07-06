@@ -1,10 +1,3 @@
-import java.awt.GridLayout;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.List;
-
 import org.ggp.base.apps.player.config.ConfigPanel;
 import org.ggp.base.player.gamer.exception.GamePreviewException;
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
@@ -21,6 +14,13 @@ import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
+
+import java.awt.*;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.List;
 
 class GDLGetter extends StateMachine {
 
@@ -89,7 +89,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int N_OPTIONS = 10;
 	public static final int TIMEOUT_BUFFER = 2500; // time for network
 	// communication in ms
-	public static final int N_THREADS = Runtime.getRuntime().availableProcessors();
+	public static final int N_THREADS = 5; // Runtime.getRuntime().availableProcessors();
 	public static final boolean USE_LOGGING = false;
 
 	public static final PrintWriter gamelog = getGameLog();
@@ -112,7 +112,7 @@ public class MyPlayer extends StateMachineGamer {
 		System.out.println("Player instance started with " + N_THREADS + " threads");
 	}
 
-	public JustKiddingPropNetStateMachine copyMachine(JustKiddingPropNetStateMachine p) {
+	public static JustKiddingPropNetStateMachine copyMachine(JustKiddingPropNetStateMachine p) {
 		JustKiddingPropNetStateMachine newp = new JustKiddingPropNetStateMachine();
 		newp.comps = p.comps.clone();
 		newp.initcomps = p.initcomps.clone();
@@ -131,6 +131,9 @@ public class MyPlayer extends StateMachineGamer {
 		newp.legaltoinput = p.legaltoinput;
 		newp.use_propnet_reset = p.use_propnet_reset;
 		newp.initInternalDC();
+		newp.indexMap = p.indexMap;
+		newp.indexMapRev = p.indexMapRev;
+		newp.components = p.components;
 		return newp;
 	}
 
@@ -163,6 +166,8 @@ public class MyPlayer extends StateMachineGamer {
 
 	@Override
 	public void stateMachineAbort() {
+		player.cleanUp();
+		player = null;
 		Log.println("game stopped");
 		if (USE_LOGGING) {
 			Match m = getMatch();
@@ -184,8 +189,6 @@ public class MyPlayer extends StateMachineGamer {
 			}
 			gamelog.println(save);
 		}
-		player.cleanUp();
-		player = null;
 	}
 
 	@Override

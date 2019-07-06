@@ -1,25 +1,6 @@
 package org.ggp.base.apps.player;
 
-import java.awt.Dimension;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
-import java.awt.event.ActionEvent;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-
-import javax.swing.AbstractAction;
-import javax.swing.JButton;
-import javax.swing.JComboBox;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JTabbedPane;
-import javax.swing.JTextField;
-import javax.swing.border.TitledBorder;
-
+import com.google.common.collect.Lists;
 import org.ggp.base.apps.player.config.ConfigPanel;
 import org.ggp.base.apps.player.detail.DetailPanel;
 import org.ggp.base.apps.player.match.MatchPanel;
@@ -29,7 +10,14 @@ import org.ggp.base.player.gamer.Gamer;
 import org.ggp.base.util.reflection.ProjectSearcher;
 import org.ggp.base.util.ui.NativeUI;
 
-import com.google.common.collect.Lists;
+import javax.swing.*;
+import javax.swing.border.TitledBorder;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 @SuppressWarnings("serial")
 public final class Player extends JPanel {
@@ -37,7 +25,7 @@ public final class Player extends JPanel {
 		JFrame frame = new JFrame("Game Player");
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-		frame.setPreferredSize(new Dimension(1024, 768));
+		frame.setPreferredSize(new Dimension(800, 600));
 		frame.getContentPane().add(playerPanel);
 
 		frame.pack();
