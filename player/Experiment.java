@@ -347,7 +347,7 @@ public class Experiment extends Method {
 		public SummaryStatistics[] control = new SummaryStatistics[1 + heuristicNames.size()];
 		public SummaryStatistics[] variance = new SummaryStatistics[1 + heuristicNames.size()];
 		public SimpleRegression[] roleRegression = new SimpleRegression[roles.length];
-		public SummaryStatistics gameLen = new SummaryStatistics();
+		public SummaryStatistics branchingFactor = new SummaryStatistics();
 
 		public MetaGameDCThread(StateMachine machine, Role role, long timeout) {
 			this.machine = (JustKiddingPropNetStateMachine) machine;
@@ -413,36 +413,38 @@ public class Experiment extends Method {
 						throw e;
 					}
 				}
-				gameLen.addValue(nstep);
 				double eval = findReward(machine, role, state);
 				for (int i = 0; i < roles.length; i++) {
 					roleRegression[i].addData(findReward(machine, roles[i], state), eval);
 				}
-				int randomIndex = (int) (Math.random() * (pstates.size() - 1));
-				PropNetMachineState randomState = pstates.get(randomIndex);
+				if (pstates.size() > 1) {
+					int randomIndex = (int) (Math.random() * (pstates.size() - 1));
+					PropNetMachineState randomState = pstates.get(randomIndex);
 
-				MachineState randomNextMS = machine.getRandomNextState(randomState);
-				if (!machine.isTerminal(randomNextMS)) {
-					PropNetMachineState randomNext = (PropNetMachineState) randomNextMS;
-					double[] randomNextV = getvstate(randomNext);
+					MachineState randomNextMS = machine.getRandomNextState(randomState);
+					if (!machine.isTerminal(randomNextMS)) {
+						PropNetMachineState randomNext = (PropNetMachineState) randomNextMS;
+						double[] randomNextV = getvstate(randomNext);
 
-					double[] actualCurV = states.get(randomIndex);
-					double[] actualNextV = states.get(randomIndex + 1);
-					for (int i = 0; i < randomNextV.length; i++) {
-						control[i].addValue(randomNextV[i] - actualNextV[i]);
-						variance[i].addValue(actualCurV[i] - actualNextV[i]);
-					}
-				}
-
-				double randomEval = findReward(machine.internalDC(randomState), ourRoleIndex);
-				synchronized (heuristicRegression) {
-					for (double[] s : states) {
-						heuristicRegression.addObservation(s, eval);
-						for (int i = 0; i < s.length; i++) {
-							goal[i].addData(s[i], eval);
+						double[] actualCurV = states.get(randomIndex);
+						double[] actualNextV = states.get(randomIndex + 1);
+						for (int i = 0; i < randomNextV.length; i++) {
+							control[i].addValue(randomNextV[i] - actualNextV[i]);
+							variance[i].addValue(actualCurV[i] - actualNextV[i]);
 						}
+						branchingFactor.addValue(machine.getLegalJointMoves(randomState).size());
 					}
-					dcRegression.addData(randomEval, eval);
+
+					double randomEval = findReward(machine.internalDC(randomState), ourRoleIndex);
+					synchronized (heuristicRegression) {
+						for (double[] s : states) {
+							heuristicRegression.addObservation(s, eval);
+							for (int i = 0; i < s.length; i++) {
+								goal[i].addData(s[i], eval);
+							}
+						}
+						dcRegression.addData(randomEval, eval);
+					}
 				}
 			}
 		}
@@ -558,20 +560,14 @@ public class Experiment extends Method {
 
 		// dynamic score: multiplies by standard deviation
 		public double score(double c, MTreeNode parent) {
-			double heuristicEffVisits = heuristicMaxVisits;
-			double heuristicEff = heuristic;
-			heuristicEff += root.sum_utility / root.visits - root.heuristic;
-			heuristicEff = putInBounds(heuristicEff);
-			double eff_sum = sum_utility + heuristicEff * heuristicEffVisits;
-			double eff_visits = visits + heuristicEffVisits;
-			double eff_sumsq = sum_sq + 100 * heuristicEff * heuristicEffVisits;
 
-			double util = eff_sum / eff_visits;
-			double var = eff_sumsq / eff_visits - util * util;
-
-			var = c * Math.sqrt(Math.log(parent.visits) / eff_visits * var);
-//			var = c * Math.sqrt(parent.visits * var) / (visits - 1);
-			return util + var;
+			double util = sum_utility / visits;
+			double var = sum_sq / visits - util * util;
+			double explore_term = Math.sqrt(Math.log(parent.visits) / visits * var);
+			double d_heuristic = heuristic - root.heuristic;
+			double w_heuristic = Math.max(1, heuristicVisits / parent.visits);
+			double exploit_term = putInBounds(util + w_heuristic * d_heuristic);
+			return exploit_term + c * explore_term;
 		}
 
 		public MTreeNode selectBestChild() throws TransitionDefinitionException {
@@ -840,7 +836,7 @@ public class Experiment extends Method {
 
 	// for each heuristic in heuristicCalcs, contains the props that affect
 	private List<List<Integer>> heuristicProps;
-	private double heuristicMaxVisits;
+	private double heuristicVisits;
 
 	private MTreeNode root;
 	private Map<MachineState, MTreeNode> dagMap;
@@ -1283,8 +1279,9 @@ public class Experiment extends Method {
 
 	public void multiPlayerMetaGame(long timeout)
 			throws MoveDefinitionException, TransitionDefinitionException {
-		double HEURISTIC_FACTOR = 8;
-		double HEURISTIC_MAX_VISITS_FACTOR = 1.0 / 8;
+		double HEURISTIC_USAGE_THRESHOLD = 8;
+		double HEURISTIC_WEIGHT_FACTOR = 2.0;
+
 		Role role = player.getRole();
 		List<MetaGameDCThread> pool = new ArrayList<>();
 		int n_thread = MyPlayer.N_THREADS;
@@ -1292,6 +1289,7 @@ public class Experiment extends Method {
 		Log.println("begin random exploration...");
 		for (int i = 0; i < n_thread; i++) {
 			MetaGameDCThread thread = new MetaGameDCThread(machines[i], role, timeout);
+			thread.setPriority(Thread.MIN_PRIORITY);
 			pool.add(thread);
 			thread.start();
 		}
@@ -1304,7 +1302,7 @@ public class Experiment extends Method {
 		}
 		List<Integer> canUseHeuristic = new ArrayList<>();
 		canUseHeuristic.add(0);
-		double dcRsq = dcRegression.getRSquare() / HEURISTIC_FACTOR;
+		double dcRsq = dcRegression.getRSquare() / HEURISTIC_USAGE_THRESHOLD;
 		Log.println("weighted depth charge rsq: " + dcRsq);
 		if (dcRsq == 0) {
 			Log.println("no heuristic");
@@ -1338,6 +1336,7 @@ public class Experiment extends Method {
 			}
 			friendRoles[i] = roleCorrelations[i] > 0.95;
 		}
+
 		Log.println("role correlations: " + Arrays.toString(roleCorrelations));
 		Log.println("role significances: " + Arrays.toString(roleSignificances));
 		Log.println("friends: " + Arrays.toString(friendRoles));
@@ -1348,6 +1347,13 @@ public class Experiment extends Method {
 			Log.println("no heuristic");
 			return;
 		}
+
+		double averageBranchingFactor = 0;
+		for (MetaGameDCThread thread : pool) {
+			averageBranchingFactor += thread.branchingFactor.getMean() / n_thread;
+		}
+
+		Log.println("average branching factor: " + averageBranchingFactor);
 
 		int[] canUseArr = new int[canUseHeuristic.size()];
 		for (int i = 0; i < canUseHeuristic.size(); i++) {
@@ -1372,8 +1378,9 @@ public class Experiment extends Method {
 				Log.printf("\t%s : %.3f\n", heuristicNames.get(i - 1), est);
 			}
 		}
-		heuristicMaxVisits = HEURISTIC_MAX_VISITS_FACTOR * HEURISTIC_FACTOR / dcRsq;
-		Log.println("heuristic max visits: " + heuristicMaxVisits);
+		heuristicVisits = HEURISTIC_USAGE_THRESHOLD * HEURISTIC_WEIGHT_FACTOR
+				* totalSum * averageBranchingFactor;
+		Log.println("heuristic visits: " + heuristicVisits);
 	}
 
 	private void propagateBound(MTreeNode node) {
@@ -1556,7 +1563,7 @@ public class Experiment extends Method {
 		Collections.sort(root.children);
 		for (MTreeNode child : root.children) {
 			Log.printf(
-					"v=(%d, %d) s=(%.1f, %.1f, %.1f) b=(%.2f, %.2f) d=%d %s\n",
+					"v=(%d, %d) s=(%.1f, %.1f, %.1f) b=(%.1f, %.1f) d=%d %s\n",
 					child.visits,
 					child.heuristicVisits - child.visits / depthChargesPerState,
 					child.sum_utility / child.visits, child.heuristic,

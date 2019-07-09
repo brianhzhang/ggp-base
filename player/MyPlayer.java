@@ -87,9 +87,14 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int ML = 7;
 
 	public static final int N_OPTIONS = 10;
-	public static final int TIMEOUT_BUFFER = 2500; // time for network
+
+	// time for network
 	// communication in ms
-	public static final int N_THREADS = 5; // Runtime.getRuntime().availableProcessors();
+	public static final int TIMEOUT_BUFFER = 2500;
+
+	// minimum threads: 3
+	public static final int N_THREADS = 3; //Runtime.getRuntime().availableProcessors();
+
 	public static final boolean USE_LOGGING = false;
 
 	public static final PrintWriter gamelog = getGameLog();

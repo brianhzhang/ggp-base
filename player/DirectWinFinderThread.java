@@ -212,7 +212,7 @@ public class DirectWinFinderThread extends Thread {
 
 			boolean alreadySolved = false;
 			for (StateContainer state : stack) {
-				if (visited.contains(state)) {
+				if (visited.contains(state.getState())) {
 					alreadySolved = true;
 					break;
 				}
