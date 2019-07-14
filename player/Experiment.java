@@ -1280,7 +1280,7 @@ public class Experiment extends Method {
 	public void multiPlayerMetaGame(long timeout)
 			throws MoveDefinitionException, TransitionDefinitionException {
 		double HEURISTIC_USAGE_THRESHOLD = 8;
-		double HEURISTIC_WEIGHT_FACTOR = 2.0;
+		double HEURISTIC_WEIGHT_FACTOR = 4.0;
 
 		Role role = player.getRole();
 		List<MetaGameDCThread> pool = new ArrayList<>();
@@ -1521,10 +1521,9 @@ public class Experiment extends Method {
 			threads[i].setPriority(Thread.MIN_PRIORITY);
 		}
 
-		if (directWinFinder != null) {
-			directWinFinder.setFriends(friendRoles);
-			directWinFinder.assertReady();
-		}
+		if (directWinFinder != null) directWinFinder.setFriends(friendRoles);
+
+		int directWinFinderDelay = 0;
 
 
 		while (System.currentTimeMillis() < timeout && !root.isLooselyProven()) {
@@ -1532,15 +1531,19 @@ public class Experiment extends Method {
 			MTreeNode node = tree.peek();
 
 			if (directWinFinder != null) {
-				if (node.isMaxNode && node != root) {
-					directWinFinder.input.offer(tree);
-				}
-				while (true) {
-					DirectWinFinderThread.Output out = directWinFinder.output.poll();
-					if (out == null) break;
-					MTreeNode outNode = dagMap.get(out.input);
-					outNode.directWinResult = out;
-					propagateBound(outNode);
+				if (directWinFinder.kill) {
+					directWinFinderDelay++;
+				} else {
+					if (node.isMaxNode && node != root) {
+						directWinFinder.input.offer(tree);
+					}
+					while (true) {
+						DirectWinFinderThread.Output out = directWinFinder.output.poll();
+						if (out == null) break;
+						MTreeNode outNode = dagMap.get(out.input);
+						outNode.directWinResult = out;
+						propagateBound(outNode);
+					}
 				}
 			}
 
@@ -1597,6 +1600,8 @@ public class Experiment extends Method {
 		lastIgnoreProps = ignoreProps;
 
 		// kill DirectWinFinder
+		Log.printf("direct win finder: was delayed by %d nodes\n",
+				directWinFinderDelay);
 		if (directWinFinder != null) directWinFinder.kill = true;
 
 		return bestChild.move[ourRoleIndex];

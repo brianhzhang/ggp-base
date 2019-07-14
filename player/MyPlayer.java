@@ -93,7 +93,7 @@ public class MyPlayer extends StateMachineGamer {
 	public static final int TIMEOUT_BUFFER = 2500;
 
 	// minimum threads: 3
-	public static final int N_THREADS = 3; //Runtime.getRuntime().availableProcessors();
+	public static final int N_THREADS = 6; //Runtime.getRuntime().availableProcessors();
 
 	public static final boolean USE_LOGGING = false;
 
